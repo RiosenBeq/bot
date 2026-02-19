@@ -126,7 +126,7 @@ pub struct MarketData {
 }
 
 /// Trade for momentum-based strategy (buy any token when price reaches 0.9 after 10 minutes)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingTrade {
     pub token_id: String,             // Token ID (can be BTC Up/Down, ETH Up/Down)
     pub condition_id: String,          // Market condition ID (BTC or ETH)
@@ -135,7 +135,7 @@ pub struct PendingTrade {
     pub units: f64,                   // Total token shares purchased (expected)
     pub purchase_price: f64,          // Price at which token was purchased (BID)
     pub sell_price: f64,              // Target sell price (0.99 or 1.0)
-    pub timestamp: std::time::Instant, // When the trade was executed
+    pub timestamp: u64,               // Seconds since epoch
     pub market_timestamp: u64,        // The 15-minute period timestamp
     pub sold: bool,                   // Whether the token has been sold
     pub confirmed_balance: Option<f64>, // Confirmed token balance in portfolio (None = not verified yet)
@@ -146,6 +146,8 @@ pub struct PendingTrade {
     pub sell_attempts: u32,        // Number of times we've tried to sell (to limit retries)
     pub redemption_attempts: u32,  // Number of times we've tried to redeem (to track failed redemptions)
     pub redemption_abandoned: bool, // If true, redemption failed too many times - don't block new positions
+    pub ai_suggested_stop_loss: Option<f64>, // Dynamic stop-loss suggested by AI
+    pub ai_reasoning: Option<String>,        // Logic behind the AI's decision
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

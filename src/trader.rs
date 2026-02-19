@@ -9,7 +9,9 @@ use log::{warn, debug};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
-use std::str::FromStr;
+use std::fs::File;
+use std::io::{Write, Read};
+use chrono::Utc;
 
 
 pub struct Trader {
@@ -21,6 +23,7 @@ pub struct Trader {
     pending_trades: Arc<Mutex<HashMap<String, PendingTrade>>>, // Key: period_timestamp
     detector: Option<Arc<PriceDetector>>, // Optional detector reference for cycle tracking
     simulation_tracker: Option<Arc<SimulationTracker>>, // Simulation tracker for PnL and position tracking
+    latest_time_remaining_seconds: Arc<tokio::sync::Mutex<u64>>, // Latest known time remaining in current period
 }
 
 impl Trader {
@@ -35,7 +38,7 @@ impl Trader {
             None
         };
         
-        Ok(Self {
+        let mut trader = Self {
             api,
             config,
             simulation_mode,
@@ -44,7 +47,60 @@ impl Trader {
             pending_trades: Arc::new(Mutex::new(HashMap::new())),
             detector,
             simulation_tracker,
-        })
+            latest_time_remaining_seconds: Arc::new(tokio::sync::Mutex::new(900)), // Default to full period
+        };
+
+        // Load pending trades from disk if they exist
+        if let Err(e) = trader.load_pending_trades_sync() {
+            warn!("Failed to load pending trades from disk: {}", e);
+        }
+        
+        Ok(trader)
+    }
+
+    /// Save pending trades to a JSON file for persistence across restarts
+    pub async fn save_pending_trades(&self) -> Result<()> {
+        let pending = self.pending_trades.lock().await;
+        let json = serde_json::to_string_pretty(&*pending)?;
+        let mut file = File::create("pending_trades.json")?;
+        file.write_all(json.as_bytes())?;
+        Ok(())
+    }
+
+    /// Load pending trades from JSON file (synchronous for constructor)
+    pub fn load_pending_trades_sync(&self) -> Result<()> {
+        if !std::path::Path::new("pending_trades.json").exists() {
+            return Ok(());
+        }
+        
+        let mut file = File::open("pending_trades.json")?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        
+        let loaded_trades: HashMap<String, PendingTrade> = serde_json::from_str(&contents)?;
+        // Use try_lock to avoid blocking in constructor
+        if let Ok(mut pending) = self.pending_trades.try_lock() {
+            *pending = loaded_trades;
+            crate::log_println!("📂 Loaded {} pending trade(s) from pending_trades.json", pending.len());
+        }
+        Ok(())
+    }
+
+    /// Load pending trades from JSON file (async)
+    pub async fn load_pending_trades(&self) -> Result<()> {
+        if !std::path::Path::new("pending_trades.json").exists() {
+            return Ok(());
+        }
+        
+        // Use tokio::fs for async read
+        let contents = tokio::fs::read_to_string("pending_trades.json").await?;
+        
+        let loaded_trades: HashMap<String, PendingTrade> = serde_json::from_str(&contents)?;
+        let mut pending = self.pending_trades.lock().await;
+        *pending = loaded_trades;
+        
+        crate::log_println!("📂 Loaded {} pending trade(s) from pending_trades.json", pending.len());
+        Ok(())
     }
 
     /// Get the opposite token ID for a given token type and condition ID
@@ -116,9 +172,81 @@ impl Trader {
             crate::log_println!("🧹 Cleaned up old abandoned trade from period {} (redemption failed repeatedly - won't block new positions)", old_period);
         }
         
-        drop(pending);
+        drop(pending); // Release the lock before calling save_state
+        self.save_state().await;
     }
     
+    /// Save pending trades to disk after any modification
+    async fn save_state(&self) {
+        if let Err(e) = self.save_pending_trades().await {
+            warn!("Failed to save pending trades to disk: {}", e);
+        }
+    }
+
+    /// Scan the entire portfolio and redeem any winning tokens found in resolved markets.
+    /// This acts as a safety net for any tokens that might have been "lost" due to bot restarts
+    /// or logic errors.
+    pub async fn scan_and_redeem_portfolio(&self) -> Result<()> {
+        crate::log_println!("🔍 Periodic Portfolio Scan: Searching for unredeemed winnings...");
+        
+        let tokens = match self.api.get_portfolio_tokens_all(None, None).await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to fetch portfolio tokens: {}", e);
+                return Err(e);
+            }
+        };
+        
+        if tokens.is_empty() {
+            crate::log_println!("   ✅ No tokens with balance found in portfolio.");
+            return Ok(());
+        }
+        
+        let mut redeem_count = 0;
+        for (token_id, balance, description, condition_id) in tokens {
+            // Check if market is closed and token is a winner
+            match self.api.get_market(&condition_id).await {
+                Ok(market) => {
+                    if market.closed {
+                        let is_winner = market.tokens.iter().any(|t| t.token_id == token_id && t.winner);
+                        if is_winner {
+                            crate::log_println!("   🎯 Found unredeemed WINNING token: {} (Balance: {:.6})", description, balance);
+                            
+                            // Determine outcome from description (heuristic but matches our tokens)
+                            let outcome = if description.contains("Up") || description.contains("Yes") {
+                                "Up"
+                            } else {
+                                "Down"
+                            };
+                            
+                            if !self.simulation_mode {
+                                crate::log_println!("   💰 Redeeming winning token...");
+                                match self.api.redeem_tokens(&condition_id, &token_id, outcome).await {
+                                    Ok(_) => {
+                                        crate::log_println!("   ✅ Successfully redeemed winning token!");
+                                        redeem_count += 1;
+                                    }
+                                    Err(e) => warn!("   ❌ Failed to redeem token {}: {}", token_id, e),
+                                }
+                            } else {
+                                crate::log_println!("   💡 [SIMULATION] Would redeem winning token: {}", description);
+                            }
+                        }
+                    }
+                }
+                Err(e) => warn!("   ⚠️ Failed to check market {} for token {}: {}", condition_id, token_id, e),
+            }
+        }
+        
+        if redeem_count > 0 {
+            crate::log_println!("✅ Portfolio scan complete. Redeemed {} winning token(s).", redeem_count);
+        } else {
+            crate::log_println!("✅ Portfolio scan complete. No new winnings found.");
+        }
+        
+        Ok(())
+    }
+
     /// Sync pending trades with actual portfolio balance
     /// Checks if tokens are still in portfolio - if balance is 0, mark as sold (already redeemed)
     /// This prevents the bot from trying to redeem already-redeemed tokens
@@ -154,8 +282,8 @@ impl Trader {
                     let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
                     
                     if balance_f64 == 0.0 {
-                        // Balance is 0 - tokens were already redeemed
-                        crate::log_println!("   ✅ Trade {}: Token balance is 0 - already redeemed, marking as sold", 
+                        // Balance is 0 - tokens were already redeemed or sold
+                        crate::log_println!("   ✅ Trade {}: Token balance is 0 - marking as sold/redeemed", 
                             &trade.token_id[..16]);
                         
                         let mut pending = self.pending_trades.lock().await;
@@ -164,12 +292,13 @@ impl Trader {
                         }
                         pending.remove(&key);
                         drop(pending);
+                        self.save_state().await;
                         
                         removed_count += 1;
                     } else {
-                        // Balance > 0 - update stored balance if different
-                        if (balance_f64 - trade.units).abs() > 0.001 {
-                            crate::log_println!("   🔄 Trade {}: Updating balance from {:.6} to {:.6} shares", 
+                        // Balance > 0 - ALWAYS update to actual balance to ensure we never try to sell more than we own
+                        if (balance_f64 - trade.units).abs() > 0.000001 {
+                            crate::log_println!("   🔄 Updating {} units: {:.6} -> {:.6} (actual balance)", 
                                 &trade.token_id[..16], trade.units, balance_f64);
                             
                             let mut pending = self.pending_trades.lock().await;
@@ -178,7 +307,6 @@ impl Trader {
                                 t.confirmed_balance = Some(balance_f64);
                             }
                             drop(pending);
-                            
                             updated_count += 1;
                         }
                     }
@@ -193,6 +321,7 @@ impl Trader {
         if updated_count > 0 || removed_count > 0 {
             crate::log_println!("✅ Portfolio sync complete: {} trade(s) updated, {} trade(s) removed (already redeemed)", 
                 updated_count, removed_count);
+            self.save_state().await;
         } else {
             crate::log_println!("✅ Portfolio sync complete: All trades match portfolio balance");
         }
@@ -201,6 +330,11 @@ impl Trader {
     }
 
     /// Mark position as closed (for stop-loss re-entry)
+    pub async fn update_time_remaining(&self, seconds: u64) {
+        let mut time = self.latest_time_remaining_seconds.lock().await;
+        *time = seconds;
+    }
+
     pub async fn mark_position_closed(&self, period_timestamp: u64) {
         let mut pending = self.pending_trades.lock().await;
         for (_, trade) in pending.iter_mut() {
@@ -231,7 +365,25 @@ impl Trader {
             );
         }
         
-        let fixed_amount = self.config.fixed_trade_amount;
+        // Dynamic bet sizing based on AI confidence
+        let fixed_amount = match opportunity.ai_confidence {
+            Some(confidence) if confidence >= 8 => {
+                crate::log_println!("🧠 AI Confidence: {}/10 → HIGH CONFIDENCE → Bet: $2.00", confidence);
+                2.0
+            }
+            Some(confidence) if confidence >= 6 => {
+                crate::log_println!("🧠 AI Confidence: {}/10 → MEDIUM CONFIDENCE → Bet: $1.00", confidence);
+                1.0
+            }
+            Some(confidence) => {
+                crate::log_println!("🧠 AI Confidence: {}/10 → LOW CONFIDENCE → Bet: $1.00", confidence);
+                1.0
+            }
+            None => {
+                crate::log_println!("🧠 No AI confidence data → Default Bet: $1.00");
+                1.0
+            }
+        };
         
         // Calculate units for the token
         let units = fixed_amount / opportunity.bid_price;
@@ -251,9 +403,9 @@ impl Trader {
         crate::log_println!("   Total Cost: ${:.6}", total_cost);
         crate::log_println!("   Investment Amount: ${:.2}", fixed_amount);
         crate::log_println!("");
-        crate::log_println!("📈 Trade Parameters:");
-        crate::log_println!("   Target sell price: ${:.6}", self.config.sell_price);
-        crate::log_println!("   Expected profit at sell: ${:.6}", expected_profit_at_sell);
+        crate::log_println!("📈 Trade Parameters (Config Base):");
+        crate::log_println!("   Base target sell price: ${:.6}", self.config.sell_price);
+        crate::log_println!("   Expected profit at base: ${:.6}", expected_profit_at_sell);
         crate::log_println!("   Time elapsed: {}m {}s", 
               opportunity.time_elapsed_seconds / 60, opportunity.time_elapsed_seconds % 60);
         crate::log_println!("   Time remaining: {}s (minimum required: {}s)", 
@@ -262,6 +414,12 @@ impl Trader {
         crate::log_println!("");
         
         if self.simulation_mode {
+            // Add random variance to sell price (rastgele satış)
+            // Use timestamp as seed for simple pseudo-random offset (-0.01 to +0.02)
+            let seed = Utc::now().timestamp_nanos_opt().unwrap_or(0);
+            let rand_offset = ((seed % 40) as f64 - 10.0) / 1000.0; // -0.010 to +0.030
+            let target_sell_price = (opportunity.ai_sell_price.unwrap_or(self.config.sell_price) + rand_offset).clamp(0.1, 0.99);
+
             crate::log_println!("🎮 SIMULATION MODE - Creating limit buy order");
             crate::log_println!("   ✅ SIMULATION: Limit buy order created:");
             crate::log_println!("      - Token Type: {}", opportunity.token_type.display_name());
@@ -269,7 +427,8 @@ impl Trader {
             crate::log_println!("      - Units: {:.6}", units);
             crate::log_println!("      - Price: ${:.6}", opportunity.bid_price);
             crate::log_println!("      - Total: ${:.6}", total_cost);
-            crate::log_println!("      - Strategy: Hold until market closure (claim $1.00 if winning, $0.00 if losing)");
+            crate::log_println!("      - Randomized Target Sell: ${:.6} (rastgele satış)", target_sell_price);
+            crate::log_println!("      - Strategy: Profit-taking enabled in simulation");
             
             // In simulation mode, create a limit order that will be checked for fills
             if let Some(tracker) = &self.simulation_tracker {
@@ -284,9 +443,9 @@ impl Trader {
                 ).await;
                 
                 // Also track as pending trade for consistency
-                // In simulation mode, we hold positions until market closure (no selling)
                 let trade_key = format!("{}_{}_market", opportunity.period_timestamp, opportunity.token_id);
                 let mut pending = self.pending_trades.lock().await;
+
                 let trade = PendingTrade {
                     token_id: opportunity.token_id.clone(),
                     condition_id: opportunity.condition_id.clone(),
@@ -294,18 +453,20 @@ impl Trader {
                     investment_amount: fixed_amount,
                     units,
                     purchase_price: opportunity.bid_price,
-                    sell_price: self.config.sell_price, // Not used in simulation - positions held until closure
-                    timestamp: std::time::Instant::now(),
+                    sell_price: target_sell_price,
+                    timestamp: Utc::now().timestamp() as u64,
                     market_timestamp: opportunity.period_timestamp,
                     sold: false,
                     confirmed_balance: None,
                     buy_order_confirmed: false,
-                    limit_sell_orders_placed: false, // No sell orders in simulation - hold until closure
-                    no_sell: true, // Mark as no_sell since we hold until market closure
-                    claim_on_closure: true, // Will claim at market closure
+                    limit_sell_orders_placed: false, 
+                    no_sell: false,
+                    claim_on_closure: false,
                     sell_attempts: 0,
                     redemption_attempts: 0,
                     redemption_abandoned: false,
+                    ai_suggested_stop_loss: opportunity.ai_stop_loss,
+                    ai_reasoning: opportunity.ai_reason.clone(),
                 };
                 pending.insert(trade_key, trade);
             }
@@ -418,18 +579,20 @@ impl Trader {
                             investment_amount: fixed_amount,
                             units: balance_f64, // Use actual confirmed balance
                             purchase_price: opportunity.bid_price,
-                            sell_price: self.config.sell_price,
-                            timestamp: std::time::Instant::now(),
+                            sell_price: opportunity.ai_sell_price.unwrap_or(self.config.sell_price),
+                            timestamp: Utc::now().timestamp() as u64,
                             market_timestamp: opportunity.period_timestamp,
                             sold: false,
                             confirmed_balance: Some(balance_f64),
                             buy_order_confirmed: true,
-                            limit_sell_orders_placed: false, // Will be set to true after placing sell orders
+                            limit_sell_orders_placed: false,
                             no_sell: false,
                             claim_on_closure: false,
                             sell_attempts: 0,
                             redemption_attempts: 0,
                             redemption_abandoned: false,
+                            ai_suggested_stop_loss: opportunity.ai_stop_loss,
+                            ai_reasoning: opportunity.ai_reason.clone(),
                         };
                         
                         // Use token_id as key to track individual tokens
@@ -443,20 +606,39 @@ impl Trader {
                         let order_id_str = response.order_id.as_ref()
                             .map(|id| format!("{:?}", id))
                             .unwrap_or_else(|| "N/A".to_string());
-                        let buy_event = format!(
-                            "BUY ORDER | Market: {} | Period: {} | Token: {} | Price: ${:.6} | Units: {:.6} | Cost: ${:.6} | Order ID: {} | Status: CONFIRMED",
-                            market_name,
-                            opportunity.period_timestamp,
-                            &opportunity.token_id[..16],
-                            opportunity.bid_price,
-                            balance_f64,
-                            balance_f64 * opportunity.bid_price,
-                            order_id_str
-                        );
+                        
+                        // Use custom sell price in log message if AI suggested one
+                        let target_sell_price = opportunity.ai_sell_price.unwrap_or(self.config.sell_price);
+                        
+                        let buy_event = if let Some(ref reason) = opportunity.ai_reason {
+                            format!(
+                                "BUY ORDER | Market: {} | Period: {} | Token: {} | Price: ${:.6} | Units: {:.6} | Cost: ${:.6} | Target: ${:.6} | Order ID: {} | Status: CONFIRMED | AI Reason: {}",
+                                market_name,
+                                opportunity.period_timestamp,
+                                &opportunity.token_id[..16],
+                                opportunity.bid_price,
+                                balance_f64,
+                                balance_f64 * opportunity.bid_price,
+                                target_sell_price,
+                                order_id_str,
+                                reason
+                            )
+                        } else {
+                            format!(
+                                "BUY ORDER | Market: {} | Period: {} | Token: {} | Price: ${:.6} | Units: {:.6} | Cost: ${:.6} | Order ID: {} | Status: CONFIRMED",
+                                market_name,
+                                opportunity.period_timestamp,
+                                &opportunity.token_id[..16],
+                                opportunity.bid_price,
+                                balance_f64,
+                                balance_f64 * opportunity.bid_price,
+                                order_id_str
+                            )
+                        };
                         crate::log_trading_event(&buy_event);
                         
                         crate::log_println!("   ✅ Trade stored successfully. Will monitor price and sell at ${:.6} or market close.", 
-                              self.config.sell_price);
+                              target_sell_price);
                         
                         let mut trades = self.trades_executed.lock().await;
                         *trades += 1;
@@ -495,8 +677,8 @@ impl Trader {
                             investment_amount: fixed_amount,
                             units: balance_f64, // Use actual balance
                             purchase_price: opportunity.bid_price,
-                            sell_price: self.config.sell_price,
-                            timestamp: std::time::Instant::now(),
+                            sell_price: opportunity.ai_sell_price.unwrap_or(self.config.sell_price),
+                            timestamp: Utc::now().timestamp() as u64,
                             market_timestamp: opportunity.period_timestamp,
                             sold: false,
                             confirmed_balance: Some(balance_f64),
@@ -507,12 +689,15 @@ impl Trader {
                             sell_attempts: 0,
                             redemption_attempts: 0,
                             redemption_abandoned: false,
+                            ai_suggested_stop_loss: opportunity.ai_stop_loss,
+                            ai_reasoning: opportunity.ai_reason.clone(),
                         };
                         
                         let trade_key = format!("{}_{}", opportunity.period_timestamp, opportunity.token_id);
                         let mut pending = self.pending_trades.lock().await;
                         pending.insert(trade_key, trade);
                         drop(pending);
+                        self.save_state().await;
                         
                         let mut trades = self.trades_executed.lock().await;
                         *trades += 1;
@@ -560,45 +745,6 @@ impl Trader {
             }
         }
         
-        // For simulation mode, store the trade
-        if self.simulation_mode {
-            crate::log_println!("   📝 Storing trade: {} token ID: {}...", 
-                  opportunity.token_type.display_name(), &opportunity.token_id[..16]);
-        
-        let trade = PendingTrade {
-                token_id: opportunity.token_id.clone(),
-                condition_id: opportunity.condition_id.clone(),
-                token_type: opportunity.token_type.clone(),
-            investment_amount: fixed_amount,
-            units,
-                purchase_price: opportunity.bid_price,
-            sell_price: self.config.sell_price,
-            timestamp: std::time::Instant::now(),
-            market_timestamp: opportunity.period_timestamp,
-            sold: false,
-                confirmed_balance: None,
-                buy_order_confirmed: false,
-                limit_sell_orders_placed: false, // Will be set to true after placing sell orders
-                no_sell: false,
-                claim_on_closure: false,
-                sell_attempts: 0,
-                redemption_attempts: 0,
-                redemption_abandoned: false,
-            };
-            
-            // Use token_id as key to track individual tokens
-            let trade_key = format!("{}_{}", opportunity.period_timestamp, opportunity.token_id);
-        let mut pending = self.pending_trades.lock().await;
-        pending.insert(trade_key, trade);
-        drop(pending);
-        
-            crate::log_println!("   ✅ Trade stored successfully. Will monitor price and sell at ${:.6} or market close.", 
-              self.config.sell_price);
-        
-        let mut trades = self.trades_executed.lock().await;
-        *trades += 1;
-        drop(trades);
-        }
         
         Ok(())
     }
@@ -672,8 +818,8 @@ impl Trader {
                     investment_amount,
                     units,
                     purchase_price: opportunity.bid_price,
-                    sell_price: self.config.sell_price, // Not used in simulation - positions held until closure
-                    timestamp: std::time::Instant::now(),
+                    sell_price: opportunity.ai_sell_price.unwrap_or(self.config.sell_price),
+                    timestamp: Utc::now().timestamp() as u64,
                     market_timestamp: opportunity.period_timestamp,
                     sold: false,
                     confirmed_balance: None,
@@ -684,6 +830,8 @@ impl Trader {
                     sell_attempts: 0,
                     redemption_attempts: 0,
                     redemption_abandoned: false,
+                    ai_suggested_stop_loss: opportunity.ai_stop_loss,
+                    ai_reasoning: opportunity.ai_reason.clone(),
                 };
                 pending.insert(trade_key, trade);
             }
@@ -737,8 +885,8 @@ impl Trader {
                     investment_amount: investment_amount,
                     units: units, // Expected units
                     purchase_price: opportunity.bid_price,
-                    sell_price, // Primary sell price (profit target)
-                    timestamp: std::time::Instant::now(),
+                    sell_price: opportunity.ai_sell_price.unwrap_or(sell_price), // Respect AI sell price if available
+                    timestamp: Utc::now().timestamp() as u64,
                     market_timestamp: opportunity.period_timestamp,
                     sold: false,
                     confirmed_balance: Some(initial_balance),
@@ -749,6 +897,8 @@ impl Trader {
                     sell_attempts: 0,
                     redemption_attempts: 0,
                     redemption_abandoned: false,
+                    ai_suggested_stop_loss: opportunity.ai_stop_loss,
+                    ai_reasoning: opportunity.ai_reason.clone(),
                 };
                 
                 pending.insert(trade_key, trade);
@@ -898,14 +1048,13 @@ impl Trader {
                         // Check if the position exists in simulation tracker (order was filled)
                         if tracker.has_position(&trade.token_id).await {
                             // Order was filled in simulation - update trade status
-                            // In simulation mode, we hold positions until market closure (no selling)
                             let mut pending = self.pending_trades.lock().await;
                             if let Some(t) = pending.get_mut(key.as_str()) {
                                 t.buy_order_confirmed = true;
                                 t.confirmed_balance = Some(t.units);
                                 
                                 tracker.log_to_file(&format!(
-                                    "✅ SIMULATION: Position confirmed for {} - holding until market closure (will claim at $1.00 if winning, $0.00 if losing)",
+                                    "✅ SIMULATION: Position confirmed for {} - checking for profit sell or stop-loss",
                                     trade.token_type.display_name()
                                 )).await;
                             }
@@ -913,8 +1062,7 @@ impl Trader {
                     }
                 }
                 
-                // Note: In simulation mode, we don't create sell orders
-                // Positions will be resolved at market closure ($1 for winning tokens, $0 for losing tokens)
+                // Note: In simulation mode, we now allow profit-taking and stop-loss sells as requested
             }
         }
         
@@ -986,6 +1134,7 @@ impl Trader {
                     if let Some(t) = pending.get_mut(key.as_str()) {
                         t.limit_sell_orders_placed = true;
                     }
+                    self.save_state().await;
                     continue;
                 }
 
@@ -1302,6 +1451,7 @@ impl Trader {
                         t.confirmed_balance = Some(0.0);
                     }
                 }
+                self.save_state().await;
                 
                 // Log the sell fill event
                 let sell_event = format!(
@@ -1383,25 +1533,36 @@ impl Trader {
             // OPPOSITE TOKEN STOP-LOSS: Check if opposite token price drops below (1 - stop_loss_price - 0.1)
             // This protects against losses if the opposite token price crashes
             if key.contains("_opposite_") {
-                if let Some(stop_loss_price) = self.config.stop_loss_price {
-                    let opposite_stop_loss_price = (1.0 - stop_loss_price) - 0.1; // e.g., (1.0 - 0.80) - 0.1 = 0.10
+                let sl_threshold = trade.ai_suggested_stop_loss.or(self.config.stop_loss_price).unwrap_or(trade.purchase_price * 0.6);
+                if true { // Threshold exists now
+                    let stop_loss_price = sl_threshold;
+                    let opposite_stop_loss_price = (1.0 - stop_loss_price) - 0.1; // e.g., (1.0 - 0.45) - 0.1 = 0.45
                     
                     // Check if price dropped below opposite token stop-loss threshold
+                    // STOP-LOSS TIME RESTRICTION: Only trigger in the last 5 minutes (300 seconds)
+                    let time_remaining = {
+                        let time = self.latest_time_remaining_seconds.lock().await;
+                        *time
+                    };
+                    
                     if current_ask_price <= opposite_stop_loss_price {
+                        if time_remaining > 300 {
+                            debug!("🛑 {}: Price at opposite stop-loss (${:.6} <= ${:.6}), but skipping until last 5 minutes (current: {}s left)", 
+                                trade.token_type.display_name(), current_ask_price, opposite_stop_loss_price, time_remaining);
+                            continue;
+                        }
+                        
                         // CRITICAL: Re-check actual balance before selling
-                        let actual_balance = match self.api.check_balance_allowance(&trade.token_id).await {
-                            Ok((balance, _)) => {
-                                let balance_decimal = balance / rust_decimal::Decimal::from(1_000_000u64);
-                                let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
-                                if balance_f64 > 0.0 && (trade.units == 0.0 || balance_f64 > trade.units) {
-                                    balance_f64
-                                } else {
-                                    trade.units
+                        let actual_balance = if self.simulation_mode {
+                            trade.units
+                        } else {
+                            match self.api.check_balance_allowance(&trade.token_id).await {
+                                Ok((balance, _)) => {
+                                    let balance_decimal = balance / rust_decimal::Decimal::from(1_000_000u64);
+                                    let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
+                                    if balance_f64 > 0.0 { balance_f64 } else { trade.units }
                                 }
-                            }
-                            Err(e) => {
-                                warn!("⚠️  Failed to re-check balance before opposite token stop-loss sell: {}. Using stored units: {:.6}", e, trade.units);
-                                trade.units
+                                Err(_) => trade.units
                             }
                         };
                         
@@ -1441,6 +1602,7 @@ impl Trader {
                                         t.confirmed_balance = Some(0.0);
                                     }
                                 }
+                                self.save_state().await;
                                 
                                 // Log the sell event
                                 let sell_event = format!(
@@ -1470,15 +1632,28 @@ impl Trader {
             // If price drops to stop_loss_price, sell the bought token and place limit sell for opposite token
             // Only apply to trades that have limit_sell_orders_placed (new strategy) and are NOT limit orders
             if trade.limit_sell_orders_placed && !key.contains("_limit") {
-                if let Some(stop_loss_price) = self.config.stop_loss_price {
-                    // Only trigger stop-loss if price is at or below threshold
-                    if current_ask_price <= stop_loss_price {
+                let sl_threshold = trade.ai_suggested_stop_loss.or(self.config.stop_loss_price).unwrap_or(trade.purchase_price * 0.6);
+                if true { // Threshold exists now
+                    let stop_loss_price = sl_threshold;
+                    // STOP-LOSS TIME RESTRICTION: Only trigger in the last 5 minutes (300 seconds)
+                    let time_remaining = {
+                        let time = self.latest_time_remaining_seconds.lock().await;
+                        *time
+                    };
+                    
+                    if current_ask_price < stop_loss_price {
+                        if time_remaining > 300 {
+                            debug!("🛑 {}: Price at stop-loss (${:.6} <= ${:.6}), but skipping until last 5 minutes (current: {}s left)", 
+                                trade.token_type.display_name(), current_ask_price, stop_loss_price, time_remaining);
+                            continue;
+                        }
+                        
                         // CRITICAL: Re-check actual balance before selling
-                        let actual_balance = match self.api.check_balance_allowance(&trade.token_id).await {
+                        let actual_balance = if self.simulation_mode { trade.units } else { match self.api.check_balance_allowance(&trade.token_id).await {
                             Ok((balance, _)) => {
                                 let balance_decimal = balance / rust_decimal::Decimal::from(1_000_000u64);
                                 let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
-                                if balance_f64 > 0.0 && (trade.units == 0.0 || balance_f64 > trade.units) {
+                                if balance_f64 > 0.0 {
                                     balance_f64
                                 } else {
                                     trade.units
@@ -1488,7 +1663,7 @@ impl Trader {
                                 warn!("⚠️  Failed to re-check balance before stop-loss sell: {}. Using stored units: {:.6}", e, trade.units);
                                 trade.units
                             }
-                        };
+                        }};
                         
                         if actual_balance == 0.0 {
                             warn!("⚠️  Skipping stop-loss sell - actual balance is 0.000000 shares.");
@@ -1581,7 +1756,7 @@ impl Trader {
                                                         units: opposite_balance,
                                                         purchase_price: opposite_buy_price,
                                                         sell_price: opposite_sell_price,
-                                                        timestamp: std::time::Instant::now(),
+                                                        timestamp: Utc::now().timestamp() as u64,
                                                         market_timestamp: trade.market_timestamp,
                                                         sold: false,
                                                         confirmed_balance: Some(opposite_balance),
@@ -1592,6 +1767,8 @@ impl Trader {
                                                         sell_attempts: 0,
                                                         redemption_attempts: 0,
                                                         redemption_abandoned: false,
+                                                        ai_suggested_stop_loss: None,
+                                                        ai_reasoning: None,
                                                     };
                                                     
                                                     let opposite_trade_key = format!("{}_opposite_{}", trade.market_timestamp, opposite_token_id);
@@ -1606,17 +1783,20 @@ impl Trader {
                                                     warn!("Failed to place limit sell for opposite token: {}", e);
                                                 }
                                             }
-                                        } else {
                                             // We don't have the opposite token yet - place limit buy order
-                                            // Use the same number of shares as the bought token we just sold
-                                            let opposite_buy_size = units_to_sell; // Same number of shares
+                                            // Enforce exchange minimum of 5.0 shares
+                                            let mut opposite_buy_size = units_to_sell;
+                                            if opposite_buy_size < 5.0 {
+                                                crate::log_println!("      ⚠️  Calculated hedge size ({:.6}) is below exchange minimum (5.0). Increasing to 5.0.", opposite_buy_size);
+                                                opposite_buy_size = 5.0;
+                                            }
                                             
                                             crate::log_println!("   📥 Placing limit buy for opposite token (hedge):");
                                             crate::log_println!("      Token: {}", opposite_token_type.display_name());
                                             crate::log_println!("      Limit Price: ${:.6}", opposite_buy_price);
-                                            crate::log_println!("      Size: {:.6} shares (same as sold token)", opposite_buy_size);
+                                            crate::log_println!("      Size: {:.6} shares", opposite_buy_size);
                                             
-                                            use crate::models::OrderRequest;
+
                                             let opposite_buy_order = OrderRequest {
                                                 token_id: opposite_token_id.clone(),
                                                 side: "BUY".to_string(),
@@ -1655,7 +1835,7 @@ impl Trader {
                                                         units: opposite_buy_size,
                                                         purchase_price: opposite_buy_price,
                                                         sell_price: (1.0 - stop_loss_price) + 0.1, // Will sell at 0.30 when filled
-                                                        timestamp: std::time::Instant::now(),
+                                                        timestamp: Utc::now().timestamp() as u64,
                                                         market_timestamp: trade.market_timestamp,
                                                         sold: false,
                                                         confirmed_balance: Some(0.0), // Not filled yet
@@ -1666,6 +1846,8 @@ impl Trader {
                                                         sell_attempts: 0,
                                                         redemption_attempts: 0,
                                                         redemption_abandoned: false,
+                                                        ai_suggested_stop_loss: None,
+                                                        ai_reasoning: None,
                                                     };
                                                     
                                                     let opposite_trade_key = format!("{}_opposite_limit_{}", trade.market_timestamp, opposite_token_id);
@@ -1721,12 +1903,26 @@ impl Trader {
             // Check for stop-loss condition first (before checking for profit sell)
             // Stop-loss: sell if price drops below stop_loss_price to limit losses
             // Note: If stop-loss sell fails, keep retrying until sold OR price recovers above stop_loss_price
-            if let Some(stop_loss_price) = self.config.stop_loss_price {
+            let sl_threshold = trade.ai_suggested_stop_loss.or(self.config.stop_loss_price).unwrap_or(trade.purchase_price * 0.6);
+            if true { // Threshold exists now
+                let stop_loss_price = sl_threshold;
                 // Only trigger stop-loss if price is below threshold
                 // If price recovers above stop_loss_price, cancel stop-loss attempt
+                // STOP-LOSS TIME RESTRICTION: Only trigger in the last 5 minutes (300 seconds)
+                let time_remaining = {
+                    let time = self.latest_time_remaining_seconds.lock().await;
+                    *time
+                };
+                
                 if current_ask_price < stop_loss_price {
+                    if time_remaining > 300 {
+                        debug!("🛑 {}: Price at stop-loss (${:.6} < ${:.6}), but skipping until last 5 minutes (current: {}s left)", 
+                            trade.token_type.display_name(), current_ask_price, stop_loss_price, time_remaining);
+                        continue;
+                    }
+                    
                     // CRITICAL: Re-check actual balance before selling
-                    let actual_balance = match self.api.check_balance_allowance(&trade.token_id).await {
+                    let actual_balance = if self.simulation_mode { trade.units } else { match self.api.check_balance_allowance(&trade.token_id).await {
                         Ok((balance, _)) => {
                             // Conditional tokens use 1e6 as base unit (like USDC)
                             // Convert from smallest unit to actual shares
@@ -1743,7 +1939,7 @@ impl Trader {
                             warn!("⚠️  Failed to re-check balance before stop-loss sell: {}. Using stored units: {:.6}", e, trade.units);
                             trade.units
                         }
-                    };
+                    }};
                     
                     if actual_balance == 0.0 {
                         warn!("⚠️  Skipping stop-loss sell - actual balance is 0.000000 shares.");
@@ -1836,7 +2032,7 @@ impl Trader {
                                                     units: opposite_balance,
                                                     purchase_price: opposite_buy_price,
                                                     sell_price: opposite_sell_price,
-                                                    timestamp: std::time::Instant::now(),
+                                                    timestamp: Utc::now().timestamp() as u64,
                                                     market_timestamp: trade.market_timestamp,
                                                     sold: false,
                                                     confirmed_balance: Some(opposite_balance),
@@ -1847,6 +2043,8 @@ impl Trader {
                                                     sell_attempts: 0,
                                                     redemption_attempts: 0,
                                                     redemption_abandoned: false,
+                                                    ai_suggested_stop_loss: None,
+                                                    ai_reasoning: None,
                                                 };
                                                 
                                                 let opposite_trade_key = format!("{}_opposite_{}", trade.market_timestamp, opposite_token_id);
@@ -1910,7 +2108,7 @@ impl Trader {
                                                     units: opposite_buy_size,
                                                     purchase_price: opposite_buy_price,
                                                     sell_price: (1.0 - stop_loss_price) + 0.1, // Will sell at 0.30 when filled
-                                                    timestamp: std::time::Instant::now(),
+                                                    timestamp: Utc::now().timestamp() as u64,
                                                     market_timestamp: trade.market_timestamp,
                                                     sold: false,
                                                     confirmed_balance: Some(0.0), // Not filled yet
@@ -1921,12 +2119,15 @@ impl Trader {
                                                     sell_attempts: 0,
                                                     redemption_attempts: 0,
                                                     redemption_abandoned: false,
+                                                    ai_suggested_stop_loss: None,
+                                                    ai_reasoning: None,
                                                 };
                                                 
                                                 let opposite_trade_key = format!("{}_opposite_limit_{}", trade.market_timestamp, opposite_token_id);
                                                 let mut pending = self.pending_trades.lock().await;
                                                 pending.insert(opposite_trade_key, opposite_trade);
                                                 drop(pending);
+                                                self.save_state().await;
                                                 
                                                 crate::log_println!("   📊 Tracking opposite token limit buy order (will monitor for fill and place sell order)");
                                             }
@@ -1950,6 +2151,7 @@ impl Trader {
                                     t.sold = true;
                                 }
                             }
+                            self.save_state().await;
                         }
                         Err(e) => {
                             eprintln!("   ❌ FAILED TO EXECUTE STOP-LOSS SELL: {}", e);
@@ -1974,9 +2176,21 @@ impl Trader {
             if let Some(stop_loss_price) = self.config.stop_loss_price {
                 // Only trigger stop-loss if price is below threshold
                 // If price recovers above stop_loss_price, cancel stop-loss attempt
+                // STOP-LOSS TIME RESTRICTION: Only trigger in the last 5 minutes (300 seconds)
+                let time_remaining = {
+                    let time = self.latest_time_remaining_seconds.lock().await;
+                    *time
+                };
+                
                 if current_ask_price < stop_loss_price {
+                    if time_remaining > 300 {
+                        debug!("🛑 {}: Price at stop-loss (${:.6} < ${:.6}), but skipping until last 5 minutes (current: {}s left)", 
+                            trade.token_type.display_name(), current_ask_price, stop_loss_price, time_remaining);
+                        continue;
+                    }
+                    
                     // CRITICAL: Re-check actual balance before selling
-                    let actual_balance = match self.api.check_balance_allowance(&trade.token_id).await {
+                    let actual_balance = if self.simulation_mode { trade.units } else { match self.api.check_balance_allowance(&trade.token_id).await {
                         Ok((balance, _)) => {
                             // Conditional tokens use 1e6 as base unit (like USDC)
                             // Convert from smallest unit to actual shares
@@ -1993,7 +2207,7 @@ impl Trader {
                             warn!("⚠️  Failed to re-check balance before stop-loss sell: {}. Using stored units: {:.6}", e, trade.units);
                             trade.units
                         }
-                    };
+                    }};
                     
                     if actual_balance == 0.0 {
                         warn!("⚠️  Skipping stop-loss sell - actual balance is 0.000000 shares.");
@@ -2078,7 +2292,9 @@ impl Trader {
                                 };
                                 
                                 // Stop retrying if price recovered above stop-loss threshold
-                                if let Some(stop_loss_threshold) = self.config.stop_loss_price {
+                                let sl_threshold = trade.ai_suggested_stop_loss.or(self.config.stop_loss_price).unwrap_or(trade.purchase_price * 0.6);
+                                if true { // Threshold exists now
+                                    let stop_loss_threshold = sl_threshold;
                                     if current_price_check >= stop_loss_threshold {
                                         crate::log_println!("   ⏸️  Price recovered above stop-loss threshold (${:.6} >= ${:.6}) - stopping retry", 
                                             current_price_check, stop_loss_threshold);
@@ -2153,8 +2369,10 @@ impl Trader {
                     trade.sold = true;
                     
                     // Mark cycle completed for this token type (requires reset before next buy)
-                    if let Some(ref detector) = self.detector {
-                        detector.mark_cycle_completed(trade.token_type.clone()).await;
+                    if let Some(detector) = &self.detector {
+                        let remaining = *self.latest_time_remaining_seconds.lock().await;
+                        let elapsed = 900u64.saturating_sub(remaining);
+                        detector.mark_cycle_completed(trade.token_type.clone(), elapsed).await;
                     }
                     
                     // Remove from HashMap since trade is sold
@@ -2172,23 +2390,16 @@ impl Trader {
             // Also check if price is >= 1.0 (market resolution - token is worth $1)
             if current_ask_price >= trade.sell_price || current_ask_price >= 1.0 {
                 // CRITICAL: Re-check actual balance before selling
-                // The stored units might be 0 if balance check failed initially, but tokens may have arrived later
-                let actual_balance = match self.api.check_balance_allowance(&trade.token_id).await {
-                    Ok((balance, _)) => {
-                        // Conditional tokens use 1e6 as base unit (like USDC)
-                        // Convert from smallest unit to actual shares
-                        let balance_decimal = balance / rust_decimal::Decimal::from(1_000_000u64);
-                        let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
-                        if balance_f64 > 0.0 && (trade.units == 0.0 || balance_f64 > trade.units) {
-                            crate::log_println!("   🔄 Updating units from stored {:.6} to actual balance {:.6} shares", trade.units, balance_f64);
-                            balance_f64
-                        } else {
-                            trade.units // Use stored units if they're valid
+                let actual_balance = if self.simulation_mode {
+                    trade.units
+                } else {
+                    match self.api.check_balance_allowance(&trade.token_id).await {
+                        Ok((balance, _)) => {
+                            let balance_decimal = balance / rust_decimal::Decimal::from(1_000_000u64);
+                            let balance_f64 = f64::try_from(balance_decimal).unwrap_or(0.0);
+                            if balance_f64 > 0.0 { balance_f64 } else { trade.units }
                         }
-                    }
-                    Err(e) => {
-                        warn!("⚠️  Failed to re-check balance before selling: {}. Using stored units: {:.6}", e, trade.units);
-                        trade.units
+                        Err(_) => trade.units
                     }
                 };
                 
@@ -2348,8 +2559,10 @@ impl Trader {
                 trade.sold = true;
                 
                 // Mark cycle completed for this token type (requires reset before next buy)
-                if let Some(ref detector) = self.detector {
-                    detector.mark_cycle_completed(trade.token_type.clone()).await;
+                if let Some(detector) = &self.detector {
+                    let remaining = *self.latest_time_remaining_seconds.lock().await;
+                    let elapsed = 900u64.saturating_sub(remaining);
+                    detector.mark_cycle_completed(trade.token_type.clone(), elapsed).await;
                 }
                 
                 // Remove from HashMap since trade is sold
@@ -2433,12 +2646,51 @@ impl Trader {
             }
             
             crate::log_println!("\n   📤 Placing SELL order...");
-            match self.api.place_market_order(
+            let mut sell_result = self.api.place_market_order(
                 &trade.token_id,
-                units_to_sell,  // Number of shares/units for SELL market orders
+                units_to_sell,
                 "SELL",
                 Some(order_type_str),
-            ).await {
+            ).await;
+
+            // Handle "not enough balance / allowance" error with automatic approval retry
+            if let Err(ref e) = sell_result {
+                let err_msg = e.to_string();
+                if err_msg.contains("not enough balance / allowance") || err_msg.contains("allowance") {
+                    crate::log_println!("   ⚠️  Sell failed due to insufficient allowance. Attempting automatic approval...");
+                    
+                    // Step 1: Try to set approval via relayer/on-chain
+                    match self.api.set_approval_for_all_clob().await {
+                        Err(approve_err) => {
+                            crate::log_println!("   ❌ Automatic approval failed: {} - will retry sell anyway", approve_err);
+                        }
+                        Ok(_) => {
+                            crate::log_println!("   ✅ Approval transaction sent! Waiting 5 seconds for on-chain/backend processing...");
+                            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        }
+                    }
+                    
+                    // Step 2: Refresh allowance cache after approval
+                    crate::log_println!("   🔄 Refreshing allowance cache after approval...");
+                    if let Err(e) = self.api.update_balance_allowance_for_sell(&trade.token_id).await {
+                        crate::log_println!("   ⚠️  Failed to refresh allowance cache: {} (proceeding anyway)", e);
+                    } else {
+                        crate::log_println!("   ✅ Allowance cache refreshed. Waiting 2 seconds...");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    }
+                    
+                    // Step 3: Retry the sell order
+                    crate::log_println!("   🔄 Retrying SELL order after approval...");
+                    sell_result = self.api.place_market_order(
+                        &trade.token_id,
+                        units_to_sell,
+                        "SELL",
+                        Some(order_type_str),
+                    ).await;
+                }
+            }
+
+            match sell_result {
                 Ok(response) => {
                     crate::log_println!("   ✅ ORDER PLACED SUCCESSFULLY");
                     crate::log_println!("      Order ID: {:?}", response.order_id);
@@ -2451,6 +2703,7 @@ impl Trader {
                     let sell_value = current_price * units_to_sell;
                     let pnl = sell_value - (trade.purchase_price * units_to_sell);
                     let mut total = self.total_profit.lock().await;
+                    if *total == 0.0 { *total = 0.0; } // dummy to keep logic
                     *total += pnl;
                     let total_profit = *total;
                     drop(total);
@@ -2919,6 +3172,7 @@ impl Trader {
                         }
                         pending.remove(&key);
                         drop(pending);
+                        self.save_state().await;
                         
                         // Update profit calculation
                         let mut total = self.total_profit.lock().await;
@@ -2997,6 +3251,7 @@ impl Trader {
                                     *t = trade_mut.clone();
                 }
                                 drop(pending);
+                                self.save_state().await;
                                 
                                 crate::log_println!("   ✅ Trade abandoned - you can manually redeem later if needed");
                                 crate::log_println!("   💡 New positions in new markets will NOT be blocked by this trade");
@@ -3021,6 +3276,7 @@ impl Trader {
                                     *t = trade_mut;
                                 }
                                 drop(pending);
+                                self.save_state().await;
                             }
                             
                             // Don't remove trade - keep it so we can retry redemption on next check_market_closure call
@@ -3067,6 +3323,7 @@ impl Trader {
                     }
                 pending.remove(&key);
                     drop(pending);
+                    self.save_state().await;
                 }
             }
         }
@@ -3141,9 +3398,11 @@ impl Trader {
     /// Reset for new period
     pub async fn reset_period(&self, old_period: u64) {
         let mut pending = self.pending_trades.lock().await;
-        // Remove trades from old period
-        pending.retain(|_, trade| trade.market_timestamp != old_period);
+        // Only remove trades from old period if they are already sold/redeemed
+        // This ensures unredeemed winning/losing tokens are kept until processed
+        pending.retain(|_, trade| trade.market_timestamp != old_period || !trade.sold);
         drop(pending);
+        self.save_state().await;
     }
 
     /// Print summary of all trades (for testing/verification)

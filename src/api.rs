@@ -22,6 +22,7 @@ use alloy::primitives::Address as AlloyAddress;
 // CTF (Conditional Token Framework) imports for redemption
 // Based on docs: https://docs.polymarket.com/developers/builders/relayer-client#redeem-positions
 use alloy::primitives::{Address as AlloyAddressPrimitive, B256, U256, Bytes};
+use alloy::primitives::utils::format_units;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::eth::TransactionRequest;
 
@@ -181,8 +182,9 @@ impl PolymarketApi {
         let secret = self.api_secret.as_ref()
             .ok_or_else(|| anyhow::anyhow!("API secret is required for authenticated requests"))?;
         
-        // Create message: method + path + body + timestamp
-        let message = format!("{}{}{}{}", method, path, body, timestamp);
+        // Create message: timestamp + method + path + body
+        // Polymarket CLOB API requires timestamp at the beginning for L2 authentication
+        let message = format!("{}{}{}{}", timestamp, method, path, body);
         
         // Try to decode secret from base64url first (Builder API uses base64url encoding)
         // Base64url uses - and _ instead of + and /, making it URL-safe
@@ -240,6 +242,13 @@ impl PolymarketApi {
             .header("POLY_SIGNATURE", signature)
             .header("POLY_TIMESTAMP", timestamp.to_string())
             .header("POLY_PASSPHRASE", self.api_passphrase.as_ref().unwrap());
+        
+        // Add Proxy Wallet header if configured (essential for Gmail/Proxy wallets)
+        let request = if let Some(proxy_addr) = &self.proxy_wallet_address {
+            request.header("POLY_PROXY_WALLET", proxy_addr)
+        } else {
+            request
+        };
         
         Ok(request)
     }
@@ -602,7 +611,7 @@ impl PolymarketApi {
         
         // Check BTC markets (current + recent past)
         println!("🔍 Scanning BTC markets (current + recent past)...");
-        for offset in 0..=10 { // Check last 10 periods (2.5 hours)
+        for offset in 0..=40 { // Check last 40 periods (10 hours)
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -635,7 +644,7 @@ impl PolymarketApi {
         
         // Check ETH markets (current + recent past)
         println!("🔍 Scanning ETH markets (current + recent past)...");
-        for offset in 0..=10 { // Check last 10 periods (2.5 hours)
+        for offset in 0..=40 { // Check last 40 periods (10 hours)
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -668,7 +677,7 @@ impl PolymarketApi {
         
         // Check Solana markets (current + recent past)
         println!("🔍 Scanning Solana markets (current + recent past)...");
-        for offset in 0..=10 { // Check last 10 periods (2.5 hours)
+        for offset in 0..=40 { // Check last 40 periods (10 hours)
             let current_time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -1421,6 +1430,7 @@ impl PolymarketApi {
         let ctf_address_str = format!("{:#x}", ctf_contract_address);
         let transaction = serde_json::json!({
             "to": ctf_address_str,
+            "from": self.proxy_wallet_address.as_deref().unwrap_or(""),
             "data": call_data_hex,
             "value": "0"
         });
@@ -1438,60 +1448,77 @@ impl PolymarketApi {
         let api_passphrase = self.api_passphrase.as_ref()
             .ok_or_else(|| anyhow::anyhow!("API passphrase required for relayer. Please set api_passphrase in config.json"))?;
         
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .to_string();
-        
-        let body_string = serde_json::to_string(&relayer_request)
-            .context("Failed to serialize relayer request")?;
-        
-        // Generate HMAC signature for relayer authentication. Path must match the
-        // endpoint: /submit (builder-relayer-client uses /submit, not /execute).
         let url_path = "/submit";
-        let message = format!("POST{}{}{}", url_path, body_string, timestamp);
+        let body_string = relayer_request.to_string();
         
-        // Try to decode secret from base64url first (Builder API uses base64url encoding)
-        // Base64url uses - and _ instead of + and /, making it URL-safe
-        // Then try standard base64, then fall back to raw bytes
+        // Trim and decode base64url secret (Builder API uses base64url encoding)
+        let trimmed_secret = api_secret.trim();
         let secret_bytes = {
             use base64::engine::general_purpose;
             use base64::Engine;
-            
-            // First try base64url (URL_SAFE engine)
-            if let Ok(bytes) = general_purpose::URL_SAFE.decode(api_secret) {
-                bytes
-            }
-            // Then try standard base64
-            else if let Ok(bytes) = general_purpose::STANDARD.decode(api_secret) {
-                bytes
-            }
-            // Finally, use raw bytes if both fail
-            else {
-                api_secret.as_bytes().to_vec()
-            }
+            // Try base64url first (URL_SAFE), then standard base64
+            general_purpose::URL_SAFE.decode(trimmed_secret)
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(trimmed_secret))
+                .or_else(|_| general_purpose::STANDARD.decode(trimmed_secret))
+                .context("Failed to decode API secret as base64/base64url")?
         };
-        
-        let mut mac = HmacSha256::new_from_slice(&secret_bytes)
-            .context("Failed to create HMAC")?;
-        mac.update(message.as_bytes());
-        let signature = hex::encode(mac.finalize().into_bytes());
-        
-        // Send request to relayer
-        let response = self.client
-            .post(RELAYER_SUBMIT)
-            .header("User-Agent", "polymarket-trading-bot/1.0")
-            .header("POLY_BUILDER_API_KEY", api_key)
-            .header("POLY_BUILDER_TIMESTAMP", &timestamp)
-            .header("POLY_BUILDER_PASSPHRASE", api_passphrase)
-            .header("POLY_BUILDER_SIGNATURE", &signature)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(&relayer_request)
-            .send()
-            .await
-            .context("Failed to send setApprovalForAll request to relayer")?;
+
+        let mut retry_count = 0;
+        let max_retries = 10;
+        let mut last_response: Option<reqwest::Response> = None;
+
+        while retry_count < max_retries {
+            // Generate fresh timestamp and signature for each retry
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string();
+            
+            // Try the format used in the status check: METHOD + URL + TIMESTAMP [+ BODY]
+            // Correct signature message format: TIMESTAMP + METHOD + PATH + BODY
+            let message = format!("{}{}{}{}", timestamp, "POST", "/submit", body_string);
+            
+            let mut mac = HmacSha256::new_from_slice(&secret_bytes)
+                .context("Failed to create HMAC from API secret")?;
+            mac.update(message.as_bytes());
+            // Polymarket Relayer requires Base64-URL encoded signature
+            let signature = {
+                use base64::engine::general_purpose;
+                use base64::Engine;
+                general_purpose::URL_SAFE.encode(mac.finalize().into_bytes())
+            };
+            
+            let proxy_wallet = self.proxy_wallet_address.as_deref().unwrap_or("").to_lowercase();
+            let response = self.client
+                .post(RELAYER_SUBMIT)
+                .header("User-Agent", "polymarket-trading-bot/1.0")
+                .header("POLY_BUILDER_API_KEY", api_key)
+                .header("POLY_BUILDER_TIMESTAMP", &timestamp)
+                .header("POLY_BUILDER_PASSPHRASE", api_passphrase)
+                .header("POLY_BUILDER_SIGNATURE", &signature)
+                .header("POLY_PROXY_WALLET", &proxy_wallet)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(body_string.clone())
+                .send()
+                .await
+                .context("Failed to send setApprovalForAll request to relayer")?;
+            
+            if response.status() == 429 {
+                retry_count += 1;
+                let sleep_secs = 2u64.pow(retry_count as u32);
+                eprintln!("   ⚠️  Relayer rate limited (429). Retrying in {} seconds (attempt {}/{})...", sleep_secs, retry_count, max_retries);
+                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_secs)).await;
+                last_response = Some(response);
+                continue;
+            }
+            
+            last_response = Some(response);
+            break;
+        }
+
+        let response = last_response.ok_or_else(|| anyhow::anyhow!("No response from relayer after retries"))?;
         
         let status = response.status();
         let response_text = response.text().await
@@ -1814,9 +1841,9 @@ impl PolymarketApi {
             .ok_or_else(|| anyhow::anyhow!("Failed to convert amount to Decimal"))?
                 .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
         } else {
-            // SELL: Shares - round to 2 decimal places (Amount::shares requires <= 2 decimal places)
-            // Format to 2 decimal places and parse as Decimal
-            let shares_str = format!("{:.2}", amount);
+            // SELL: Shares - use 6 decimal places (Polymarket on-chain tokens use 6 decimals)
+            // Even if SDK comment says 2, for small amounts like 0.0004 we MUST use more precision
+            let shares_str = format!("{:.6}", amount);
             Decimal::from_str(&shares_str)
                 .context(format!("Failed to parse shares '{}' as Decimal", shares_str))?
         };
@@ -2170,14 +2197,16 @@ impl PolymarketApi {
         let condition_id_b256 = B256::from_str(condition_id_clean)
             .context(format!("Failed to parse condition_id to B256: {}", condition_id))?;
         
-        // Determine index_sets based on the documentation
-        // According to Polymarket docs: pass [1, 2] for binary markets
-        // The contract will only redeem winning tokens (only winners pay out)
-        // So even if we pass both, only the winning outcome will be redeemed
-        let index_sets = vec![U256::from(1), U256::from(2)]; // Pass both [1, 2] as per docs
+        // Determine index_sets based on outcome
+        // Index 1 = Yes/Up, Index 2 = No/Down
+        let index_sets = if outcome.to_lowercase() == "up" || outcome.to_lowercase() == "yes" {
+            vec![U256::from(1)]
+        } else {
+            vec![U256::from(2)]
+        };
         
         eprintln!("🔄 Redeeming tokens for condition {} (outcome: {})", condition_id, outcome);
-        eprintln!("   📋 Passing index_sets: [1, 2] (contract will only redeem winning tokens)");
+        eprintln!("   📋 Passing index_sets: {:?} (contract will only redeem winning tokens)", index_sets);
         
         // Use Relayer Client for gasless transactions. The /execute path returns 404;
         // builder-relayer-client uses POST /submit. See: Polymarket/builder-relayer-client
@@ -2216,15 +2245,15 @@ impl PolymarketApi {
         eprintln!("   - CTF Contract: {}", ctf_address);
         eprintln!("   - Collateral token (USDC): {}", collateral_token);
         eprintln!("   - Condition ID: {} ({:?})", condition_id, condition_id_b256);
-        eprintln!("   - Index sets: [1, 2] (contract will only redeem winning tokens)");
+        eprintln!("   - Index sets: {:?}", index_sets);
         eprintln!("   - Outcome: {}", outcome);
         
         // Encode the redeemPositions function call
         // Function signature: redeemPositions(address,bytes32,bytes32,uint256[])
         // Function selector: keccak256("redeemPositions(address,bytes32,bytes32,uint256[])")[0:4] = 0x3d7d3f5a
         
-        // Function selector
-        let function_selector = hex::decode("3d7d3f5a")
+        // Function selector for redeemPositions(address,bytes32,bytes32,uint256[]) is 0x7af3d688
+        let function_selector = hex::decode("7af3d688")
             .context("Failed to decode function selector")?;
         
         // Encode parameters manually using ABI encoding rules
@@ -2264,7 +2293,7 @@ impl PolymarketApi {
         }
         
         // Combine function selector with encoded parameters
-        let mut call_data = function_selector;
+        let mut call_data = function_selector.clone();
         call_data.extend_from_slice(&encoded_params);
         let call_data_hex = format!("0x{}", hex::encode(&call_data));
         
@@ -2276,6 +2305,7 @@ impl PolymarketApi {
         let ctf_address_str = format!("{:#x}", ctf_address);
         let transaction = serde_json::json!({
             "to": ctf_address_str,
+            "from": self.proxy_wallet_address.as_deref().unwrap_or(""),
             "data": call_data_hex,
             "value": "0"
         });
@@ -2293,95 +2323,106 @@ impl PolymarketApi {
         let api_passphrase = self.api_passphrase.as_ref()
             .ok_or_else(|| anyhow::anyhow!("API passphrase required for relayer. Please set api_passphrase in config.json"))?;
         
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            .to_string();
-        
         let body_string = serde_json::to_string(&relayer_request)
             .context("Failed to serialize relayer request")?;
         
-        // Generate HMAC signature for relayer authentication
-        // Message format: POST + /submit + body + timestamp
-        // This must match exactly what the relayer expects
         let url_path = "/submit";
-        let message = format!("POST{}{}{}", url_path, body_string, timestamp);
         
-        // Try to decode secret from base64url first (Builder API uses base64url encoding)
-        // Base64url uses - and _ instead of + and /, making it URL-safe
-        // Then try standard base64, then fall back to raw bytes
+        // Trim and decode base64url secret (Builder API uses base64url encoding)
+        let trimmed_secret = api_secret.trim();
         let secret_bytes = {
             use base64::engine::general_purpose;
             use base64::Engine;
-            
-            // First try base64url (URL_SAFE engine)
-            if let Ok(bytes) = general_purpose::URL_SAFE.decode(api_secret) {
-                bytes
-            }
-            // Then try standard base64
-            else if let Ok(bytes) = general_purpose::STANDARD.decode(api_secret) {
-                bytes
-            }
-            // Finally, use raw bytes if both fail
-            else {
-                api_secret.as_bytes().to_vec()
-            }
+            general_purpose::URL_SAFE.decode(trimmed_secret)
+                .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(trimmed_secret))
+                .or_else(|_| general_purpose::STANDARD.decode(trimmed_secret))
+                .context("Failed to decode API secret as base64/base64url")?
         };
+
+        // Send request to relayer with exponential backoff for 429 errors
+        let mut retry_count = 0;
+        let max_retries = 2;
+        let mut last_response: Option<reqwest::Response> = None;
         
-        let mut mac = HmacSha256::new_from_slice(&secret_bytes)
-            .context("Failed to create HMAC from API secret")?;
-        mac.update(message.as_bytes());
-        let signature = hex::encode(mac.finalize().into_bytes());
+        while retry_count < max_retries {
+            // Generate fresh timestamp and signature for each retry
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                .to_string();
+            
+            // Try the format used in the status check: METHOD + URL + TIMESTAMP [+ BODY]
+            // Correct signature message format: TIMESTAMP + METHOD + PATH + BODY
+            let message = format!("{}{}{}{}", timestamp, "POST", "/submit", body_string);
+            
+            let mut mac = HmacSha256::new_from_slice(&secret_bytes)
+                .context("Failed to create HMAC from API secret")?;
+            mac.update(message.as_bytes());
+            // Polymarket Relayer requires Base64-URL encoded signature
+            let signature = {
+                use base64::engine::general_purpose;
+                use base64::Engine;
+                general_purpose::URL_SAFE.encode(mac.finalize().into_bytes())
+            };
+            
+            let proxy_wallet = self.proxy_wallet_address.as_deref().unwrap_or("").to_lowercase();
+            let response = self.client
+                .post(relayer_url)
+                .header("User-Agent", "polymarket-trading-bot/1.0")
+                .header("POLY_BUILDER_API_KEY", api_key)
+                .header("POLY_BUILDER_TIMESTAMP", &timestamp)
+                .header("POLY_BUILDER_PASSPHRASE", api_passphrase)
+                .header("POLY_BUILDER_SIGNATURE", &signature)
+                .header("POLY_PROXY_WALLET", &proxy_wallet)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .body(body_string.clone())
+                .send()
+                .await
+                .context("Failed to send redemption request to relayer")?;
+            
+            if response.status() == 429 {
+                retry_count += 1;
+                let sleep_secs = 2u64.pow(retry_count as u32);
+                eprintln!("   ⚠️  Relayer rate limited (429). Retrying in {} seconds (attempt {}/{})...", sleep_secs, retry_count, max_retries);
+                tokio::time::sleep(tokio::time::Duration::from_secs(sleep_secs)).await;
+                last_response = Some(response);
+                continue;
+            }
+            
+            last_response = Some(response);
+            break;
+        }
         
-        // Send request to relayer
-        // CRITICAL: Use .body() with the exact same body_string used for HMAC
-        // This ensures the request body matches exactly what was signed
-        let response = self.client
-            .post(relayer_url)
-            .header("User-Agent", "polymarket-trading-bot/1.0")
-            .header("POLY_BUILDER_API_KEY", api_key)
-            .header("POLY_BUILDER_TIMESTAMP", &timestamp)
-            .header("POLY_BUILDER_PASSPHRASE", api_passphrase)
-            .header("POLY_BUILDER_SIGNATURE", &signature)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .body(body_string)  // Use the exact same body string used for HMAC
-            .send()
-            .await
-            .context("Failed to send redemption request to relayer")?;
+        let response = last_response.ok_or_else(|| anyhow::anyhow!("No response from relayer after retries"))?;
         
         let status = response.status();
+        
+        if status == 429 {
+            crate::log_println!("   ⚠️  Relayer rate limited (429) - falling back to DIRECT ON-CHAIN redemption");
+            crate::log_println!("   💡 This will use a small amount of POL/MATIC gas");
+            
+            // Try direct on-chain redemption
+            return self.redeem_tokens_onchain(condition_id, &function_selector, &encoded_params).await;
+        }
+
+        // On 401 Unauthorized or 403 Forbidden, fallback to direct on-chain redemption
+        if status == 401 || status == 403 {
+            crate::log_println!("   ⚠️  Relayer returned {} (Auth Error) - falling back to DIRECT ON-CHAIN redemption", status);
+            crate::log_println!("   💡 This will use a small amount of POL/MATIC gas");
+            
+            // Try direct on-chain redemption
+            return self.redeem_tokens_onchain(condition_id, &function_selector, &encoded_params).await;
+        }
+
         let response_text = response.text().await
-            .context("Failed to read relayer response")?;
+            .context("Failed to read relayer response body")?;
         
         eprintln!("   📥 Relayer response status: {}", status);
         eprintln!("   📥 Relayer response: {}", &response_text[..500.min(response_text.len())]);
         
         if !status.is_success() {
-            // Provide detailed error message for 401 Unauthorized
-            if status == 401 {
-                anyhow::bail!(
-                    "Relayer redemption failed: 401 Unauthorized - Invalid Builder API credentials\n\
-                    \n\
-                    This error means your Builder API credentials are incorrect or missing.\n\
-                    \n\
-                    Please verify:\n\
-                    1. You're using Builder API credentials (not User API credentials)\n\
-                    2. Get Builder API credentials from: https://polymarket.com/builder\n\
-                    3. Your config.json has:\n\
-                       - api_key: Your Builder API key\n\
-                       - api_secret: Your Builder API secret (base64-encoded)\n\
-                       - api_passphrase: Your Builder API passphrase\n\
-                    4. The credentials match your Builder Profile exactly\n\
-                    5. Your Builder API credentials were derived with the correct signature_type ({})\n\
-                    \n\
-                    Response: {}",
-                    self.signature_type.unwrap_or(0),
-                    &response_text[..500.min(response_text.len())]
-                );
-            }
-            
             anyhow::bail!(
                 "Relayer redemption failed (status {}): {}",
                 status, &response_text[..200.min(response_text.len())]
@@ -2532,6 +2573,116 @@ impl PolymarketApi {
     /// Uses the same redeemPositions(conditionId, [1,2]) flow as redeem_tokens.
     pub async fn merge_complete_sets(&self, condition_id: &str) -> Result<RedeemResponse> {
         self.redeem_tokens(condition_id, "", "Up+Down (merge complete sets)").await
+    }
+
+    /// Direct on-chain redemption fallback when the Relayer returns 401/403.
+    /// Sends the redeemPositions transaction directly to the Polygon PoS chain,
+    /// paying gas in POL/MATIC. Requires private_key in config.
+    async fn redeem_tokens_onchain(
+        &self,
+        condition_id: &str,
+        function_selector: &[u8],
+        encoded_params: &[u8],
+    ) -> Result<RedeemResponse> {
+        let private_key = self.private_key.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No private key configured - cannot do direct on-chain redemption"))?;
+
+        crate::log_println!("🔗 DIRECT ON-CHAIN REDEMPTION for condition: {}", condition_id);
+        crate::log_println!("   Using Polygon PoS RPC...");
+
+        // Build calldata: function_selector + encoded_params
+        let mut calldata = Vec::with_capacity(function_selector.len() + encoded_params.len());
+        calldata.extend_from_slice(function_selector);
+        calldata.extend_from_slice(encoded_params);
+
+        const CTF_CONTRACT: &str = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+        const POLYGON_RPC: &str = "https://polygon-bor-rpc.publicnode.com";
+
+        // Parse contract address
+        let ctf_address = CTF_CONTRACT.parse::<AlloyAddress>()
+            .context("Failed to parse CTF contract address")?;
+
+        // Create signer from private key
+        let pk_clean = private_key.strip_prefix("0x").unwrap_or(private_key);
+        let signer = LocalSigner::from_str(pk_clean)
+            .context("Failed to create signer from private key")?;
+
+        crate::log_println!("   Signer address: {:#x}", signer.address());
+
+        // Build provider with signer for transaction
+        let provider = ProviderBuilder::new()
+            .wallet(alloy::network::EthereumWallet::from(signer.clone()))
+            .connect(POLYGON_RPC)
+            .await
+            .context("Failed to connect to Polygon RPC")?;
+
+        // Check balance
+        let balance = provider.get_balance(signer.address()).await.unwrap_or_default();
+        let balance_eth = format_units(balance, 18).unwrap_or_else(|_| "0.0".to_string());
+        crate::log_println!("   💰 Wallet Balance: {} POL/MATIC", balance_eth);
+        
+        if balance < U256::from(10000000000000000u64) { // 0.01 POL
+            crate::log_println!("   ⚠️  WARNING: Low balance! You need POL (MATIC) for gas fees.");
+            crate::log_println!("   💡 Please deposit at least 0.1 POL to your proxy wallet: {:#x}", signer.address());
+        }
+
+        // Build transaction request
+        let tx = TransactionRequest::default()
+            .to(ctf_address)
+            .input(Bytes::from(calldata).into());
+
+        crate::log_println!("   📤 Sending transaction to CTF contract...");
+
+        // Send transaction
+        let pending_tx = provider.send_transaction(tx)
+            .await
+            .context("Failed to send on-chain redemption transaction")?;
+
+        let tx_hash = *pending_tx.tx_hash();
+        crate::log_println!("   📨 Transaction sent! Hash: {:#x}", tx_hash);
+        crate::log_println!("   ⏳ Waiting for confirmation...");
+
+        // Wait for receipt with timeout
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(120),
+            pending_tx.get_receipt()
+        ).await {
+            Ok(Ok(receipt)) => {
+                if receipt.status() {
+                    crate::log_println!("   ✅ ON-CHAIN REDEMPTION SUCCESSFUL!");
+                    crate::log_println!("   Transaction hash: {:#x}", tx_hash);
+                    crate::log_println!("   Gas used: {}", receipt.gas_used);
+                    
+                    Ok(RedeemResponse {
+                        success: true,
+                        message: Some(format!("Direct on-chain redemption successful. Tx: {:#x}", tx_hash)),
+                        transaction_hash: Some(format!("{:#x}", tx_hash)),
+                        amount_redeemed: None,
+                    })
+                } else {
+                    eprintln!("   ❌ On-chain transaction REVERTED");
+                    Ok(RedeemResponse {
+                        success: false,
+                        message: Some(format!("On-chain tx reverted. Tx: {:#x}", tx_hash)),
+                        transaction_hash: Some(format!("{:#x}", tx_hash)),
+                        amount_redeemed: None,
+                    })
+                }
+            }
+            Ok(Err(e)) => {
+                eprintln!("   ❌ Failed to get receipt: {}", e);
+                anyhow::bail!("On-chain redemption tx sent ({:#x}) but receipt failed: {}", tx_hash, e)
+            }
+            Err(_) => {
+                eprintln!("   ⏱️  Timeout waiting for on-chain confirmation (120s)");
+                Ok(RedeemResponse {
+                    success: false,
+                    message: Some(format!("On-chain tx sent ({:#x}) but confirmation timeout", tx_hash)),
+                    transaction_hash: Some(format!("{:#x}", tx_hash)),
+                    amount_redeemed: None,
+                })
+            }
+        }
     }
 }
 

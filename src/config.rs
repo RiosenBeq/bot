@@ -58,6 +58,7 @@ pub struct PolymarketConfig {
     /// 2 = GnosisSafe (Gnosis Safe wallet)
     /// If proxy_wallet_address is set, this should be 1 (Proxy)
     pub signature_type: Option<u8>,
+    pub gemini_api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +117,8 @@ pub struct TradingConfig {
     pub dual_limit_price: Option<f64>,
     /// Dual limit-start bot: fixed number of shares per order
     pub dual_limit_shares: Option<f64>,
+    /// Enable Gemini AI trade filtering
+    pub ai_filter_enabled: bool,
 }
 
 impl Default for Config {
@@ -130,6 +133,7 @@ impl Default for Config {
                 private_key: None,
                 proxy_wallet_address: None,
                 signature_type: None,
+                gemini_api_key: None,
             },
             trading: TradingConfig {
                 eth_condition_id: None,
@@ -151,6 +155,7 @@ impl Default for Config {
                 enable_xrp_trading: false, // XRP trading disabled by default
                 dual_limit_price: None,
                 dual_limit_shares: None,
+                ai_filter_enabled: false,
             },
         }
     }

@@ -177,40 +177,20 @@ async fn main() -> Result<()> {
     let (eth_market_data, btc_market_data, solana_market_data, xrp_market_data) = 
         get_or_discover_markets(&api, &config).await?;
     
-    // DISABLED: Pre-approve all conditional tokens at startup using setApprovalForAll
-    // Temporarily disabled - approval functions are disabled throughout the codebase
-    // if !is_simulation {
-    //     eprintln!("");
-    //     eprintln!("═══════════════════════════════════════════════════════════");
-    //     eprintln!("🔐 Pre-approving all conditional tokens for trading...");
-    //     eprintln!("═══════════════════════════════════════════════════════════");
-    //     match api.set_approval_for_all_clob().await {
-    //         Ok(_) => {
-    //             eprintln!("✅ Successfully approved all tokens via setApprovalForAll()");
-    //             eprintln!("   Transaction confirmed - this will prevent allowance errors when selling tokens");
-    //         }
-    //         Err(e) => {
-    //             warn!("⚠️  Failed to pre-approve tokens via setApprovalForAll: {}", e);
-    //             warn!("   Attempting fallback: approving individual tokens...");
-    //             
-    //             // Fallback: Approve individual tokens (ETH Up/Down, BTC Up/Down) with large allowance
-    //             // This triggers SDK auto-approval by placing tiny test sell orders
-    //             match api.approve_individual_tokens(&eth_market_data, &btc_market_data).await {
-    //                 Ok(_) => {
-    //                     eprintln!("✅ Successfully approved individual tokens with large allowance");
-    //                     eprintln!("   This will prevent allowance errors when selling tokens");
-    //                 }
-    //                 Err(fallback_err) => {
-    //                     warn!("⚠️  Failed to approve individual tokens: {}", fallback_err);
-    //                     warn!("   The bot will continue, but you may encounter allowance errors when selling");
-    //                     warn!("   The bot will attempt to approve tokens automatically when needed");
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     eprintln!("═══════════════════════════════════════════════════════════");
-    //     eprintln!("");
-    // }
+    // Pre-approve all conditional tokens at startup using setApprovalForAll
+    if !is_simulation {
+        eprintln!("");
+        eprintln!("═══════════════════════════════════════════════════════════");
+        // Set approval for all conditional tokens (once per run)
+        // This allows the bot to sell any token without individual approvals
+        eprintln!("🔐 Checking/Setting token approvals for CTF Exchange...");
+        match api.set_approval_for_all_clob().await {
+            Ok(_) => eprintln!("   ✅ Approvals verified/set successfully"),
+            Err(e) => warn!("   ⚠️  Failed to set approvals: {} (sell orders might fail)", e),
+        }
+        eprintln!("═══════════════════════════════════════════════════════════");
+        eprintln!("");
+    }
 
     // Initialize components
     let monitor = MarketMonitor::new(
@@ -226,6 +206,7 @@ async fn main() -> Result<()> {
 
     let max_buy_price = config.trading.max_buy_price.unwrap_or(0.95);
     let min_time_remaining = config.trading.min_time_remaining_seconds.unwrap_or(30);
+
     let detector = PriceDetector::new(
         config.trading.trigger_price,
         max_buy_price,
@@ -234,6 +215,17 @@ async fn main() -> Result<()> {
         config.trading.enable_eth_trading,
         config.trading.enable_solana_trading,
     );
+
+    // Initialize Gemini AI Client if API key is provided
+    let mut detector = detector;
+    if let Some(api_key) = config.polymarket.gemini_api_key.as_ref() {
+        eprintln!("🧠 Gemini AI trade filter: ENABLED (Filter: {})", 
+            if config.trading.ai_filter_enabled { "ON" } else { "OFF" });
+        let gemini_client = GeminiClient::new(api_key.clone());
+        detector = detector.with_gemini(gemini_client, config.trading.ai_filter_enabled);
+    } else {
+        eprintln!("🧠 Gemini AI trade filter: DISABLED (No API key found)");
+    }
 
     // Start monitoring
     let detector_arc = Arc::new(detector);
@@ -283,6 +275,25 @@ async fn main() -> Result<()> {
             interval.tick().await;
             if let Err(e) = trader_closure.check_market_closure().await {
                 warn!("Error checking market closure: {}", e);
+            }
+        }
+    });
+
+    // Start a background task to periodically scan portfolio for unredeemed winnings
+    // This acts as a safety net for any missed redemptions
+    let trader_scanner = trader_clone.clone();
+    tokio::spawn(async move {
+        // Immediate startup scan to claim any pending winnings
+        eprintln!("🔍 Startup portfolio scan: checking for unredeemed winnings...");
+        if let Err(e) = trader_scanner.scan_and_redeem_portfolio().await {
+            warn!("Error during startup portfolio scan: {}", e);
+        }
+        
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(300)); // Scan every 5 minutes (was 15)
+        loop {
+            interval.tick().await;
+            if let Err(e) = trader_scanner.scan_and_redeem_portfolio().await {
+                warn!("Error during periodic portfolio scan: {}", e);
             }
         }
     });
@@ -373,6 +384,9 @@ async fn main() -> Result<()> {
         let trader = trader_clone.clone();
         
         async move {
+            // Update latest time remaining in trader (for time-based stop-loss)
+            trader.update_time_remaining(snapshot.time_remaining_seconds).await;
+            
             // Detect all opportunities (BTC Up/Down, ETH Up/Down) so we can buy both ETH Down and BTC Down when both qualify
             let opportunities = detector.detect_opportunities(&snapshot).await;
             if opportunities.is_empty() {

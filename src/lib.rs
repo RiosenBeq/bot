@@ -6,11 +6,13 @@ pub mod models;
 pub mod monitor;
 pub mod simulation;
 pub mod trader;
+pub mod gemini;
 
 // Re-export commonly used types
 pub use api::PolymarketApi;
 pub use config::Config;
 pub use models::TokenPrice;
+pub use gemini::GeminiClient;
 
 // Global file writer for history.toml (initialized by main.rs)
 use std::sync::{Mutex, OnceLock};

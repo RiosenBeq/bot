@@ -385,6 +385,10 @@ async fn main() -> Result<()> {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: false,
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
             if let Some(btc_down) = snapshot.btc_market.down_token.as_ref() {
@@ -397,6 +401,10 @@ async fn main() -> Result<()> {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: false,
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
 
@@ -411,6 +419,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
                 if let Some(eth_down) = snapshot.eth_market.down_token.as_ref() {
@@ -423,6 +435,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
             }
@@ -437,6 +453,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
                 if let Some(solana_down) = snapshot.solana_market.down_token.as_ref() {
@@ -449,6 +469,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
             }
@@ -464,6 +488,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
                 if let Some(xrp_down) = snapshot.xrp_market.down_token.as_ref() {
@@ -476,6 +504,10 @@ async fn main() -> Result<()> {
                         time_remaining_seconds: snapshot.time_remaining_seconds,
                         time_elapsed_seconds,
                         use_market_order: false,
+                        ai_sell_price: None,
+                        ai_stop_loss: None,
+                        ai_reason: None,
+                    ai_confidence: None,
                     });
                 }
             }

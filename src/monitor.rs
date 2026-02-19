@@ -33,6 +33,16 @@ pub struct MarketMonitor {
     simulation_mode: bool,
     price_monitor_file: Option<Arc<tokio::sync::Mutex<std::fs::File>>>, // File for logging price monitoring data in simulation mode
     market_price_files: Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<std::fs::File>>>>>, // Per-market price files
+    price_history: Arc<tokio::sync::Mutex<std::collections::HashMap<String, Vec<f64>>>>, // Last 20 prices per token_id
+}
+
+#[derive(Debug, Clone)]
+pub struct MarketData {
+    pub condition_id: String,
+    pub market_name: String,
+    pub question: String,
+    pub up_token: Option<TokenPrice>,
+    pub down_token: Option<TokenPrice>,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +54,7 @@ pub struct MarketSnapshot {
     pub timestamp: std::time::Instant,
     pub time_remaining_seconds: u64, // Time remaining in the current 15-minute period
     pub period_timestamp: u64, // The 15-minute period timestamp (e.g., 1767796200)
+    pub price_history: std::collections::HashMap<String, Vec<f64>>,
 }
 
 impl MarketMonitor {
@@ -104,6 +115,7 @@ impl MarketMonitor {
             simulation_mode,
             price_monitor_file,
             market_price_files: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            price_history: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         })
     }
 
@@ -608,6 +620,7 @@ impl MarketMonitor {
         let eth_market_data = MarketData {
             condition_id: eth_condition_id,
             market_name: "ETH".to_string(),
+            question: self.eth_market.lock().await.question.clone(),
             up_token: eth_up_price,
             down_token: eth_down_price,
         };
@@ -615,6 +628,7 @@ impl MarketMonitor {
         let btc_market_data = MarketData {
             condition_id: btc_condition_id,
             market_name: "BTC".to_string(),
+            question: self.btc_market.lock().await.question.clone(),
             up_token: btc_up_price,
             down_token: btc_down_price,
         };
@@ -622,15 +636,20 @@ impl MarketMonitor {
         let solana_market_data = MarketData {
             condition_id: solana_condition_id.clone(),
             market_name: "Solana".to_string(),
+            question: self.solana_market.lock().await.question.clone(),
             up_token: solana_up_price,
             down_token: solana_down_price,
         };
         let xrp_market_data = MarketData {
             condition_id: xrp_condition_id.clone(),
             market_name: "XRP".to_string(),
+            question: self.xrp_market.lock().await.question.clone(),
             up_token: xrp_up_price,
             down_token: xrp_down_price,
         };
+
+        // Get price history
+        let price_history = self.price_history.lock().await.clone();
 
         // Use BTC market timestamp as the primary period identifier (all should be the same)
         Ok(MarketSnapshot {
@@ -641,6 +660,7 @@ impl MarketMonitor {
             timestamp: std::time::Instant::now(),
             time_remaining_seconds,
             period_timestamp: btc_market_timestamp, // Use BTC market timestamp as period identifier
+            price_history,
         })
     }
 
@@ -673,11 +693,26 @@ impl MarketMonitor {
         };
 
         if buy_price.is_some() || sell_price.is_some() {
-            Some(TokenPrice {
+            let tp = TokenPrice {
                 token_id: token_id.clone(),
                 bid: buy_price,  // BID = BUY price (what we pay to buy, higher)
                 ask: sell_price, // ASK = SELL price (what we receive when selling, lower)
-            })
+            };
+            
+            // Update price history
+            if let Some(bid) = buy_price {
+                let bid_f64: f64 = bid.to_string().parse().unwrap_or(0.0);
+                if bid_f64 > 0.0 {
+                    let mut history = self.price_history.lock().await;
+                    let entries = history.entry(token_id.clone()).or_insert_with(Vec::new);
+                    entries.push(bid_f64);
+                    if entries.len() > 20 {
+                        entries.remove(0);
+                    }
+                }
+            }
+            
+            Some(tp)
         } else {
             None
         }

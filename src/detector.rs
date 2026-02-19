@@ -3,7 +3,8 @@ use rust_decimal::Decimal;
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
-use log::debug;
+use log::{debug, info};
+use crate::gemini::GeminiClient;
 
 /// Reset state for a token type after a buy-sell cycle
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +35,11 @@ pub struct PriceDetector {
     // Track reset state per token type after successful buy-sell cycles
     // Key: TokenType, Value: ResetState
     reset_states: Arc<Mutex<HashMap<TokenType, ResetState>>>,
+    // Track 5-minute sub-period of last trade (0, 1, or 2)
+    last_trade_sub_period: Arc<Mutex<HashMap<TokenType, u64>>>,
+    // Optional Gemini client for AI filtering
+    gemini_client: Option<GeminiClient>,
+    ai_filter_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -46,9 +52,15 @@ pub struct BuyOpportunity {
     pub time_remaining_seconds: u64,
     pub time_elapsed_seconds: u64, // How many seconds have elapsed in this period
     pub use_market_order: bool, // If true, use market order; if false, use limit order
+    pub ai_sell_price: Option<f64>, // Custom sell price suggested by AI
+    pub ai_stop_loss: Option<f64>,  // Custom stop-loss suggested by AI
+    pub ai_reason: Option<String>,   // Reasoning for the trade parameters
+    pub ai_confidence: Option<u8>,   // AI confidence score (1-10) for dynamic bet sizing
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TokenType {
     BtcUp,
     BtcDown,
@@ -101,7 +113,16 @@ impl PriceDetector {
             current_period_bought: Arc::new(Mutex::new(std::collections::HashSet::new())),
             last_logged_period: Arc::new(tokio::sync::Mutex::new(None)),
             reset_states: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            last_trade_sub_period: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            gemini_client: None,
+            ai_filter_enabled: false,
         }
+    }
+
+    pub fn with_gemini(mut self, client: GeminiClient, enabled: bool) -> Self {
+        self.gemini_client = Some(client);
+        self.ai_filter_enabled = enabled;
+        self
     }
 
     /// Check a single token for opportunity
@@ -113,6 +134,7 @@ impl PriceDetector {
         snapshot: &MarketSnapshot,
         time_elapsed_seconds: u64,
         min_elapsed_seconds: u64,
+        market_question: &str,
     ) -> Option<BuyOpportunity> {
         // Use BID price (what we pay to buy) - return None if bid price is missing
         let bid_price = match token.bid {
@@ -127,6 +149,22 @@ impl PriceDetector {
 
         let time_elapsed_minutes = time_elapsed_seconds / 60;
         let time_remaining_minutes = snapshot.time_remaining_seconds / 60;
+        let current_sub_period = time_elapsed_seconds / 300; // 0-299s=0, 300-599s=1, 600-900s=2
+
+        // Check sub-period cooldown: only one trade per 5-minute sub-period if a cycle just finished
+        {
+            let last_sub_periods = self.last_trade_sub_period.lock().await;
+            if let Some(&last_sub) = last_sub_periods.get(&token_type) {
+                if current_sub_period <= last_sub {
+                    // Still in the same 5-minute sub-period or earlier (shouldn't happen)
+                    if time_elapsed_seconds % 60 == 0 {
+                        eprintln!("⏸️  {}: Waiting for next 5-minute period (current sub-period: {})", 
+                            token_type.display_name(), current_sub_period);
+                    }
+                    return None;
+                }
+            }
+        }
 
         // Check reset state: after a successful buy-sell cycle, require price to drop below trigger_price
         // before allowing another buy. This prevents buying immediately after selling when price only dips slightly.
@@ -228,6 +266,50 @@ impl PriceDetector {
             token_type.display_name(), bid_price, 
             time_elapsed_minutes, snapshot.time_remaining_seconds, expected_profit_at_1_0);
 
+        // --- Gemini AI Filter ---
+        let mut ai_sell_price = None;
+        let mut ai_stop_loss = None;
+        let mut ai_reason = None;
+        let mut ai_confidence: Option<u8> = None;
+
+        if self.ai_filter_enabled {
+            if let Some(ref client) = self.gemini_client {
+                eprintln!("🧠 Consulting Gemini AI for trade confirmation...");
+                let history = snapshot.price_history.get(&token.token_id).map(|h| h.as_slice()).unwrap_or(&[]);
+                match client.analyze_trade(
+                    market_question,
+                    token_type.display_name(),
+                    bid_price,
+                    snapshot.time_remaining_seconds,
+                    history
+                ).await {
+                    Ok((confirm, reason, sell_price, stop_loss, confidence)) => {
+                        eprintln!("🧠 AI Confidence: {}/10 | Reason: {}", confidence, reason);
+                        if !confirm || confidence <= 5 {
+                            eprintln!("🛑 Gemini REJECTED trade (confidence: {}/10): {}", confidence, reason);
+                            return None;
+                        } else {
+                            let bet_label = if confidence >= 8 { "$2.00 (HIGH)" } else { "$1.00 (NORMAL)" };
+                            eprintln!("✅ Gemini CONFIRMED trade (confidence: {}/10 → Bet: {})", confidence, bet_label);
+                            if let Some(sp) = sell_price {
+                                eprintln!("   💰 AI Suggested Sell Price: ${:.6}", sp);
+                            }
+                            if let Some(sl) = stop_loss {
+                                eprintln!("   🛑 AI Suggested Stop-Loss: ${:.6}", sl);
+                            }
+                            ai_sell_price = sell_price;
+                            ai_stop_loss = stop_loss;
+                            ai_reason = Some(reason);
+                            ai_confidence = Some(confidence);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("⚠️  Gemini AI error: {} (skipping filter - allowing trade with default bet)", e);
+                    }
+                }
+            }
+        }
+
         Some(BuyOpportunity {
             condition_id: condition_id.to_string(),
             token_id: token.token_id.clone(),
@@ -236,7 +318,11 @@ impl PriceDetector {
             period_timestamp: snapshot.period_timestamp,
             time_remaining_seconds: snapshot.time_remaining_seconds,
             time_elapsed_seconds,
-            use_market_order: false, // Regular detect_opportunities always uses market orders
+            use_market_order: false, // Regular detect_opportunities always uses limit orders (simulated via market)
+            ai_sell_price,
+            ai_stop_loss,
+            ai_reason,
+            ai_confidence,
         })
     }
 
@@ -264,15 +350,17 @@ impl PriceDetector {
         {
             let mut last_period = self.last_logged_period.lock().await;
             if last_period.is_none() || last_period.unwrap() != snapshot.period_timestamp {
-                eprintln!("🔄 New market (period: {}): {}m elapsed, {}m remaining (buy window: after {}m)", 
-                    snapshot.period_timestamp, time_elapsed_minutes, time_remaining_minutes, self.min_elapsed_minutes);
+                eprintln!("🔄 New market (period: {}): {}m elapsed, {}m remaining (buy window: {})", 
+                    snapshot.period_timestamp, time_elapsed_minutes, time_remaining_minutes, 
+                    if self.min_elapsed_minutes == 0 { "OPEN".to_string() } else { format!("after {}m", self.min_elapsed_minutes) });
                 *last_period = Some(snapshot.period_timestamp);
             }
         }
         
         if time_elapsed_seconds < min_elapsed_seconds && time_elapsed_minutes > 0 && time_elapsed_minutes % 2 == 0 && time_elapsed_seconds % 60 < 2 {
-            eprintln!("⏱️  Monitoring (period: {}): {}m elapsed, {}m remaining (buy window: after {}m)", 
-                snapshot.period_timestamp, time_elapsed_minutes, time_remaining_minutes, self.min_elapsed_minutes);
+            eprintln!("⏱️  Monitoring (period: {}): {}m elapsed, {}m remaining (buy window: {})", 
+                snapshot.period_timestamp, time_elapsed_minutes, time_remaining_minutes,
+                if self.min_elapsed_minutes == 0 { "OPEN".to_string() } else { format!("after {}m", self.min_elapsed_minutes) });
         }
         
         debug!("detect_opportunity: time_elapsed={}s ({}m), remaining={}s, min_required={}s ({}m)", 
@@ -281,26 +369,26 @@ impl PriceDetector {
 
         // Check BTC Up
         if let Some(btc_up) = snapshot.btc_market.up_token.as_ref() {
-            if let Some(opp) = self.check_token(btc_up, TokenType::BtcUp, &snapshot.btc_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+            if let Some(opp) = self.check_token(btc_up, TokenType::BtcUp, &snapshot.btc_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.btc_market.question).await {
                 opportunities.push(opp);
             }
         }
         // Check BTC Down
         if let Some(btc_down) = snapshot.btc_market.down_token.as_ref() {
-            if let Some(opp) = self.check_token(btc_down, TokenType::BtcDown, &snapshot.btc_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+            if let Some(opp) = self.check_token(btc_down, TokenType::BtcDown, &snapshot.btc_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.btc_market.question).await {
                 opportunities.push(opp);
             }
         }
         // Check ETH Up (only if ETH trading is enabled)
         if self.enable_eth_trading {
             if let Some(eth_up) = snapshot.eth_market.up_token.as_ref() {
-                if let Some(opp) = self.check_token(eth_up, TokenType::EthUp, &snapshot.eth_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+                if let Some(opp) = self.check_token(eth_up, TokenType::EthUp, &snapshot.eth_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.eth_market.question).await {
                     opportunities.push(opp);
                 }
             }
             // Check ETH Down
             if let Some(eth_down) = snapshot.eth_market.down_token.as_ref() {
-                if let Some(opp) = self.check_token(eth_down, TokenType::EthDown, &snapshot.eth_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+                if let Some(opp) = self.check_token(eth_down, TokenType::EthDown, &snapshot.eth_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.eth_market.question).await {
                     opportunities.push(opp);
                 }
             }
@@ -308,13 +396,13 @@ impl PriceDetector {
         // Check Solana Up (only if Solana trading is enabled)
         if self.enable_solana_trading {
             if let Some(solana_up) = snapshot.solana_market.up_token.as_ref() {
-                if let Some(opp) = self.check_token(solana_up, TokenType::SolanaUp, &snapshot.solana_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+                if let Some(opp) = self.check_token(solana_up, TokenType::SolanaUp, &snapshot.solana_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.solana_market.question).await {
                     opportunities.push(opp);
                 }
             }
             // Check Solana Down
             if let Some(solana_down) = snapshot.solana_market.down_token.as_ref() {
-                if let Some(opp) = self.check_token(solana_down, TokenType::SolanaDown, &snapshot.solana_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds).await {
+                if let Some(opp) = self.check_token(solana_down, TokenType::SolanaDown, &snapshot.solana_market.condition_id, snapshot, time_elapsed_seconds, min_elapsed_seconds, &snapshot.solana_market.question).await {
                     opportunities.push(opp);
                 }
             }
@@ -378,6 +466,10 @@ impl PriceDetector {
                 time_remaining_seconds: snapshot.time_remaining_seconds,
                 time_elapsed_seconds,
                 use_market_order: true, // Always use market order
+                ai_sell_price: None,
+                ai_stop_loss: None,
+                ai_reason: None,
+                ai_confidence: None,
             });
         }
 
@@ -398,6 +490,10 @@ impl PriceDetector {
                 time_remaining_seconds: snapshot.time_remaining_seconds,
                 time_elapsed_seconds,
                 use_market_order: true, // Always use market order
+                ai_sell_price: None,
+                ai_stop_loss: None,
+                ai_reason: None,
+                ai_confidence: None,
             });
         }
 
@@ -419,6 +515,10 @@ impl PriceDetector {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: true, // Always use market order
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
             if let Some(eth_down) = snapshot.eth_market.down_token.as_ref() {
@@ -437,6 +537,10 @@ impl PriceDetector {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: true, // Always use market order
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
         }
@@ -459,6 +563,10 @@ impl PriceDetector {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: true, // Always use market order
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
             if let Some(solana_down) = snapshot.solana_market.down_token.as_ref() {
@@ -477,6 +585,10 @@ impl PriceDetector {
                     time_remaining_seconds: snapshot.time_remaining_seconds,
                     time_elapsed_seconds,
                     use_market_order: true, // Always use market order
+                    ai_sell_price: None,
+                    ai_stop_loss: None,
+                    ai_reason: None,
+                    ai_confidence: None,
                 });
             }
         }
@@ -511,11 +623,16 @@ impl PriceDetector {
 
     /// Mark that a buy-sell cycle completed for a token type
     /// After this, the price must drop below trigger_price before allowing another buy
-    pub async fn mark_cycle_completed(&self, token_type: TokenType) {
+    pub async fn mark_cycle_completed(&self, token_type: TokenType, time_elapsed_seconds: u64) {
         let mut reset_states = self.reset_states.lock().await;
         reset_states.insert(token_type.clone(), ResetState::NeedsReset);
-        crate::log_println!("🔄 {}: Buy-sell cycle completed. Will require price to drop below ${:.6} before next buy", 
-            token_type.display_name(), self.trigger_price);
+        
+        let current_sub_period = time_elapsed_seconds / 300;
+        let mut last_sub_periods = self.last_trade_sub_period.lock().await;
+        last_sub_periods.insert(token_type.clone(), current_sub_period);
+        
+        crate::log_println!("🔄 {}: Cycle completed. Reset required & 5m cooldown active (Sub-period: {})", 
+            token_type.display_name(), current_sub_period);
     }
 }
 

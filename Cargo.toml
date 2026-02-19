@@ -33,10 +33,6 @@ name = "main_dual_limit_045"
 path = "src/bin/main_dual_limit_045.rs"
 
 [[bin]]
-name = "main_dual_limit_1h"
-path = "src/bin/main_dual_limit_1h.rs"
-
-[[bin]]
 name = "polymarket-arbitrage-bot-limit"
 path = "src/bin/main_limit.rs"
 
