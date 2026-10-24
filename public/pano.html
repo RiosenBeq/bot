@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uzak izleme panosu · NextGen Detector</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/stil.css">
+  <script src="/pano.js" defer></script>
+</head>
+<body>
+  <a class="atlama" href="#icerik">İçeriğe geç</a>
+
+  <header class="ust">
+    <div class="kap ust-ic">
+      <a class="marka" href="/">
+        <img src="/logo.svg" alt="" width="34" height="34">
+        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
+      </a>
+      <div class="ust-sag">
+        <span id="baglanti-hapi" class="hap" hidden></span>
+        <button id="cikis" class="dugme ikincil" type="button" hidden>Çıkış</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Ekran okuyucuya yalnız durum DEĞİŞİNCE söylenir (her tazelemede değil). -->
+  <p id="duyuru" class="gorsel-gizli" role="status" aria-live="polite"></p>
+
+  <main id="icerik" class="kap">
+    <noscript><p class="kart">Pano için tarayıcıda JavaScript açık olmalı.</p></noscript>
+
+    <p id="yukleniyor" class="kart">Yükleniyor...</p>
+
+    <!-- Vercel'de ayar eksikse: ne eksik, nasıl tamamlanır -->
+    <section id="kurulum" class="kart" hidden aria-labelledby="kurulum-baslik">
+      <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
+      <p>Vercel'de şu ayarlar eksik:</p>
+      <ul id="eksik-listesi" class="isaretli"></ul>
+      <ol class="adimlar">
+        <li>Vercel'de projeyi açın. <b>Storage</b> sekmesinden <b>Upstash</b> (Redis) veritabanı oluşturup bu projeye bağlayın.</li>
+        <li><b>Settings → Environment Variables</b> bölümüne iki ayar ekleyin:
+          <code>PANO_SIFRESI</code> (panoya giriş şifresi, en az 10 karakter) ve
+          <code>RAPOR_ANAHTARI</code> (aşağıdaki anahtar).</li>
+        <li><b>Deployments</b> sekmesinde son yayının menüsünden <b>Redeploy</b> deyin.</li>
+      </ol>
+      <p>Önerilen rapor anahtarı (bu tarayıcıda üretildi, hiçbir yere gönderilmedi):</p>
+      <div class="anahtar-kutusu">
+        <code id="onerilen-anahtar"></code>
+        <button id="anahtar-kopyala" class="dugme ikincil" type="button">Kopyala</button>
+      </div>
+      <p class="not">Aynı anahtarı fabrika programında <b>Ayarlar → Uzak izleme panosu</b>
+        bölümündeki <b>Uzak pano anahtarı</b> kutusuna da yazacaksınız.</p>
+    </section>
+
+    <section id="giris" class="kart dar" hidden aria-labelledby="giris-baslik">
+      <h1 id="giris-baslik">Panoya giriş</h1>
+      <form id="giris-formu" class="form" novalidate>
+        <label for="sifre">Pano şifresi</label>
+        <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200">
+        <button id="giris-dugmesi" class="dugme" type="submit">Giriş yap</button>
+        <p id="giris-hatasi" class="hata" role="alert"></p>
+      </form>
+      <p class="not">Şifre, Vercel ayarlarındaki <code>PANO_SIFRESI</code>'dir. Aynı adresten 5 yanlış
+        denemede giriş 5 dakika kilitlenir.</p>
+    </section>
+
+    <div id="pano" class="pano" hidden>
+      <p id="site-uyarisi" class="site-uyarisi" hidden></p>
+
+      <section id="durum-bandi" class="durum-bandi">
+        <h1 id="durum-baslik"></h1>
+        <p id="durum-alt"></p>
+      </section>
+
+      <section id="sorunlar" class="kart sorunlar" hidden aria-labelledby="sorunlar-baslik">
+        <h2 id="sorunlar-baslik">Dikkat gereken sorunlar</h2>
+        <ul id="sorun-listesi"></ul>
+      </section>
+
+      <section class="sayilar" aria-label="Bugünün özeti">
+        <div class="kart sayi-karti" id="kutu-ihlal">
+          <div class="etiket">Bugünkü ihlal</div>
+          <div class="deger sayi" id="sayi-ihlal">-</div>
+          <div class="alt-metin" id="alt-ihlal"></div>
+        </div>
+        <div class="kart sayi-karti" id="kutu-bekleyen">
+          <div class="etiket">İncelenmeyi bekleyen</div>
+          <div class="deger sayi" id="sayi-bekleyen">-</div>
+          <div class="alt-metin" id="alt-bekleyen"></div>
+        </div>
+        <div class="kart sayi-karti" id="kutu-kamera">
+          <div class="etiket">Canlı kamera</div>
+          <div class="deger sayi" id="sayi-kamera">-</div>
+          <div class="alt-metin" id="alt-kamera"></div>
+        </div>
+        <div class="kart sayi-karti" id="kutu-kural">
+          <div class="etiket">Aktif kural</div>
+          <div class="deger sayi" id="sayi-kural">-</div>
+          <div class="alt-metin" id="alt-kural"></div>
+        </div>
+      </section>
+
+      <div class="iki-sutun">
+        <section class="kart" aria-labelledby="kamera-baslik">
+          <div class="kart-basligi"><h2 id="kamera-baslik">Kameralar</h2></div>
+          <ul id="kameralar" class="satirlar"></ul>
+        </section>
+        <section class="kart" aria-labelledby="olay-baslik">
+          <div class="kart-basligi"><h2 id="olay-baslik">Son olaylar</h2><span class="not">fotoğraflar fabrikada kalır</span></div>
+          <ol id="olaylar" class="satirlar"></ol>
+        </section>
+      </div>
+
+      <div class="iki-sutun">
+        <section class="kart" aria-labelledby="saatlik-baslik">
+          <h2 id="saatlik-baslik">Bugün saat saat ihlal</h2>
+          <div id="saatlik" class="saatlik" role="img"></div>
+          <div id="saat-etiketleri" class="saat-etiketleri" aria-hidden="true"></div>
+          <p id="saatlik-ozet" class="not"></p>
+        </section>
+        <section class="kart" aria-labelledby="oge-baslik">
+          <h2 id="oge-baslik">Son 7 gün: ihlal türleri</h2>
+          <ul id="ogeler" class="cubuklar"></ul>
+        </section>
+      </div>
+
+      <section class="kart" aria-labelledby="canli-baslik">
+        <h2 id="canli-baslik">Canlı görüntü</h2>
+        <p id="canli-metni"></p>
+        <a id="fabrika-baglantisi" class="dugme" target="_blank" rel="noopener noreferrer" hidden>Fabrika ekranını aç</a>
+      </section>
+
+      <p id="alt-not" class="alt-not"></p>
+    </div>
+  </main>
+</body>
+</html>

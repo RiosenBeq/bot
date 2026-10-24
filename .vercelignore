@@ -1,0 +1,7 @@
+# Vercel'e yalnız site gider: api/ (işlevler), public/ (sayfalar), vercel.json.
+# Testler ve yerel deneme sunucusu bu bilgisayarda kalır.
+tests/
+yerel_sunucu.py
+__pycache__/
+.pytest_cache/
+.ruff_cache/

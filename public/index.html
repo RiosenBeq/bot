@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NextGen Detector · DALSAN İSG</title>
+  <meta name="description" content="Fabrikadaki kameralarla iş güvenliği için erken uyarı sistemi ve uzak izleme panosu.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/stil.css">
+</head>
+<body>
+  <a class="atlama" href="#icerik">İçeriğe geç</a>
+
+  <header class="ust">
+    <div class="kap ust-ic">
+      <a class="marka" href="/">
+        <img src="/logo.svg" alt="" width="34" height="34">
+        <span><b>NextGen Detector</b><small>DALSAN İSG Görüntü Analiz Sistemi</small></span>
+      </a>
+      <nav class="ust-sag" aria-label="Site">
+        <a class="dugme" href="/pano">İzleme panosu</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="icerik" class="kap">
+    <section class="giris-bolumu">
+      <div>
+        <h1>Fabrikada iş güvenliği için erken uyarı</h1>
+        <p class="ozet">Fabrikadaki kameraların görüntüsünde insanı, forklifti ve tırı tanır.
+          Yasak bölgeye giriş, araç ile yaya arasındaki tehlikeli yakınlık ya da baret ve
+          yeleği eksik kişi gibi durumlarda ekranda ve hoparlörde uyarır; her olayı kanıt
+          fotoğrafıyla kaydeder.</p>
+        <div class="dugmeler">
+          <a class="dugme" href="/pano">İzleme panosunu aç</a>
+          <a class="dugme ikincil" href="#nasil">Nasıl çalışır</a>
+        </div>
+      </div>
+      <div class="kart">
+        <h2>Bir ihlal anında</h2>
+        <ol class="akis">
+          <li><span class="sira">1</span><div><b>Kamera görür</b><span>Kural bölgesine giren kişi ya da araç tanınır ve takip edilir.</span></div></li>
+          <li><span class="sira">2</span><div><b>Kural karar verir</b><span>Bölge, mesafe, hız ve baret/yelek kuralları zaman içinde değerlendirilir; emin olunamayan durum ihlal sayılmaz.</span></div></li>
+          <li><span class="sira">3</span><div><b>Uyarı ve kayıt</b><span>Ekranda bant, hoparlörde Türkçe anons; olay kanıt fotoğrafıyla kaydedilir.</span></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="bolum" aria-labelledby="ne-yapar">
+      <h2 id="ne-yapar">Ne yapar</h2>
+      <div class="ozellikler">
+        <article class="kart">
+          <h3>Bölge ihlali</h3>
+          <p>Yasak alan, yaya yolu, yükleme alanı gibi bölgeler kamera görüntüsünün üzerine çizilir. Kurala aykırı giriş anında uyarı üretir.</p>
+        </article>
+        <article class="kart">
+          <h3>Güvenli mesafe</h3>
+          <p>Zemin kalibrasyonuyla araç ile yaya arasındaki mesafe metre cinsinden ölçülür; sınırın altına inince uyarır.</p>
+        </article>
+        <article class="kart">
+          <h3>Baret ve yelek</h3>
+          <p>KKD zorunlu alandaki kişilerde baret ve yelek kontrol edilir. Sistem emin değilse "belirsiz" der, ihlal yazmaz.</p>
+        </article>
+        <article class="kart">
+          <h3>Araç hızı</h3>
+          <p>Araç sahasında hız sınırını aşan forklift ve araçlar için uyarı verir.</p>
+        </article>
+        <article class="kart">
+          <h3>Sesli anons</h3>
+          <p>Uyarı bilgisayarın hoparlöründen, Bluetooth ya da IP hoparlörden bölüm bölüm Türkçe anonsla duyurulur.</p>
+        </article>
+        <article class="kart">
+          <h3>Kanıt ve rapor</h3>
+          <p>Her olay kanıt fotoğrafıyla kaydedilir, incelenir ve yanlış alarm olarak işaretlenebilir. Dönem raporu PDF ya da CSV olarak alınır.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="bolum" id="nasil" aria-labelledby="nasil-baslik">
+      <h2 id="nasil-baslik">Nasıl çalışır</h2>
+      <div class="ozellikler">
+        <article class="kart">
+          <h3>1 · Mevcut kameralar</h3>
+          <p>Fabrikadaki kameralar ya da kayıt cihazı bağlanır; yeni kamera gerekmez.</p>
+        </article>
+        <article class="kart">
+          <h3>2 · Fabrikadaki bilgisayar</h3>
+          <p>Tanıma, takip ve kural kararı fabrikadaki bilgisayarda yapılır. Görüntü işlenmek için buluta gönderilmez.</p>
+        </article>
+        <article class="kart">
+          <h3>3 · Uzaktan izleme</h3>
+          <p>Program bu siteye her 30 saniyede bir kısa, imzalı bir durum özeti gönderir. Bağlantı yalnız dışarı doğrudur; fabrikada port açılmaz.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="bolum" aria-labelledby="uzak">
+      <h2 id="uzak">Uzaktan izleme panosu</h2>
+      <div class="liste-iki">
+        <div class="kart">
+          <h3 class="basari-baslik">Panoda görünenler</h3>
+          <ul class="isaretli">
+            <li>Sistem çalışıyor mu, analiz yapılıyor mu</li>
+            <li>Hangi kamera canlı, hangisi görüntü vermiyor</li>
+            <li>Bugünkü ihlal sayısı, incelenmeyi bekleyenler</li>
+            <li>Son olayların başlığı, yeri ve saati</li>
+            <li>Fabrikadan haber kesilirse kırmızı uyarı</li>
+          </ul>
+        </div>
+        <div class="kart">
+          <h3 class="tehlike-baslik">Bu siteye hiç gelmeyenler</h3>
+          <ul class="isaretli">
+            <li>Kamera görüntüsü ve video</li>
+            <li>Kanıt fotoğrafları</li>
+            <li>Kamera adresleri, kullanıcı adları, şifreler</li>
+            <li>Kişiyi tanımlayan herhangi bir bilgi</li>
+          </ul>
+        </div>
+      </div>
+      <p class="not">Canlı görüntü bu siteden geçmez: fabrika ekranına uzaktan bakmak için fabrika
+        ağına VPN ya da Tailscale ile bağlanılır.</p>
+      <div class="dugmeler"><a class="dugme" href="/pano">Panoya giriş</a></div>
+    </section>
+
+    <section class="bolum" aria-labelledby="kvkk">
+      <h2 id="kvkk">Kişisel verilerin korunması</h2>
+      <div class="kart">
+        <p>Sistem görüntüyü yalnız iş sağlığı ve güvenliği amacıyla işler. Yüz tanıma yapmaz,
+          kişileri tanımlamaz ve kişi bazlı rapor üretmez; uyarılar bölge ve konum bazlıdır.
+          Kayıtlar belirlenen saklama sürelerinin sonunda kendiliğinden silinir.</p>
+        <p class="not">Ayrıntılar için işyerinizin aydınlatma metnine bakın.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="alt">
+    <div class="kap">DALSAN İSG Görüntü Analiz Sistemi · NextGen Detector</div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# DALSAN deposuyla aynı biçim kuralları (pyproject.toml [tool.ruff]).
+target-version = "py312"
+line-length = 100
+exclude = [".venv"]
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
