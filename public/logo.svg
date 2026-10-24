@@ -1,15 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NextGen Detector">
-  <!-- NextGen Detector logosu: tespit çerçevesi (viewfinder) içinde N monogramı.
-       Çerçeve = görüntü analizi, N = NextGen. Renk geçişi mavi→turkuaz. -->
+  <!-- NextGen Detector logosu ("Keskin Göz", 24.10.2026): tespit çerçevesinin
+       köşeleri içinde keskin uçlu bir göz. Çerçeve = sistemin kişi ve araç
+       etrafına çizdiği tespit kutusu, göz = kameradan gören analiz. Zemin
+       arayüzün vurgu mavisinden koyu laciverde iner, sağ üstte camgöbeği
+       ışık. 24 px ve altında köşesiz sade sürüm kullanılır: logo-kucuk.svg.
+       <img> ile yüklenir: yazı tipi ve dış kaynak yok, harfler yok. Bu
+       açıklamada iki tire yan yana yazılmaz: XML onu bozuk sayar, logo kırılır. -->
   <defs>
-    <linearGradient id="ng" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2563eb"/>
-      <stop offset="1" stop-color="#0d9488"/>
+    <linearGradient id="ngd-zemin" x1="6" y1="2" x2="58" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1A4F"/>
+      <stop offset=".55" stop-color="#2449E0"/>
+      <stop offset="1" stop-color="#3F6DFF"/>
     </linearGradient>
+    <radialGradient id="ngd-isik" cx="47" cy="14" r="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4FE0FF" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#4FE0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ngd-iris" cx="32" cy="32" r="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7CF3FF"/>
+      <stop offset=".7" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </radialGradient>
   </defs>
-  <path d="M22 8h-7a7 7 0 0 0-7 7v7" fill="none" stroke="url(#ng)" stroke-width="5" stroke-linecap="round"/>
-  <path d="M42 8h7a7 7 0 0 1 7 7v7" fill="none" stroke="url(#ng)" stroke-width="5" stroke-linecap="round"/>
-  <path d="M22 56h-7a7 7 0 0 1-7-7v-7" fill="none" stroke="url(#ng)" stroke-width="5" stroke-linecap="round"/>
-  <path d="M42 56h7a7 7 0 0 0 7-7v-7" fill="none" stroke="url(#ng)" stroke-width="5" stroke-linecap="round"/>
-  <path d="M23 43V21l18 22V21" fill="none" stroke="url(#ng)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect width="64" height="64" rx="15" fill="url(#ngd-zemin)"/>
+  <rect width="64" height="64" rx="15" fill="url(#ngd-isik)"/>
+  <rect x=".75" y=".75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="1.5"/>
+  <path d="M11 21v-6a4 4 0 0 1 4-4h6M43 11h6a4 4 0 0 1 4 4v6M53 43v6a4 4 0 0 1-4 4h-6M21 53h-6a4 4 0 0 1-4-4v-6" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M13 32Q22.5 19.5 32 19.5T51 32Q41.5 44.5 32 44.5T13 32Z" fill="#fff" fill-opacity=".1" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="7.6" fill="url(#ngd-iris)"/>
+  <circle cx="32" cy="32" r="3.3" fill="#0B1A4F"/>
+  <circle cx="34.6" cy="29.4" r="1.7" fill="#fff"/>
 </svg>

@@ -254,6 +254,19 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 | Kameralar: "Fabrika bir sonraki raporunda göndermeye başlar" uzun sürüyor | Program rapor aralığı kadar (varsayılan 30 sn) bekler; sürüyorsa programın Ayarlar → Uzak izleme panosu bölümündeki durum satırına bakın |
 | Olaylar: "Fotoğraf alınamadı" | Fotoğraf sitede silinmiş (7 gün, en çok 60) ya da henüz gelmedi; asılları fabrikadaki bilgisayardadır |
 
+### İnternet kesilirse
+
+- **Fabrikadaki sistem etkilenmez.** Tespit, uyarı, anons ve kayıt internet
+  istemez; yalnız bu siteye gönderim durur.
+- **Pano:** gönderme aralığının 3 katı (varsayılan 90 sn) haber alamayınca
+  kırmızıyla "haber yok" der ve son bilinen durumu gösterir.
+- **Bağlantı gelince:** ilk rapor en geç bir aralıkta (varsayılan 30 sn) gelir.
+  Sayılar kesintideki ihlaller dahil eksiksizdir; olay listesi son 20 olaydır.
+  Son 20 ihlalin fotoğrafı rapor başına en çok 5 gelir; varsayılan aralıkla
+  yaklaşık 2 dakikada tamamlanır.
+- **Uzaktan anons:** kesintide panodan istenen anons, bağlantı 2 dakika içinde
+  gelmezse düşer ve çalınmaz (DALSAN `docs/15-UZAKTAN-ERISIM.md` §4.4).
+
 ## Bu bilgisayarda denemek
 
 ```bash

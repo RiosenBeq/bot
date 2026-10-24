@@ -178,3 +178,11 @@ def test_public_disina_cikilamaz(site):
         kod, _, govde = _istek(f"{site}{yol}")
         assert kod == 404, yol
         assert b"PANO_SIFRESI" not in govde
+
+
+def test_bulunamayan_sayfa_404_sayfasini_gosterir(site):
+    """Vercel bulunamayan adreste public/404.html'i verir; yerel sunucu da."""
+    kod, basliklar, govde = _istek(f"{site}/olmayan-bir-sayfa")
+    assert kod == 404
+    assert basliklar["Content-Type"].startswith("text/html")
+    assert b"/logo-kucuk.svg" in govde and b"/logo.svg" in govde

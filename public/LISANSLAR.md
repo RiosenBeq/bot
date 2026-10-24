@@ -17,4 +17,6 @@ Lisans metinleri:
 İkisi de ticari kullanıma, değiştirmeye ve yeniden dağıtıma izin verir; tek
 koşul telif bildiriminin korunmasıdır. Bu dosya o bildirimdir.
 
-Logo (`logo.svg`) NextGen Detector'ın kendi logosudur.
+Logo (`logo.svg`, 32 px ve üstü; `logo-kucuk.svg`, 24 px ve altı ile sekme
+simgesi) NextGen Detector'ın kendi logosudur; fabrika ekranındakilerin aynısıdır
+(DALSAN deposu: `backend/app/web/static/`).

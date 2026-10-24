@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="NextGen Detector">
+  <!-- NextGen Detector logosunun 24 px ve altı için sade sürümü (logo.svg):
+       köşeler küçük boyutta karışır, göz kalın çizilir. Tarayıcı sekmesindeki
+       simge (favicon) ve Teşhis sayfasındaki 20 px'lik motor rozeti bunu kullanır. -->
+  <defs>
+    <linearGradient id="ngdk-zemin" x1="6" y1="2" x2="58" y2="62" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1A4F"/>
+      <stop offset=".55" stop-color="#2449E0"/>
+      <stop offset="1" stop-color="#3F6DFF"/>
+    </linearGradient>
+    <radialGradient id="ngdk-iris" cx="32" cy="32" r="10.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7CF3FF"/>
+      <stop offset=".7" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#0EA5E9"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#ngdk-zemin)"/>
+  <path d="M8 32Q20 15 32 15T56 32Q44 49 32 49T8 32Z" fill="#fff" fill-opacity=".12" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="32" cy="32" r="10.5" fill="url(#ngdk-iris)"/>
+  <circle cx="32" cy="32" r="4.6" fill="#0B1A4F"/>
+</svg>

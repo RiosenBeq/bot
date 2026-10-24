@@ -97,14 +97,15 @@ class YerelIsleyici(_pano.Isleyici):
             hedef = hedef / "index.html"
         if not hedef.is_file() and not hedef.suffix:
             hedef = hedef.with_suffix(".html")  # vercel.json: cleanUrls
+        kod = 200
         if not hedef.is_file():
-            self.yanit(404, {"hata": "yok", "mesaj": "Sayfa bulunamadı."})
-            return
+            # Vercel gibi: bulunamayan sayfada public/404.html, durum 404
+            hedef, kod = PUBLIC / "404.html", 404
         veri = hedef.read_bytes()
         tur = mimetypes.guess_type(hedef.name)[0] or "application/octet-stream"
         if tur.startswith("text/") or tur in ("application/javascript", "image/svg+xml"):
             tur += "; charset=utf-8"
-        self.send_response(200)
+        self.send_response(kod)
         self.send_header("Content-Type", tur)
         self.send_header("Content-Length", str(len(veri)))
         self.send_header("Cache-Control", "no-cache")
