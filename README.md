@@ -92,6 +92,11 @@ Yalnız Python'un standart kütüphanesi ve sade HTML/CSS/JS kullanılır: kurul
 paket, npm, derleme adımı yoktur. Yazı tipi (Inter) ve logo fabrika ekranındakiyle
 aynıdır ve siteyle birlikte gelir (CDN yok).
 
+Görünüm: bilgisayarda laffogato yönetim panelinin Innex düzeni (kenar çubuğu ve
+sayfa kartı, sayı şeridi, tablo, rozetler), telefonda lafmobil'in mobil dili
+(altta yüzen sekme çubuğu, en az 44 px dokunma alanı, çentik ve alt çizgi payı).
+Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
+
 ## Güvenlik
 
 - **İmza:** her rapor `RAPOR_ANAHTARI` ile HMAC-SHA256 imzalanır (başlıklar

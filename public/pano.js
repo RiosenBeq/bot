@@ -1,9 +1,17 @@
 /* Uzak izleme panosu.
 
    /api/durum'u 15 saniyede bir okur (sekme görünürken) ve ekranı çizer.
+   Dört görünüm var (Genel bakış, Kameralar, Olaylar, Sistem); adres
+   çubuğundaki #genel, #kameralar ... hangisinin açık olduğunu söyler, hem
+   masaüstünün kenar çubuğu hem telefonun sekme çubuğu aynı bağlantılardır.
+
    Veri fabrikadan gelir: metinler textContent ile yazılır, innerHTML
    KULLANILMAZ. Saatler her zaman Türkiye saatiyle gösterilir; telefonun
-   saat dilimi farklı olsa da. */
+   saat dilimi farklı olsa da.
+
+   Dört durum (lafmobil add-screen kuralı): yükleniyor, hata (site
+   ulaşılamıyor: son bilinen veri bırakılır, üstte uyarı), boş (henüz rapor
+   yok) ve veri. */
 "use strict";
 
 (function () {
@@ -14,20 +22,31 @@
   // olursa pano son veriden kendisi karar verir.
   const GECIKME_KATSAYISI = 3;
   const SAAT_DILIMI = "Europe/Istanbul";
+  const GENEL_OLAY_SAYISI = 6;
 
-  const KAMERA_DURUMLARI = {
-    online: ["canlı", "basari"],
-    connecting: ["yeniden bağlanıyor", "uyari"],
-    offline: ["bağlantı yok", "tehlike"],
-    pasif: ["pasif", ""],
+  const GORUNUMLER = {
+    genel: ["Genel bakış", "Fabrikadan gelen son durum"],
+    kameralar: ["Kameralar", "Bağlantı durumu ve kare hızı"],
+    olaylar: ["Olaylar", "Son 20 olay, en yenisi üstte"],
+    sistem: ["Sistem", "Program, bağlantı ve canlı görüntü"],
   };
-  const ONEM_SINIFLARI = { critical: "kritik", high: "tehlike", medium: "uyari", low: "" };
+  const KAMERA_DURUMLARI = {
+    online: ["Canlı", "basari"],
+    connecting: ["Yeniden bağlanıyor", "uyari"],
+    offline: ["Bağlantı yok", "tehlike"],
+    pasif: ["Pasif", ""],
+  };
+  const ONEM_ROZETI = { critical: "kritik", high: "tehlike", medium: "uyari", low: "" };
+  const ONEM_KUTUSU = { critical: "gul", high: "gul", medium: "bal", low: "gri" };
 
   const $ = (id) => document.getElementById(id);
   let sonVeri = null;
   let saatFarkiMs = 0; // sunucu saati - bu cihazın saati
   let istekSuruyor = false;
   let sonDuyuru = "";
+  let kameraSuzgeci = "hepsi";
+  let olayTuru = "hepsi";
+  let aktifGorunum = "genel";
 
   // ----------------------------------------------------------- yardımcılar
 
@@ -38,9 +57,19 @@
     return oge;
   }
 
-  function hap(metin, sinif, nokta) {
-    const oge = el("span", "hap" + (sinif ? " " + sinif : ""));
-    if (nokta) oge.appendChild(el("span", "nokta"));
+  function simge(ad, sinif) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "simge" + (sinif ? " " + sinif : ""));
+    svg.setAttribute("aria-hidden", "true");
+    const kullan = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    kullan.setAttribute("href", "#" + ad);
+    svg.appendChild(kullan);
+    return svg;
+  }
+
+  function rozet(metin, sinif, noktali, nabiz) {
+    const oge = el("span", "rozet" + (sinif ? " " + sinif : ""));
+    if (noktali) oge.appendChild(el("span", "nokta" + (nabiz ? " nabiz" : "")));
     oge.appendChild(document.createTextNode(metin));
     return oge;
   }
@@ -84,30 +113,19 @@
     return new Date(iso).toLocaleDateString("tr-TR", { timeZone: SAAT_DILIMI });
   }
 
-  function tarihSaatMetni(iso) {
-    if (!iso) return "";
-    const bugun = gunMetni(new Date(simdiMs()).toISOString());
-    return gunMetni(iso) === bugun ? saatMetni(iso) : gunMetni(iso) + " " + saatMetni(iso);
-  }
-
-  /* Olay listesinin saat sütunu: bugünse yalnız saat; değilse üstte "dün" ya da
-     "23.10", altta saat. Sütun dar: tam tarih başlığın üstüne taşardı. */
-  function zamanOgesi(iso) {
-    const oge = el("time", "saat");
-    if (!iso) {
-      oge.textContent = "-";
-      return oge;
-    }
-    oge.dateTime = iso;
+  /* "bugün" boş, "dün", ya da "21.10" (gunMetni "21.10.2026" verir) */
+  function gunEtiketi(iso) {
     const bugun = gunMetni(new Date(simdiMs()).toISOString());
     const dun = gunMetni(new Date(simdiMs() - 86400000).toISOString());
     const gun = gunMetni(iso);
-    if (gun !== bugun) {
-      // gunMetni "21.10.2026" verir; sütuna gün ve ay sığar ("21.10")
-      oge.appendChild(el("span", "gun", gun === dun ? "dün" : gun.slice(0, 5)));
-    }
-    oge.appendChild(el("span", "", saatMetni(iso)));
-    return oge;
+    if (gun === bugun) return "";
+    return gun === dun ? "dün" : gun.slice(0, 5);
+  }
+
+  function tarihSaatMetni(iso) {
+    if (!iso) return "";
+    const gun = gunEtiketi(iso);
+    return gun ? gun + " " + saatMetni(iso) : saatMetni(iso);
   }
 
   function gecikmeSn(veri) {
@@ -129,14 +147,22 @@
     $("duyuru").textContent = metin;
   }
 
-  // ------------------------------------------------------------- görünüm
+  function fabrikaAdresi(veri) {
+    const adres = veri && veri.fabrika_adresi;
+    return adres && /^https?:\/\//.test(adres) ? adres : "";
+  }
 
-  function goster(bolum) {
-    for (const ad of ["yukleniyor", "kurulum", "giris", "pano"]) {
-      $(ad).hidden = ad !== bolum;
-    }
-    $("cikis").hidden = bolum !== "pano";
-    $("baglanti-hapi").hidden = bolum !== "pano";
+  // ------------------------------------------------------------- ekranlar
+
+  function tekEkranGoster(ad) {
+    $("kabuk").hidden = true;
+    $("tek-ekran").hidden = false;
+    for (const kimlik of ["yukleniyor", "kurulum", "giris"]) $(kimlik).hidden = kimlik !== ad;
+  }
+
+  function panoyuGoster() {
+    $("tek-ekran").hidden = true;
+    $("kabuk").hidden = false;
   }
 
   function siteUyarisi(metin) {
@@ -144,6 +170,38 @@
     kutu.textContent = metin;
     kutu.hidden = !metin;
   }
+
+  // ------------------------------------------------------------ görünüm
+
+  /* Adresteki görünüm; görünüm olmayan bir çapa (ör. "İçeriğe geç" -> #icerik)
+     açık görünümü değiştirmez. */
+  function gorunumAdi() {
+    const ad = location.hash.replace("#", "");
+    return Object.prototype.hasOwnProperty.call(GORUNUMLER, ad) ? ad : null;
+  }
+
+  function gorunumuUygula() {
+    const ad = gorunumAdi() || aktifGorunum;
+    aktifGorunum = ad;
+    for (const kutu of document.querySelectorAll(".gorunum")) {
+      kutu.hidden = kutu.dataset.gorunum !== ad;
+    }
+    for (const bag of document.querySelectorAll(".menu-ogesi[data-gorunum], .sekme")) {
+      if (bag.dataset.gorunum === ad) bag.setAttribute("aria-current", "page");
+      else bag.removeAttribute("aria-current");
+    }
+    const [baslik, aciklama] = GORUNUMLER[ad];
+    $("gorunum-basligi").textContent = baslik;
+    $("gorunum-aciklamasi").textContent = aciklama;
+    $("yol-adi").textContent = baslik;
+    document.title = baslik + " · Uzak izleme panosu";
+  }
+
+  window.addEventListener("hashchange", function () {
+    if (!gorunumAdi()) return;
+    gorunumuUygula();
+    window.scrollTo(0, 0);
+  });
 
   // ------------------------------------------------------------- kurulum
 
@@ -160,12 +218,16 @@
     temizle(liste);
     for (const eksik of eksikler) {
       const satir = el("li");
-      satir.appendChild(el("code", "", eksik.ad));
-      satir.appendChild(document.createTextNode(": " + eksik.neden));
+      const govde = el("div", "satir-govde");
+      govde.appendChild(el("b", "", eksik.ad));
+      satir.appendChild(govde);
+      const rozetler = el("div", "rozetler");
+      rozetler.appendChild(rozet(eksik.neden, "tehlike"));
+      satir.appendChild(rozetler);
       liste.appendChild(satir);
     }
     if (!$("onerilen-anahtar").textContent) $("onerilen-anahtar").textContent = onerilenAnahtar();
-    goster("kurulum");
+    tekEkranGoster("kurulum");
   }
 
   $("anahtar-kopyala").addEventListener("click", async function () {
@@ -184,195 +246,339 @@
     }
   });
 
-  // --------------------------------------------------------------- çizim
+  // ------------------------------------------------- durum bandı ve hap
 
   function durumBandiniCiz(veri) {
     const rapor = veri.rapor;
     const durum = baglantiDurumu(veri);
     const gecikme = gecikmeSn(veri);
     let sinif = "";
+    let ikon = "i-sistem";
     let baslik = "";
     let alt = "";
-    let hapMetni = "";
-    let hapSinifi = "";
+    let hap = rozet("Rapor yok", "", true);
 
     if (durum === "hic") {
       baslik = "Fabrikadan henüz rapor gelmedi";
       alt =
         "Fabrika programında Ayarlar → Uzak izleme panosu bölümüne bu sitenin adresini ve " +
         "rapor anahtarını yazın, sonra sistemi yeniden başlatın.";
-      hapMetni = "Rapor yok";
     } else if (durum === "kapandi") {
+      ikon = "i-saat";
       baslik = "Fabrika programı kapatıldı";
       alt =
         "Program " + tarihSaatMetni(veri.son_rapor) + " saatinde kapatılırken son raporunu " +
         "gönderdi. Yeniden açılınca pano kendiliğinden güncellenir.";
-      hapMetni = "Kapalı";
+      hap = rozet("Kapalı", "", true);
     } else if (durum === "yok") {
       sinif = "tehlike";
+      ikon = "i-kopuk";
       baslik = "Fabrikadan " + sureMetni(gecikme) + " haber yok";
       alt =
-        "Bilgisayar kapanmış, program durmuş ya da internet kesilmiş olabilir. " +
-        (rapor ? "Aşağıdaki bilgiler son rapordan (" + tarihSaatMetni(veri.son_rapor) + ")." : "");
-      hapMetni = "Bağlantı yok";
-      hapSinifi = "tehlike";
+        "Bilgisayar kapanmış, program durmuş ya da internet kesilmiş olabilir." +
+        (rapor ? " Aşağıdaki bilgiler son rapordan (" + tarihSaatMetni(veri.son_rapor) + ")." : "");
+      hap = rozet("Bağlantı yok", "tehlike", true);
     } else {
       const sistem = rapor.sistem;
       if (sistem.analiz === false) {
         sinif = "uyari";
+        ikon = "i-uyari";
         baslik = "Program açık ama analiz çalışmıyor";
       } else if (sistem.hazir === false || sistem.sorunlar.length) {
         sinif = "tehlike";
+        ikon = "i-uyari";
         baslik = "Sistem çalışıyor, dikkat gereken sorun var";
       } else {
         sinif = "basari";
+        ikon = "i-tamam";
         baslik = "Sistem çalışıyor";
       }
       alt = "Son rapor " + sureMetni(gecikme) + " önce geldi.";
-      hapMetni = "Canlı";
-      hapSinifi = "basari";
+      hap = rozet("Canlı", "basari", true, true);
     }
 
-    const bant = $("durum-bandi");
-    bant.className = "durum-bandi" + (sinif ? " " + sinif : "");
+    $("durum-bandi").className = "durum-bandi" + (sinif ? " " + sinif : "");
+    $("durum-simgesi").setAttribute("href", "#" + ikon);
     $("durum-baslik").textContent = baslik;
     $("durum-alt").textContent = alt;
-
-    const ustHap = $("baglanti-hapi");
-    ustHap.className = "hap" + (hapSinifi ? " " + hapSinifi : "");
-    temizle(ustHap);
-    ustHap.appendChild(el("span", "nokta"));
-    ustHap.appendChild(document.createTextNode(hapMetni));
-
+    const eski = $("baglanti-hapi");
+    hap.id = "baglanti-hapi";
+    eski.replaceWith(hap);
+    $("son-rapor").textContent = veri.son_rapor ? "son rapor " + tarihSaatMetni(veri.son_rapor) : "";
     duyur(baslik);
+  }
+
+  // ------------------------------------------------------------- sayılar
+
+  function duneGore(bugun, dun) {
+    if (dun === 0 && bugun === 0) return "dün de ihlal yoktu";
+    if (dun === 0) return "dün ihlal yoktu";
+    return "dün " + sayiMetni(dun);
+  }
+
+  function sayilariCiz(rapor) {
+    const s = rapor.sayilar;
+    $("k-ihlal").textContent = sayiMetni(s.bugun_ihlal);
+    $("k-ihlal-ref").textContent = duneGore(s.bugun_ihlal, s.dun_ihlal);
+    const degisim = $("k-ihlal-degisim");
+    const fark = s.bugun_ihlal - s.dun_ihlal;
+    degisim.hidden = s.dun_ihlal === 0 && s.bugun_ihlal === 0;
+    // Daha az ihlal iyi haber (yeşil), daha çok kötü haber (kırmızı)
+    degisim.className = "degisim " + (fark > 0 ? "kotu" : fark < 0 ? "iyi" : "notr");
+    degisim.textContent = fark > 0 ? "▲ " + fark : fark < 0 ? "▼ " + Math.abs(fark) : "=";
+    degisim.setAttribute("aria-label", fark === 0 ? "dünkü ile aynı" : "düne göre " + fark);
+
+    $("k-bekleyen").textContent = sayiMetni(s.bekleyen);
+    $("k-bekleyen").classList.toggle("dikkat", s.bekleyen > 0);
+    $("k-bekleyen-ref").textContent = s.bekleyen ? "fabrika ekranında incelenir" : "kuyruk boş";
+
+    const pasif = rapor.kameralar.filter((k) => k.durum === "pasif").length;
+    const kopuk = kopukKameraSayisi(rapor);
+    $("k-kamera").textContent = s.kamera_canli + " / " + s.kamera_toplam;
+    $("k-kamera").classList.toggle("dikkat", kopuk > 0);
+    let not = "hepsi görüntü veriyor";
+    if (s.kamera_toplam === 0) not = "henüz kamera eklenmedi";
+    else if (kopuk > 0) not = kopuk + " kamera görüntü vermiyor";
+    else if (pasif > 0) not = pasif + " kamera pasif";
+    $("k-kamera-ref").textContent = not;
+
+    $("k-kural").textContent = sayiMetni(s.aktif_kural);
+    $("k-kural").classList.toggle("dikkat", s.aktif_kural === 0);
+    $("k-kural-ref").textContent = s.aktif_kural ? "uyarı üreten kural" : "kural kurulmadan ihlal üretilmez";
+  }
+
+  function kopukKameraSayisi(rapor) {
+    return rapor.kameralar.filter((k) => k.durum !== "pasif" && k.durum !== "online").length;
+  }
+
+  /* Kenar çubuğu ve sekme çubuğundaki sayaçlar: yalnız iş bekleyen yerde. */
+  function sayaclariCiz(rapor) {
+    const kopuk = rapor ? kopukKameraSayisi(rapor) : 0;
+    const bekleyen = rapor ? rapor.sayilar.bekleyen : 0;
+    for (const sayac of document.querySelectorAll("[data-sayac]")) {
+      const n = sayac.dataset.sayac === "kamera" ? kopuk : bekleyen;
+      sayac.hidden = n === 0;
+      sayac.textContent = n > 99 ? "99+" : String(n);
+      sayac.classList.toggle("dikkat", sayac.dataset.sayac === "kamera" && n > 0);
+    }
   }
 
   function sorunlariCiz(rapor) {
     const sorunlar = rapor ? rapor.sistem.sorunlar : [];
     const liste = $("sorun-listesi");
     temizle(liste);
-    for (const metin of sorunlar) liste.appendChild(el("li", "", metin));
+    for (const metin of sorunlar) {
+      const satir = el("li");
+      satir.appendChild(simge("i-uyari"));
+      satir.appendChild(el("span", "", metin));
+      liste.appendChild(satir);
+    }
     $("sorunlar").hidden = sorunlar.length === 0;
   }
 
-  function duneGore(bugun, dun) {
-    if (dun === 0 && bugun === 0) return "dün de ihlal yoktu";
-    if (dun === 0) return "dün ihlal yoktu";
-    const fark = bugun - dun;
-    if (fark === 0) return "dünkü ile aynı";
-    return "düne göre " + (fark > 0 ? "+" : "-") + Math.abs(fark);
+  // ------------------------------------------------------------ kameralar
+
+  function kameraAyrintisi(k) {
+    if (k.durum === "online" && k.islenen_fps !== null) {
+      return "işlenen " + ondalik(k.islenen_fps) + (k.hedef_fps ? " / " + ondalik(k.hedef_fps) : "") + " kare/sn";
+    }
+    if (k.durum !== "pasif" && k.son_kare_yasi_sn !== null) {
+      return "son görüntü " + sureMetni(k.son_kare_yasi_sn) + " önce";
+    }
+    return "";
   }
 
-  function sayilariCiz(rapor) {
-    const s = rapor.sayilar;
-    $("sayi-ihlal").textContent = sayiMetni(s.bugun_ihlal);
-    $("alt-ihlal").textContent = duneGore(s.bugun_ihlal, s.dun_ihlal);
+  function kameraRozetleri(k) {
+    const kutu = el("div", "rozetler");
+    const [ad, sinif] = KAMERA_DURUMLARI[k.durum] || KAMERA_DURUMLARI.offline;
+    kutu.appendChild(rozet(ad, sinif, true));
+    if (k.yavas) kutu.appendChild(rozet("Yavaş", "uyari"));
+    return kutu;
+  }
 
-    $("sayi-bekleyen").textContent = sayiMetni(s.bekleyen);
-    $("alt-bekleyen").textContent = s.bekleyen ? "fabrika ekranında incelenir" : "kuyruk boş";
-    $("kutu-bekleyen").classList.toggle("dikkat", s.bekleyen > 0);
+  function kameraSatiri(k, ayrintili) {
+    const satir = el("li");
+    const govde = el("div", "satir-govde");
+    govde.appendChild(el("b", "", k.ad));
+    const parcalar = [];
+    if (k.bolum) parcalar.push(k.bolum);
+    if (ayrintili) {
+      const ayrinti = kameraAyrintisi(k);
+      if (ayrinti) parcalar.push(ayrinti);
+    }
+    if (parcalar.length) govde.appendChild(el("span", "", parcalar.join(" · ")));
+    satir.appendChild(govde);
+    satir.appendChild(kameraRozetleri(k));
+    return satir;
+  }
 
-    $("sayi-kamera").textContent = s.kamera_canli + " / " + s.kamera_toplam;
-    // Bilerek pasife alınmış kamera "görüntü vermiyor" sayılmaz
-    const pasif = rapor.kameralar.filter((k) => k.durum === "pasif").length;
-    const kopuk = rapor.kameralar.filter((k) => k.durum !== "pasif" && k.durum !== "online").length;
-    let kameraNotu = "hepsi görüntü veriyor";
-    if (s.kamera_toplam === 0) kameraNotu = "henüz kamera eklenmedi";
-    else if (kopuk > 0) kameraNotu = kopuk + " kamera görüntü vermiyor";
-    else if (pasif > 0) kameraNotu = pasif + " kamera pasif";
-    $("alt-kamera").textContent = kameraNotu;
-    $("kutu-kamera").classList.toggle("dikkat", kopuk > 0);
+  function bosDurum(baslik, metin) {
+    const kutu = el("li", "bos");
+    kutu.appendChild(simge("i-genel", "buyuk"));
+    kutu.appendChild(el("b", "", baslik));
+    if (metin) kutu.appendChild(el("span", "", metin));
+    return kutu;
+  }
 
-    $("sayi-kural").textContent = sayiMetni(s.aktif_kural);
-    $("alt-kural").textContent = s.aktif_kural ? "" : "kural kurulmadan ihlal üretilmez";
-    $("kutu-kural").classList.toggle("dikkat", s.aktif_kural === 0);
+  function kameraSuz(k) {
+    if (kameraSuzgeci === "canli") return k.durum === "online";
+    if (kameraSuzgeci === "sorunlu") return k.durum !== "online" && k.durum !== "pasif";
+    if (kameraSuzgeci === "pasif") return k.durum === "pasif";
+    return true;
   }
 
   function kameralariCiz(rapor) {
-    const liste = $("kameralar");
-    temizle(liste);
-    if (!rapor.kameralar.length) {
-      liste.appendChild(el("li", "bos", "Henüz kamera eklenmedi."));
-      return;
-    }
-    for (const k of rapor.kameralar) {
-      const satir = el("li");
-      const govde = el("div", "satir-govde");
-      govde.appendChild(el("b", "", k.ad));
-      const ayrinti = [];
-      if (k.bolum) ayrinti.push(k.bolum);
-      if (k.durum === "online" && k.islenen_fps !== null) {
-        let hiz = "işlenen " + ondalik(k.islenen_fps);
-        if (k.hedef_fps) hiz += " / " + ondalik(k.hedef_fps);
-        ayrinti.push(hiz + " kare/sn");
-      } else if (k.durum !== "pasif" && k.son_kare_yasi_sn !== null) {
-        ayrinti.push("son görüntü " + sureMetni(k.son_kare_yasi_sn) + " önce");
-      }
-      if (ayrinti.length) govde.appendChild(el("span", "ikincil", ayrinti.join(" · ")));
-      satir.appendChild(govde);
+    const kameralar = rapor.kameralar;
+    // Genel bakış: sorunlu olanlar önde, en çok 5
+    const genel = $("genel-kameralar");
+    temizle(genel);
+    const sira = { offline: 0, connecting: 1, online: 2, pasif: 3 };
+    const sirali = [...kameralar].sort((a, b) => (sira[a.durum] ?? 0) - (sira[b.durum] ?? 0));
+    if (!kameralar.length) genel.appendChild(bosDurum("Henüz kamera eklenmedi", ""));
+    for (const k of sirali.slice(0, 5)) genel.appendChild(kameraSatiri(k, false));
 
-      const haplar = el("div", "haplar");
-      const [ad, sinif] = KAMERA_DURUMLARI[k.durum] || KAMERA_DURUMLARI.offline;
-      haplar.appendChild(hap(ad, sinif, k.durum === "online"));
-      if (k.yavas) haplar.appendChild(hap("yavaş", "uyari"));
-      satir.appendChild(haplar);
-      liste.appendChild(satir);
+    // Süzgeç çiplerinin sayıları
+    const sayilar = {
+      hepsi: kameralar.length,
+      canli: kameralar.filter((k) => k.durum === "online").length,
+      sorunlu: kopukKameraSayisi(rapor),
+      pasif: kameralar.filter((k) => k.durum === "pasif").length,
+    };
+    for (const sayac of document.querySelectorAll("[data-cip]")) {
+      sayac.textContent = String(sayilar[sayac.dataset.cip]);
     }
+
+    const gorunen = kameralar.filter(kameraSuz);
+    const liste = $("kamera-listesi");
+    const tablo = $("kamera-tablosu");
+    temizle(liste);
+    temizle(tablo);
+    if (!gorunen.length) {
+      liste.appendChild(bosDurum("Bu süzgeçte kamera yok", ""));
+      const satir = el("tr");
+      const hucre = el("td", "", "Bu süzgeçte kamera yok.");
+      hucre.colSpan = 5;
+      satir.appendChild(hucre);
+      tablo.appendChild(satir);
+    }
+    for (const k of gorunen) {
+      liste.appendChild(kameraSatiri(k, true));
+
+      const satir = el("tr");
+      const ad = el("td");
+      ad.appendChild(el("b", "", k.ad));
+      if (k.bolum) ad.appendChild(el("span", "alt", k.bolum));
+      satir.appendChild(ad);
+      const durum = el("td");
+      durum.appendChild(kameraRozetleri(k));
+      satir.appendChild(durum);
+      const islenen = k.islenen_fps === null ? "-" : ondalik(k.islenen_fps) + (k.hedef_fps ? " / " + ondalik(k.hedef_fps) : "");
+      satir.appendChild(el("td", "sag sayi", islenen));
+      satir.appendChild(el("td", "sag sayi", ondalik(k.okunan_fps)));
+      satir.appendChild(
+        el("td", "sag sayi", k.son_kare_yasi_sn === null ? "-" : sureMetni(k.son_kare_yasi_sn) + " önce")
+      );
+      tablo.appendChild(satir);
+    }
+  }
+
+  for (const cip of document.querySelectorAll("#kamera-cipleri .cip")) {
+    cip.addEventListener("click", function () {
+      kameraSuzgeci = this.dataset.suzgec;
+      for (const diger of document.querySelectorAll("#kamera-cipleri .cip")) {
+        diger.setAttribute("aria-pressed", String(diger === this));
+      }
+      if (sonVeri && sonVeri.rapor) kameralariCiz(sonVeri.rapor);
+    });
+  }
+
+  // -------------------------------------------------------------- olaylar
+
+  function olaySatiri(o) {
+    const satir = el("li");
+    const sistem = o.tur === "sistem";
+    const kutu = el("span", "ikon-kutu " + (sistem ? "" : ONEM_KUTUSU[o.onem] || "gri"));
+    kutu.appendChild(simge(sistem ? "i-sistem" : o.onem === "critical" ? "i-siren" : "i-uyari"));
+    satir.appendChild(kutu);
+
+    const govde = el("div", "cizelge-govde");
+    govde.appendChild(el("b", "", o.baslik));
+    if (o.yer) govde.appendChild(el("span", "", o.yer));
+    const rozetler = el("div", "rozetler");
+    if (sistem) rozetler.appendChild(rozet("Sistem", "bilgi"));
+    else if (o.onem_adi) rozetler.appendChild(rozet(o.onem_adi, ONEM_ROZETI[o.onem] || ""));
+    if (o.suruyor) rozetler.appendChild(rozet("Sürüyor" + (o.sure ? " · " + o.sure : ""), "uyari"));
+    if (o.durum_adi) rozetler.appendChild(rozet(o.durum_adi, ""));
+    if (rozetler.childNodes.length) govde.appendChild(rozetler);
+    satir.appendChild(govde);
+
+    const zaman = el("time", "cizelge-zaman");
+    if (o.zaman) {
+      zaman.dateTime = o.zaman;
+      zaman.appendChild(el("b", "", saatMetni(o.zaman)));
+      const gun = gunEtiketi(o.zaman);
+      if (gun) zaman.appendChild(el("span", "", gun));
+    } else {
+      zaman.textContent = "-";
+    }
+    satir.appendChild(zaman);
+    return satir;
   }
 
   function olaylariCiz(rapor) {
-    const liste = $("olaylar");
+    const genel = $("genel-olaylar");
+    temizle(genel);
+    if (!rapor.son_olaylar.length) genel.appendChild(bosDurum("Henüz olay yok", ""));
+    for (const o of rapor.son_olaylar.slice(0, GENEL_OLAY_SAYISI)) genel.appendChild(olaySatiri(o));
+
+    const liste = $("olay-cizelgesi");
     temizle(liste);
-    if (!rapor.son_olaylar.length) {
-      liste.appendChild(el("li", "bos", "Henüz olay yok."));
-      return;
-    }
-    for (const o of rapor.son_olaylar) {
-      const satir = el("li", "olay-satiri");
-      satir.appendChild(zamanOgesi(o.zaman));
-
-      const govde = el("div", "satir-govde");
-      govde.appendChild(el("b", "", o.baslik));
-      if (o.yer) govde.appendChild(el("span", "ikincil", o.yer));
-      satir.appendChild(govde);
-
-      const haplar = el("div", "haplar");
-      if (o.tur === "sistem") haplar.appendChild(hap("sistem", "bilgi"));
-      else if (o.onem_adi) haplar.appendChild(hap(o.onem_adi, ONEM_SINIFLARI[o.onem] || ""));
-      if (o.suruyor) haplar.appendChild(hap("sürüyor" + (o.sure ? " · " + o.sure : ""), "uyari"));
-      if (o.durum_adi) haplar.appendChild(hap(o.durum_adi, ""));
-      if (haplar.childNodes.length) satir.appendChild(haplar);
-      liste.appendChild(satir);
-    }
+    const gorunen = rapor.son_olaylar.filter((o) => olayTuru === "hepsi" || o.tur === olayTuru);
+    if (!gorunen.length) liste.appendChild(bosDurum("Bu türde olay yok", "Son 20 olayın içinde"));
+    for (const o of gorunen) liste.appendChild(olaySatiri(o));
   }
 
-  function saatligiCiz(veri) {
-    const degerler = veri.rapor.saatlik;
+  for (const dugme of document.querySelectorAll("#olay-segmenti button")) {
+    dugme.addEventListener("click", function () {
+      olayTuru = this.dataset.tur;
+      for (const diger of document.querySelectorAll("#olay-segmenti button")) {
+        diger.setAttribute("aria-pressed", String(diger === this));
+      }
+      if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
+    });
+  }
+
+  // --------------------------------------------------- grafik ve lejant
+
+  function saatligiCiz(rapor) {
+    const degerler = rapor.saatlik;
     const kutu = $("saatlik");
     const etiketler = $("saat-etiketleri");
     temizle(kutu);
     temizle(etiketler);
     const enCok = Math.max(...degerler);
     const toplam = degerler.reduce((a, b) => a + b, 0);
-    const simdikiSaat = Number(
-      new Date(simdiMs()).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: SAAT_DILIMI })
-    ) % 24;
+    const simdikiSaat =
+      Number(
+        new Date(simdiMs()).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: SAAT_DILIMI })
+      ) % 24;
     degerler.forEach(function (n, saat) {
-      const sutun = el("div", "sutun" + (saat === simdikiSaat ? " simdi" : ""));
+      const sutun = el("div", "sutun" + (n > 0 ? " dolu" : "") + (saat === simdikiSaat ? " simdi" : ""));
       sutun.title = String(saat).padStart(2, "0") + ":00 · " + n + " ihlal";
       const dolgu = el("div", "dolgu");
-      // CSP satır içi stile izin vermez; yükseklik CSSOM ile verilir
-      dolgu.style.height = enCok ? Math.round((n / enCok) * 100) + "%" : "0";
+      // CSP satır içi stile izin vermez; yükseklik CSSOM ile verilir. Boş
+      // saat de ince bir iz bırakır: grafik günün tamamını gösterir.
+      dolgu.style.height = enCok && n ? Math.max(6, Math.round((n / enCok) * 100)) + "%" : "4px";
       sutun.appendChild(dolgu);
       kutu.appendChild(sutun);
       etiketler.appendChild(el("span", "", saat % 6 === 0 ? String(saat).padStart(2, "0") : ""));
     });
-    let ozet = "Bugün henüz ihlal yok.";
+    let ozet = "Bugün henüz ihlal yok";
     if (toplam) {
       const tepe = degerler.indexOf(enCok);
       ozet =
-        "Toplam " + sayiMetni(toplam) + " ihlal · en yoğun " + String(tepe).padStart(2, "0") +
-        ":00 - " + String((tepe + 1) % 24).padStart(2, "0") + ":00 (" + enCok + ")";
+        "Toplam " + sayiMetni(toplam) + " · en yoğun " + String(tepe).padStart(2, "0") + ":00 - " +
+        String((tepe + 1) % 24).padStart(2, "0") + ":00 (" + enCok + ")";
     }
     $("saatlik-ozet").textContent = ozet;
     kutu.setAttribute("aria-label", "Bugün saat saat ihlal. " + ozet);
@@ -382,69 +588,93 @@
     const liste = $("ogeler");
     temizle(liste);
     if (!rapor.ogeler.length) {
-      liste.appendChild(el("li", "bos", "Son 7 günde ihlal yok."));
+      liste.appendChild(bosDurum("Son 7 günde ihlal yok", ""));
       return;
     }
     const enCok = Math.max(...rapor.ogeler.map((o) => o.sayi));
     for (const o of rapor.ogeler) {
       const satir = el("li");
-      const ust = el("div", "ust-satir");
+      const ust = el("div", "ust");
+      ust.appendChild(el("span", "centik"));
       ust.appendChild(el("span", "", o.ad));
-      ust.appendChild(el("b", "sayi", sayiMetni(o.sayi)));
+      ust.appendChild(el("b", "", sayiMetni(o.sayi)));
       satir.appendChild(ust);
-      const yol = el("div", "yol");
-      const dolgu = el("div", "dolgu");
-      dolgu.style.width = enCok ? Math.max(2, Math.round((o.sayi / enCok) * 100)) + "%" : "0";
-      yol.appendChild(dolgu);
-      satir.appendChild(yol);
+      const iz = el("span", "iz");
+      const dolgu = el("i");
+      dolgu.style.width = enCok ? Math.max(3, Math.round((o.sayi / enCok) * 100)) + "%" : "0";
+      iz.appendChild(dolgu);
+      satir.appendChild(iz);
       liste.appendChild(satir);
     }
   }
 
-  function canliyiCiz(veri) {
-    const baglanti = $("fabrika-baglantisi");
-    if (veri.fabrika_adresi && /^https?:\/\//.test(veri.fabrika_adresi)) {
-      baglanti.href = veri.fabrika_adresi;
-      baglanti.hidden = false;
-      $("canli-metni").textContent =
-        "Canlı görüntü bu siteden geçmez; düğme doğrudan fabrikadaki bilgisayarın ekranını " +
-        "açar. Yalnız fabrika ağına VPN ya da Tailscale ile bağlıyken çalışır ve fabrika " +
-        "ekranının şifresini sorar.";
-    } else {
-      baglanti.hidden = true;
-      $("canli-metni").textContent =
-        "Canlı görüntü bu siteden geçmez (KVKK). Fabrika dışından izlemek için fabrika " +
-        "bilgisayarına VPN ya da Tailscale ile bağlanılır. Bağlantı kurulunca adresi " +
-        "Vercel'de FABRIKA_ADRESI olarak tanımlarsanız burada bir düğme çıkar.";
-    }
+  // ---------------------------------------------------------------- sistem
+
+  function evetHayir(deger) {
+    return deger === true ? "Evet" : deger === false ? "Hayır" : "Bilinmiyor";
   }
 
-  function altNotuCiz(veri) {
+  function sistemiCiz(veri) {
     const r = veri.rapor;
-    const parcalar = [];
-    if (r && r.program.ad) parcalar.push(r.program.ad + (r.program.surum ? " " + r.program.surum : ""));
-    if (r) parcalar.push("rapor aralığı " + r.aralik_sn + " sn");
-    if (veri.son_rapor) parcalar.push("son rapor " + tarihSaatMetni(veri.son_rapor));
-    $("alt-not").textContent = parcalar.join(" · ");
+    const satirlar = [
+      ["Bağlantı", { canli: "Canlı", yok: "Haber yok", kapandi: "Program kapatıldı", hic: "Rapor gelmedi" }[baglantiDurumu(veri)]],
+      ["Son rapor", veri.son_rapor ? tarihSaatMetni(veri.son_rapor) : "-"],
+    ];
+    if (r) {
+      satirlar.push(
+        ["Rapor aralığı", r.aralik_sn + " saniye"],
+        ["Program", (r.program.ad || "-") + (r.program.surum ? " " + r.program.surum : "")],
+        ["Analiz çalışıyor", evetHayir(r.sistem.analiz)],
+        ["Uyarı hazır", evetHayir(r.sistem.hazir)],
+        ["Sesli uyarı kanalı", evetHayir(r.sistem.uyari_garantisi)],
+        ["Boş disk", r.sistem.bos_disk_gb === null ? "-" : ondalik(r.sistem.bos_disk_gb) + " GB"],
+        ["Çalışma süresi", r.sistem.calisma_suresi_sn ? sureMetni(r.sistem.calisma_suresi_sn) : "-"]
+      );
+    }
+    const liste = $("sistem-bilgisi");
+    temizle(liste);
+    for (const [ad, deger] of satirlar) {
+      const satir = el("div");
+      satir.appendChild(el("dt", "", ad));
+      satir.appendChild(el("dd", "", deger));
+      liste.appendChild(satir);
+    }
+
+    const adres = fabrikaAdresi(veri);
+    for (const kimlik of ["fabrika-baglantisi", "fabrika-dugmesi", "kenar-fabrika"]) {
+      const bag = $(kimlik);
+      bag.hidden = !adres;
+      if (adres) bag.href = adres;
+    }
+    $("canli-metni").textContent = adres
+      ? "Canlı görüntü bu siteden geçmez; düğme doğrudan fabrikadaki bilgisayarın ekranını " +
+        "açar. Yalnız fabrika ağına VPN ya da Tailscale ile bağlıyken çalışır ve fabrika " +
+        "ekranının şifresini sorar."
+      : "Canlı görüntü bu siteden geçmez (KVKK). Fabrika dışından izlemek için fabrika " +
+        "bilgisayarına VPN ya da Tailscale ile bağlanılır. Bağlantı kurulunca adresi " +
+        "Vercel'de FABRIKA_ADRESI olarak tanımlarsanız burada bir düğme çıkar.";
   }
+
+  // ------------------------------------------------------------ hepsi
 
   function panoyuCiz(veri) {
     durumBandiniCiz(veri);
     const rapor = veri.rapor;
     sorunlariCiz(rapor);
-    const veriVar = Boolean(rapor);
-    for (const kutu of document.querySelectorAll("#pano .sayilar, #pano .iki-sutun")) {
-      kutu.hidden = !veriVar;
-    }
-    if (veriVar) {
+    sayaclariCiz(rapor);
+    for (const kutu of document.querySelectorAll(".veri")) kutu.hidden = !rapor;
+    if (rapor) {
       sayilariCiz(rapor);
       kameralariCiz(rapor);
       olaylariCiz(rapor);
-      saatligiCiz(veri);
+      saatligiCiz(rapor);
       ogeleriCiz(rapor);
+    } else {
+      for (const kimlik of ["kamera-listesi", "kamera-tablosu", "olay-cizelgesi"]) temizle($(kimlik));
+      $("kamera-listesi").appendChild(bosDurum("Henüz rapor yok", "Fabrikadan ilk rapor gelince görünür"));
+      $("olay-cizelgesi").appendChild(bosDurum("Henüz rapor yok", "Fabrikadan ilk rapor gelince görünür"));
     }
-    canliyiCiz(veri);
-    altNotuCiz(veri);
+    sistemiCiz(veri);
   }
 
   // ----------------------------------------------------------- sunucu
@@ -457,7 +687,7 @@
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
         sonVeri = null;
-        goster("giris");
+        tekEkranGoster("giris");
         $("sifre").focus();
         return;
       }
@@ -473,7 +703,7 @@
       sonVeri = veri;
       siteUyarisi("");
       panoyuCiz(veri);
-      goster("pano");
+      panoyuGoster();
     } catch (hata) {
       hataGoster(
         "Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin; pano son bilinen durumu gösteriyor."
@@ -483,27 +713,38 @@
     }
   }
 
+  /* Hata durumu: veri varsa bırakılır (bayat veri, üstte uyarı); yoksa
+     yükleme kartı hatayı söyler ve tazeleme denemeye devam eder. */
   function hataGoster(metin) {
     if (sonVeri) {
       siteUyarisi(metin);
       durumBandiniCiz(sonVeri);
     } else {
-      $("yukleniyor").textContent = metin;
-      goster("yukleniyor");
+      $("yukleniyor-metni").textContent = metin;
+      tekEkranGoster("yukleniyor");
     }
   }
+
+  // Hata iletisi ve şifre kutusunun kırmızı kenarı birlikte yazılır, birlikte silinir.
+  function girisHatasi(metin) {
+    $("giris-hatasi").textContent = metin;
+    if (metin) $("sifre").setAttribute("aria-invalid", "true");
+    else $("sifre").removeAttribute("aria-invalid");
+  }
+  $("sifre").addEventListener("input", function () {
+    if ($("sifre").hasAttribute("aria-invalid")) girisHatasi("");
+  });
 
   $("giris-formu").addEventListener("submit", async function (olay) {
     olay.preventDefault();
     const sifre = $("sifre").value;
-    const hataKutusu = $("giris-hatasi");
     if (!sifre) {
-      hataKutusu.textContent = "Şifreyi yazın.";
+      girisHatasi("Şifreyi yazın.");
       return;
     }
     const dugme = $("giris-dugmesi");
     dugme.disabled = true;
-    hataKutusu.textContent = "";
+    girisHatasi("");
     try {
       const yanit = await fetch("/api/giris", {
         method: "POST",
@@ -513,36 +754,43 @@
       });
       const veri = await yanit.json().catch(() => ({}));
       if (!yanit.ok) {
-        hataKutusu.textContent = veri.mesaj || "Giriş yapılamadı (HTTP " + yanit.status + ").";
+        girisHatasi(veri.mesaj || "Giriş yapılamadı (HTTP " + yanit.status + ").");
         return;
       }
       $("sifre").value = "";
-      goster("yukleniyor");
+      $("yukleniyor-metni").textContent = "Yükleniyor...";
+      tekEkranGoster("yukleniyor");
       await yukle();
     } catch (hata) {
-      hataKutusu.textContent = "Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin.";
+      girisHatasi("Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin.");
     } finally {
       dugme.disabled = false;
     }
   });
 
-  $("cikis").addEventListener("click", async function () {
-    try {
-      await fetch("/api/cikis", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: "{}",
-      });
-    } finally {
-      sonVeri = null;
-      goster("giris");
-    }
+  for (const dugme of document.querySelectorAll("[data-cikis]")) {
+    dugme.addEventListener("click", async function () {
+      try {
+        await fetch("/api/cikis", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      } finally {
+        sonVeri = null;
+        tekEkranGoster("giris");
+      }
+    });
+  }
+
+  $("yenile").addEventListener("click", function () {
+    yukle();
   });
 
   // Görünmeyen sekme sunucuyu yormaz; sekmeye dönünce hemen tazelenir.
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible") yukle();
+    if (document.visibilityState === "visible" && $("giris").hidden) yukle();
   });
   // Giriş ekranında tazelenmez (yazılan şifre silinmesin); öbür her durumda
   // (pano, kurulum, ilk yüklemede ulaşılamayan site) tazelenir.
@@ -551,8 +799,9 @@
   }, TAZELEME_MS);
   // "12 saniye önce" ve bağlantı durumu istek arasında da ilerler
   setInterval(function () {
-    if (sonVeri && !$("pano").hidden) durumBandiniCiz(sonVeri);
+    if (sonVeri && !$("kabuk").hidden) durumBandiniCiz(sonVeri);
   }, GORECELI_MS);
 
+  gorunumuUygula();
   yukle();
 })();

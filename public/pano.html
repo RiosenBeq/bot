@@ -2,7 +2,8 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>Uzak izleme panosu · NextGen Detector</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="/logo.svg" type="image/svg+xml">
@@ -10,130 +11,261 @@
   <script src="/pano.js" defer></script>
 </head>
 <body>
+  <svg class="gorsel-gizli" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><symbol id="i-genel" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/> <rect width="7" height="5" x="14" y="3" rx="1"/> <rect width="7" height="9" x="14" y="12" rx="1"/> <rect width="7" height="5" x="3" y="16" rx="1"/></symbol><symbol id="i-kamera" viewBox="0 0 24 24"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/> <path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/> <path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/> <path d="M2 21v-4"/> <path d="M7 9h.01"/></symbol><symbol id="i-olay" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol><symbol id="i-ekran" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/> <line x1="8" x2="16" y1="21" y2="21"/> <line x1="12" x2="12" y1="17" y2="21"/></symbol><symbol id="i-cikis" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"/> <path d="M21 12H9"/> <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></symbol><symbol id="i-ana" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/> <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol><symbol id="i-uyari" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/> <path d="M12 9v4"/> <path d="M12 17h.01"/></symbol><symbol id="i-tamam" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m16 9-5.5 5.5L8 12"/></symbol><symbol id="i-hata" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m15 9-6 6"/> <path d="m9 9 6 6"/></symbol><symbol id="i-sistem" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-kural" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/> <path d="M12 8v4"/> <path d="M12 16h.01"/></symbol><symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/> <path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/> <path d="M21 12h1"/> <path d="M18.5 4.5 18 5"/> <path d="M2 12h1"/> <path d="M12 2v1"/> <path d="m4.929 4.929.707.707"/> <path d="M12 12v6"/></symbol><symbol id="i-inceleme" viewBox="0 0 24 24"><path d="m8 11 2 2 4-4"/> <circle cx="11" cy="11" r="8"/> <path d="m21 21-4.3-4.3"/></symbol><symbol id="i-kopuk" viewBox="0 0 24 24"><path d="M12 20h.01"/> <path d="M8.5 16.429a5 5 0 0 1 7 0"/> <path d="M5 12.859a10 10 0 0 1 5.17-2.69"/> <path d="M19 12.859a10 10 0 0 0-2.007-1.523"/> <path d="M2 8.82a15 15 0 0 1 4.177-2.643"/> <path d="M22 8.82a15 15 0 0 0-11.288-3.764"/> <path d="m2 2 20 20"/></symbol><symbol id="i-kilavuz" viewBox="0 0 24 24"><path d="M12 5v16"/> <path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol><symbol id="i-yenile" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol><symbol id="i-dis" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol><symbol id="i-ileri" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol><symbol id="i-saat" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol><symbol id="i-kilit" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-yasak" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="M4.929 4.929 19.07 19.071"/></symbol><symbol id="i-mesafe" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/> <path d="M4 7h16"/> <path d="m16 21 4-4-4-4"/> <path d="M20 17H4"/></symbol><symbol id="i-kkd" viewBox="0 0 24 24"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/> <path d="M14 6a6 6 0 0 1 6 6v3"/> <path d="M4 15v-3a6 6 0 0 1 6-6"/> <rect x="2" y="15" width="20" height="4" rx="1"/></symbol><symbol id="i-hiz" viewBox="0 0 24 24"><path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-anons" viewBox="0 0 24 24"><path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/> <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"/> <path d="M8 6v8"/></symbol><symbol id="i-rapor" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/> <path d="M14 2v5a1 1 0 0 0 1 1h5"/> <path d="M10 9H8"/> <path d="M16 13H8"/> <path d="M16 17H8"/></symbol></svg>
   <a class="atlama" href="#icerik">İçeriğe geç</a>
-
-  <header class="ust">
-    <div class="kap ust-ic">
-      <a class="marka" href="/">
-        <img src="/logo.svg" alt="" width="34" height="34">
-        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
-      </a>
-      <div class="ust-sag">
-        <span id="baglanti-hapi" class="hap" hidden></span>
-        <button id="cikis" class="dugme ikincil" type="button" hidden>Çıkış</button>
-      </div>
-    </div>
-  </header>
 
   <!-- Ekran okuyucuya yalnız durum DEĞİŞİNCE söylenir (her tazelemede değil). -->
   <p id="duyuru" class="gorsel-gizli" role="status" aria-live="polite"></p>
 
-  <main id="icerik" class="kap">
-    <noscript><p class="kart">Pano için tarayıcıda JavaScript açık olmalı.</p></noscript>
-
-    <p id="yukleniyor" class="kart">Yükleniyor...</p>
-
-    <!-- Vercel'de ayar eksikse: ne eksik, nasıl tamamlanır -->
-    <section id="kurulum" class="kart" hidden aria-labelledby="kurulum-baslik">
-      <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
-      <p>Vercel'de şu ayarlar eksik:</p>
-      <ul id="eksik-listesi" class="isaretli"></ul>
-      <ol class="adimlar">
-        <li>Vercel'de projeyi açın. <b>Storage</b> sekmesinden <b>Upstash</b> (Redis) veritabanı oluşturup bu projeye bağlayın.</li>
-        <li><b>Settings → Environment Variables</b> bölümüne iki ayar ekleyin:
-          <code>PANO_SIFRESI</code> (panoya giriş şifresi, en az 10 karakter) ve
-          <code>RAPOR_ANAHTARI</code> (aşağıdaki anahtar).</li>
-        <li><b>Deployments</b> sekmesinde son yayının menüsünden <b>Redeploy</b> deyin.</li>
-      </ol>
-      <p>Önerilen rapor anahtarı (bu tarayıcıda üretildi, hiçbir yere gönderilmedi):</p>
-      <div class="anahtar-kutusu">
-        <code id="onerilen-anahtar"></code>
-        <button id="anahtar-kopyala" class="dugme ikincil" type="button">Kopyala</button>
-      </div>
-      <p class="not">Aynı anahtarı fabrika programında <b>Ayarlar → Uzak izleme panosu</b>
-        bölümündeki <b>Uzak pano anahtarı</b> kutusuna da yazacaksınız.</p>
+  <!-- Tek kartlık ekranlar: yükleniyor, kurulum eksik, giriş (Innex kayıt kartı) -->
+  <main id="tek-ekran" class="tek-ekran">
+    <section id="yukleniyor" class="tek-kart" aria-busy="true">
+      <a class="logo-satiri" href="/">
+        <img src="/logo.svg" alt="" width="32" height="32">
+        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
+      </a>
+      <p id="yukleniyor-metni" class="ikincil-metin">Yükleniyor...</p>
     </section>
 
-    <section id="giris" class="kart dar" hidden aria-labelledby="giris-baslik">
-      <h1 id="giris-baslik">Panoya giriş</h1>
+    <section id="kurulum" class="tek-kart genis" hidden aria-labelledby="kurulum-baslik">
+      <a class="logo-satiri" href="/">
+        <img src="/logo.svg" alt="" width="32" height="32">
+        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
+      </a>
+      <div>
+        <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
+        <p class="aciklama">Vercel'de şu ayarlar eksik:</p>
+      </div>
+      <ul id="eksik-listesi" class="satirlar"></ul>
+      <ol class="adimlar">
+        <li><span>Vercel'de projeyi açın. <b>Storage</b> sekmesinden <b>Upstash</b> (Redis) veritabanı oluşturup bu projeye bağlayın.</span></li>
+        <li><span><b>Settings → Environment Variables</b> bölümüne iki ayar ekleyin: <code>PANO_SIFRESI</code> (panoya giriş şifresi, en az 10 karakter) ve <code>RAPOR_ANAHTARI</code> (aşağıdaki anahtar).</span></li>
+        <li><span><b>Deployments</b> sekmesinde son yayının menüsünden <b>Redeploy</b> deyin.</span></li>
+      </ol>
+      <div>
+        <p class="not">Önerilen rapor anahtarı (bu tarayıcıda üretildi, hiçbir yere gönderilmedi):</p>
+        <div class="anahtar-kutusu">
+          <code id="onerilen-anahtar"></code>
+          <button id="anahtar-kopyala" class="dugme ikincil" type="button">Kopyala</button>
+        </div>
+      </div>
+      <p class="not">Aynı anahtarı fabrika programında <b>Ayarlar → Uzak izleme panosu</b> bölümündeki <b>Uzak pano anahtarı</b> kutusuna da yazacaksınız.</p>
+    </section>
+
+    <section id="giris" class="tek-kart" hidden aria-labelledby="giris-baslik">
+      <a class="logo-satiri" href="/">
+        <img src="/logo.svg" alt="" width="32" height="32">
+        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
+      </a>
+      <div>
+        <h1 id="giris-baslik">Panoya giriş</h1>
+        <p class="aciklama">Fabrikadaki sistemin durumunu buradan izlersiniz.</p>
+      </div>
       <form id="giris-formu" class="form" novalidate>
         <label for="sifre">Pano şifresi</label>
-        <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200">
-        <button id="giris-dugmesi" class="dugme" type="submit">Giriş yap</button>
+        <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200" placeholder="Şifrenizi yazın" aria-describedby="giris-hatasi">
         <p id="giris-hatasi" class="hata" role="alert"></p>
+        <button id="giris-dugmesi" class="dugme birincil tam" type="submit">Giriş yap <svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>
       </form>
-      <p class="not">Şifre, Vercel ayarlarındaki <code>PANO_SIFRESI</code>'dir. Aynı adresten 5 yanlış
-        denemede giriş 5 dakika kilitlenir.</p>
+      <p class="not">Şifre, Vercel ayarlarındaki <code>PANO_SIFRESI</code>'dir. Aynı adresten 5 yanlış denemede giriş 5 dakika kilitlenir.</p>
     </section>
-
-    <div id="pano" class="pano" hidden>
-      <p id="site-uyarisi" class="site-uyarisi" hidden></p>
-
-      <section id="durum-bandi" class="durum-bandi">
-        <h1 id="durum-baslik"></h1>
-        <p id="durum-alt"></p>
-      </section>
-
-      <section id="sorunlar" class="kart sorunlar" hidden aria-labelledby="sorunlar-baslik">
-        <h2 id="sorunlar-baslik">Dikkat gereken sorunlar</h2>
-        <ul id="sorun-listesi"></ul>
-      </section>
-
-      <section class="sayilar" aria-label="Bugünün özeti">
-        <div class="kart sayi-karti" id="kutu-ihlal">
-          <div class="etiket">Bugünkü ihlal</div>
-          <div class="deger sayi" id="sayi-ihlal">-</div>
-          <div class="alt-metin" id="alt-ihlal"></div>
-        </div>
-        <div class="kart sayi-karti" id="kutu-bekleyen">
-          <div class="etiket">İncelenmeyi bekleyen</div>
-          <div class="deger sayi" id="sayi-bekleyen">-</div>
-          <div class="alt-metin" id="alt-bekleyen"></div>
-        </div>
-        <div class="kart sayi-karti" id="kutu-kamera">
-          <div class="etiket">Canlı kamera</div>
-          <div class="deger sayi" id="sayi-kamera">-</div>
-          <div class="alt-metin" id="alt-kamera"></div>
-        </div>
-        <div class="kart sayi-karti" id="kutu-kural">
-          <div class="etiket">Aktif kural</div>
-          <div class="deger sayi" id="sayi-kural">-</div>
-          <div class="alt-metin" id="alt-kural"></div>
-        </div>
-      </section>
-
-      <div class="iki-sutun">
-        <section class="kart" aria-labelledby="kamera-baslik">
-          <div class="kart-basligi"><h2 id="kamera-baslik">Kameralar</h2></div>
-          <ul id="kameralar" class="satirlar"></ul>
-        </section>
-        <section class="kart" aria-labelledby="olay-baslik">
-          <div class="kart-basligi"><h2 id="olay-baslik">Son olaylar</h2><span class="not">fotoğraflar fabrikada kalır</span></div>
-          <ol id="olaylar" class="satirlar"></ol>
-        </section>
-      </div>
-
-      <div class="iki-sutun">
-        <section class="kart" aria-labelledby="saatlik-baslik">
-          <h2 id="saatlik-baslik">Bugün saat saat ihlal</h2>
-          <div id="saatlik" class="saatlik" role="img"></div>
-          <div id="saat-etiketleri" class="saat-etiketleri" aria-hidden="true"></div>
-          <p id="saatlik-ozet" class="not"></p>
-        </section>
-        <section class="kart" aria-labelledby="oge-baslik">
-          <h2 id="oge-baslik">Son 7 gün: ihlal türleri</h2>
-          <ul id="ogeler" class="cubuklar"></ul>
-        </section>
-      </div>
-
-      <section class="kart" aria-labelledby="canli-baslik">
-        <h2 id="canli-baslik">Canlı görüntü</h2>
-        <p id="canli-metni"></p>
-        <a id="fabrika-baglantisi" class="dugme" target="_blank" rel="noopener noreferrer" hidden>Fabrika ekranını aç</a>
-      </section>
-
-      <p id="alt-not" class="alt-not"></p>
-    </div>
   </main>
+
+  <!-- Pano: masaüstünde kenar çubuğu + sayfa kartı (Innex), telefonda beyaz
+       sayfa + yüzen cam sekme çubuğu (lafmobil). -->
+  <div id="kabuk" class="kabuk" hidden>
+    <aside class="kenar">
+      <a class="logo-satiri" href="/">
+        <img src="/logo.svg" alt="" width="32" height="32">
+        <span><b>NextGen Detector</b><small>DALSAN İSG · Uzak izleme</small></span>
+      </a>
+      <nav aria-label="Ana menü">
+        <p class="grup-basligi">İZLEME</p>
+        <a class="menu-ogesi" href="#genel" data-gorunum="genel"><svg class="simge" aria-hidden="true"><use href="#i-genel"/></svg>Genel bakış</a>
+        <a class="menu-ogesi" href="#kameralar" data-gorunum="kameralar"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg>Kameralar<span class="sayac" data-sayac="kamera" hidden></span></a>
+        <a class="menu-ogesi" href="#olaylar" data-gorunum="olaylar"><svg class="simge" aria-hidden="true"><use href="#i-olay"/></svg>Olaylar<span class="sayac" data-sayac="olay" hidden></span></a>
+        <p class="grup-basligi">FABRİKA</p>
+        <a class="menu-ogesi" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg>Sistem</a>
+        <a class="menu-ogesi" id="kenar-fabrika" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrika ekranı<svg class="simge" aria-hidden="true"><use href="#i-dis"/></svg></a>
+      </nav>
+      <div class="kenar-alt">
+        <a class="menu-ogesi" href="/"><svg class="simge" aria-hidden="true"><use href="#i-ana"/></svg>Tanıtım sayfası</a>
+        <button class="menu-ogesi" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
+      </div>
+    </aside>
+
+    <div class="sayfa-karti">
+      <header class="ust-cubuk">
+        <a class="mobil-logo" href="/"><img src="/logo.svg" alt="" width="26" height="26">NextGen Detector</a>
+        <div class="yol"><span>Uzak izleme</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg><b id="yol-adi">Genel bakış</b></div>
+        <div class="ust-sag">
+          <span id="son-rapor" class="not saat"></span>
+          <span id="baglanti-hapi" class="rozet"></span>
+        </div>
+      </header>
+
+      <div class="baslik-seridi">
+        <div>
+          <h1 id="gorunum-basligi">Genel bakış</h1>
+          <p id="gorunum-aciklamasi"></p>
+        </div>
+        <div class="baslik-eylemleri">
+          <button id="yenile" class="dugme ikincil" type="button" aria-label="Yenile"><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg><span class="metinli">Yenile</span></button>
+          <a id="fabrika-dugmesi" class="dugme birincil" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg><span class="metinli">Fabrika ekranı</span></a>
+        </div>
+      </div>
+
+      <main id="icerik" class="icerik">
+        <p id="site-uyarisi" class="site-uyarisi" hidden></p>
+
+        <section id="durum-bandi" class="durum-bandi" aria-labelledby="durum-baslik">
+          <span class="ikon-kutu"><svg class="simge buyuk" aria-hidden="true"><use id="durum-simgesi" href="#i-sistem"/></svg></span>
+          <div>
+            <h2 id="durum-baslik"></h2>
+            <p id="durum-alt"></p>
+          </div>
+        </section>
+
+        <!-- GENEL BAKIŞ -->
+        <div class="gorunum" data-gorunum="genel">
+          <section id="sorunlar" class="kart sorunlar" hidden aria-labelledby="sorunlar-baslik">
+            <div class="kart-basligi"><h2 id="sorunlar-baslik">Dikkat gereken sorunlar</h2></div>
+            <ul id="sorun-listesi"></ul>
+          </section>
+
+          <section class="kpi veri" aria-label="Bugünün özeti">
+            <div class="kpi-hucre">
+              <span class="kpi-etiket"><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-siren"/></svg></span>Bugünkü ihlal</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-ihlal">-</span><span class="degisim notr" id="k-ihlal-degisim" hidden></span></span>
+              <span class="kpi-referans" id="k-ihlal-ref"></span>
+            </div>
+            <div class="kpi-hucre">
+              <span class="kpi-etiket"><span class="ikon-kutu bal"><svg class="simge" aria-hidden="true"><use href="#i-inceleme"/></svg></span>İncelenmeyi bekleyen</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-bekleyen">-</span></span>
+              <span class="kpi-referans" id="k-bekleyen-ref"></span>
+            </div>
+            <div class="kpi-hucre">
+              <span class="kpi-etiket"><span class="ikon-kutu"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg></span>Canlı kamera</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-kamera">-</span></span>
+              <span class="kpi-referans" id="k-kamera-ref"></span>
+            </div>
+            <div class="kpi-hucre">
+              <span class="kpi-etiket"><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-kural"/></svg></span>Aktif kural</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-kural">-</span></span>
+              <span class="kpi-referans" id="k-kural-ref"></span>
+            </div>
+          </section>
+
+          <div class="izgara-23 veri">
+            <div class="sutun">
+              <section class="kart" aria-labelledby="saatlik-baslik">
+                <div class="kart-basligi">
+                  <div><h2 id="saatlik-baslik">Bugün saat saat ihlal</h2><p id="saatlik-ozet"></p></div>
+                </div>
+                <div id="saatlik" class="saatlik" role="img"></div>
+                <div id="saat-etiketleri" class="saat-etiketleri" aria-hidden="true"></div>
+              </section>
+              <section class="kart" aria-labelledby="genel-olay-baslik">
+                <div class="kart-basligi">
+                  <div><h2 id="genel-olay-baslik">Son olaylar</h2><p>Fotoğraflar fabrikada kalır</p></div>
+                </div>
+                <ul id="genel-olaylar" class="cizelge"></ul>
+                <div class="kart-alt"><a class="bag" href="#olaylar">Tüm olaylar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
+              </section>
+            </div>
+            <div class="sutun">
+              <section class="kart" aria-labelledby="genel-kamera-baslik">
+                <div class="kart-basligi"><h2 id="genel-kamera-baslik">Kameralar</h2></div>
+                <ul id="genel-kameralar" class="satirlar"></ul>
+                <div class="kart-alt"><a class="bag" href="#kameralar">Tüm kameralar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
+              </section>
+              <section class="kart" aria-labelledby="oge-baslik">
+                <div class="kart-basligi"><div><h2 id="oge-baslik">İhlal türleri</h2><p>Son 7 gün</p></div></div>
+                <ul id="ogeler" class="lejant"></ul>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <!-- KAMERALAR -->
+        <div class="gorunum" data-gorunum="kameralar" hidden>
+          <div class="araclar">
+            <div class="cipler" id="kamera-cipleri" role="group" aria-label="Kamera süzgeci">
+              <button class="cip" type="button" data-suzgec="hepsi" aria-pressed="true">Tümü <span class="sayac" data-cip="hepsi">0</span></button>
+              <button class="cip" type="button" data-suzgec="canli" aria-pressed="false">Canlı <span class="sayac" data-cip="canli">0</span></button>
+              <button class="cip" type="button" data-suzgec="sorunlu" aria-pressed="false">Sorunlu <span class="sayac" data-cip="sorunlu">0</span></button>
+              <button class="cip" type="button" data-suzgec="pasif" aria-pressed="false">Pasif <span class="sayac" data-cip="pasif">0</span></button>
+            </div>
+          </div>
+          <div class="tablo-kap mobil-gizle">
+            <table class="tablo">
+              <thead><tr><th>Kamera</th><th>Durum</th><th class="sag">İşlenen kare</th><th class="sag">Okunan kare</th><th class="sag">Son görüntü</th></tr></thead>
+              <tbody id="kamera-tablosu"></tbody>
+            </table>
+          </div>
+          <section class="kart yalniz-mobil" aria-label="Kameralar">
+            <ul id="kamera-listesi" class="satirlar"></ul>
+          </section>
+          <p class="not">Kare hızları saniyedeki karedir: "işlenen" analizin yetiştirdiği, "okunan" kameranın gönderdiği.</p>
+        </div>
+
+        <!-- OLAYLAR -->
+        <div class="gorunum" data-gorunum="olaylar" hidden>
+          <div class="araclar">
+            <div class="segment" id="olay-segmenti" role="group" aria-label="Olay türü">
+              <button type="button" data-tur="hepsi" aria-pressed="true">Tümü</button>
+              <button type="button" data-tur="ihlal" aria-pressed="false">İhlal</button>
+              <button type="button" data-tur="sistem" aria-pressed="false">Sistem</button>
+            </div>
+          </div>
+          <section class="kart" aria-label="Olay listesi">
+            <ul id="olay-cizelgesi" class="cizelge"></ul>
+          </section>
+          <p class="not">Son 20 olay. Kanıt fotoğrafları ve ayrıntılar fabrikadaki bilgisayarda kalır.</p>
+        </div>
+
+        <!-- SİSTEM -->
+        <div class="gorunum" data-gorunum="sistem" hidden>
+          <div class="izgara-23">
+            <div class="sutun">
+              <section class="kart" aria-labelledby="sistem-baslik">
+                <div class="kart-basligi"><h2 id="sistem-baslik">Bağlantı ve program</h2></div>
+                <dl id="sistem-bilgisi" class="ozellikler-listesi"></dl>
+              </section>
+              <section class="kart" aria-labelledby="canli-baslik">
+                <div class="kart-basligi"><h2 id="canli-baslik">Canlı görüntü</h2></div>
+                <p id="canli-metni" class="ikincil-metin"></p>
+                <div class="dugmeler"><a id="fabrika-baglantisi" class="dugme birincil" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrika ekranını aç</a></div>
+              </section>
+            </div>
+            <div class="sutun">
+              <section class="kart" aria-labelledby="gizlilik-baslik">
+                <div class="kart-basligi"><h2 id="gizlilik-baslik">Bu siteye hiç gelmeyenler</h2></div>
+                <ul class="gizlilik-listesi">
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kamera görüntüsü ve video</li>
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kanıt fotoğrafları</li>
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kamera adresleri ve şifreler</li>
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kişiyi tanımlayan bilgi</li>
+                </ul>
+              </section>
+              <section class="kart yalniz-mobil" aria-label="Hesap">
+                <div class="dugmeler">
+                  <a class="dugme ikincil" href="/"><svg class="simge" aria-hidden="true"><use href="#i-ana"/></svg>Tanıtım sayfası</a>
+                  <button class="dugme ikincil" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <nav class="sekme-cubugu" aria-label="Sekmeler">
+      <a class="sekme" href="#genel" data-gorunum="genel"><svg class="simge" aria-hidden="true"><use href="#i-genel"/></svg><span>Özet</span></a>
+      <a class="sekme" href="#kameralar" data-gorunum="kameralar"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg><span>Kameralar</span><span class="sayac" data-sayac="kamera" hidden></span></a>
+      <a class="sekme" href="#olaylar" data-gorunum="olaylar"><svg class="simge" aria-hidden="true"><use href="#i-olay"/></svg><span>Olaylar</span><span class="sayac" data-sayac="olay" hidden></span></a>
+      <a class="sekme" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg><span>Sistem</span></a>
+    </nav>
+  </div>
 </body>
 </html>

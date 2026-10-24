@@ -2,7 +2,8 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>NextGen Detector · DALSAN İSG</title>
   <meta name="description" content="Fabrikadaki kameralarla iş güvenliği için erken uyarı sistemi ve uzak izleme panosu.">
   <meta name="robots" content="noindex, nofollow">
@@ -10,132 +11,98 @@
   <link rel="stylesheet" href="/stil.css">
 </head>
 <body>
+  <svg class="gorsel-gizli" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><symbol id="i-genel" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/> <rect width="7" height="5" x="14" y="3" rx="1"/> <rect width="7" height="9" x="14" y="12" rx="1"/> <rect width="7" height="5" x="3" y="16" rx="1"/></symbol><symbol id="i-kamera" viewBox="0 0 24 24"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/> <path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/> <path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/> <path d="M2 21v-4"/> <path d="M7 9h.01"/></symbol><symbol id="i-olay" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol><symbol id="i-ekran" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/> <line x1="8" x2="16" y1="21" y2="21"/> <line x1="12" x2="12" y1="17" y2="21"/></symbol><symbol id="i-cikis" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"/> <path d="M21 12H9"/> <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></symbol><symbol id="i-ana" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/> <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol><symbol id="i-uyari" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/> <path d="M12 9v4"/> <path d="M12 17h.01"/></symbol><symbol id="i-tamam" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m16 9-5.5 5.5L8 12"/></symbol><symbol id="i-hata" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m15 9-6 6"/> <path d="m9 9 6 6"/></symbol><symbol id="i-sistem" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-kural" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/> <path d="M12 8v4"/> <path d="M12 16h.01"/></symbol><symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/> <path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/> <path d="M21 12h1"/> <path d="M18.5 4.5 18 5"/> <path d="M2 12h1"/> <path d="M12 2v1"/> <path d="m4.929 4.929.707.707"/> <path d="M12 12v6"/></symbol><symbol id="i-inceleme" viewBox="0 0 24 24"><path d="m8 11 2 2 4-4"/> <circle cx="11" cy="11" r="8"/> <path d="m21 21-4.3-4.3"/></symbol><symbol id="i-kopuk" viewBox="0 0 24 24"><path d="M12 20h.01"/> <path d="M8.5 16.429a5 5 0 0 1 7 0"/> <path d="M5 12.859a10 10 0 0 1 5.17-2.69"/> <path d="M19 12.859a10 10 0 0 0-2.007-1.523"/> <path d="M2 8.82a15 15 0 0 1 4.177-2.643"/> <path d="M22 8.82a15 15 0 0 0-11.288-3.764"/> <path d="m2 2 20 20"/></symbol><symbol id="i-kilavuz" viewBox="0 0 24 24"><path d="M12 5v16"/> <path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol><symbol id="i-yenile" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol><symbol id="i-dis" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol><symbol id="i-ileri" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol><symbol id="i-saat" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol><symbol id="i-kilit" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-yasak" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="M4.929 4.929 19.07 19.071"/></symbol><symbol id="i-mesafe" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/> <path d="M4 7h16"/> <path d="m16 21 4-4-4-4"/> <path d="M20 17H4"/></symbol><symbol id="i-kkd" viewBox="0 0 24 24"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/> <path d="M14 6a6 6 0 0 1 6 6v3"/> <path d="M4 15v-3a6 6 0 0 1 6-6"/> <rect x="2" y="15" width="20" height="4" rx="1"/></symbol><symbol id="i-hiz" viewBox="0 0 24 24"><path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-anons" viewBox="0 0 24 24"><path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/> <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"/> <path d="M8 6v8"/></symbol><symbol id="i-rapor" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/> <path d="M14 2v5a1 1 0 0 0 1 1h5"/> <path d="M10 9H8"/> <path d="M16 13H8"/> <path d="M16 17H8"/></symbol></svg>
   <a class="atlama" href="#icerik">İçeriğe geç</a>
 
-  <header class="ust">
-    <div class="kap ust-ic">
-      <a class="marka" href="/">
-        <img src="/logo.svg" alt="" width="34" height="34">
-        <span><b>NextGen Detector</b><small>DALSAN İSG Görüntü Analiz Sistemi</small></span>
-      </a>
-      <nav class="ust-sag" aria-label="Site">
-        <a class="dugme" href="/pano">İzleme panosu</a>
-      </nav>
-    </div>
+  <header class="site-ust">
+    <a class="logo-satiri" href="/">
+      <img src="/logo.svg" alt="" width="32" height="32">
+      <span><b>NextGen Detector</b><small>DALSAN İSG Görüntü Analiz Sistemi</small></span>
+    </a>
+    <a class="dugme birincil" href="/pano"><svg class="simge" aria-hidden="true"><use href="#i-genel"/></svg>İzleme panosu</a>
   </header>
 
-  <main id="icerik" class="kap">
-    <section class="giris-bolumu">
+  <main id="icerik" class="site-ana">
+    <section class="kahraman">
       <div>
+        <span class="rozet bilgi"><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrikadaki bilgisayarda çalışır</span>
         <h1>Fabrikada iş güvenliği için erken uyarı</h1>
         <p class="ozet">Fabrikadaki kameraların görüntüsünde insanı, forklifti ve tırı tanır.
           Yasak bölgeye giriş, araç ile yaya arasındaki tehlikeli yakınlık ya da baret ve
           yeleği eksik kişi gibi durumlarda ekranda ve hoparlörde uyarır; her olayı kanıt
           fotoğrafıyla kaydeder.</p>
         <div class="dugmeler">
-          <a class="dugme" href="/pano">İzleme panosunu aç</a>
+          <a class="dugme birincil" href="/pano">İzleme panosunu aç<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
           <a class="dugme ikincil" href="#nasil">Nasıl çalışır</a>
         </div>
       </div>
-      <div class="kart">
-        <h2>Bir ihlal anında</h2>
-        <ol class="akis">
-          <li><span class="sira">1</span><div><b>Kamera görür</b><span>Kural bölgesine giren kişi ya da araç tanınır ve takip edilir.</span></div></li>
-          <li><span class="sira">2</span><div><b>Kural karar verir</b><span>Bölge, mesafe, hız ve baret/yelek kuralları zaman içinde değerlendirilir; emin olunamayan durum ihlal sayılmaz.</span></div></li>
-          <li><span class="sira">3</span><div><b>Uyarı ve kayıt</b><span>Ekranda bant, hoparlörde Türkçe anons; olay kanıt fotoğrafıyla kaydedilir.</span></div></li>
-        </ol>
-      </div>
+      <section class="kart" aria-labelledby="ihlal-aninda">
+        <div class="kart-basligi"><h2 id="ihlal-aninda">Bir ihlal anında</h2></div>
+        <ul class="cizelge">
+          <li><span class="ikon-kutu "><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg></span><div class="cizelge-govde"><b>Kamera görür</b><span>Kural bölgesine giren kişi ya da araç tanınır ve takip edilir.</span></div><span></span></li>
+          <li><span class="ikon-kutu bal"><svg class="simge" aria-hidden="true"><use href="#i-kural"/></svg></span><div class="cizelge-govde"><b>Kural karar verir</b><span>Bölge, mesafe, hız ve baret/yelek kuralları zaman içinde değerlendirilir; emin olunamayan durum ihlal sayılmaz.</span></div><span></span></li>
+          <li><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-siren"/></svg></span><div class="cizelge-govde"><b>Uyarı ve kayıt</b><span>Ekranda bant, hoparlörde Türkçe anons; olay kanıt fotoğrafıyla kaydedilir.</span></div><span></span></li>
+        </ul>
+      </section>
     </section>
 
     <section class="bolum" aria-labelledby="ne-yapar">
-      <h2 id="ne-yapar">Ne yapar</h2>
-      <div class="ozellikler">
-        <article class="kart">
-          <h3>Bölge ihlali</h3>
-          <p>Yasak alan, yaya yolu, yükleme alanı gibi bölgeler kamera görüntüsünün üzerine çizilir. Kurala aykırı giriş anında uyarı üretir.</p>
-        </article>
-        <article class="kart">
-          <h3>Güvenli mesafe</h3>
-          <p>Zemin kalibrasyonuyla araç ile yaya arasındaki mesafe metre cinsinden ölçülür; sınırın altına inince uyarır.</p>
-        </article>
-        <article class="kart">
-          <h3>Baret ve yelek</h3>
-          <p>KKD zorunlu alandaki kişilerde baret ve yelek kontrol edilir. Sistem emin değilse "belirsiz" der, ihlal yazmaz.</p>
-        </article>
-        <article class="kart">
-          <h3>Araç hızı</h3>
-          <p>Araç sahasında hız sınırını aşan forklift ve araçlar için uyarı verir.</p>
-        </article>
-        <article class="kart">
-          <h3>Sesli anons</h3>
-          <p>Uyarı bilgisayarın hoparlöründen, Bluetooth ya da IP hoparlörden bölüm bölüm Türkçe anonsla duyurulur.</p>
-        </article>
-        <article class="kart">
-          <h3>Kanıt ve rapor</h3>
-          <p>Her olay kanıt fotoğrafıyla kaydedilir, incelenir ve yanlış alarm olarak işaretlenebilir. Dönem raporu PDF ya da CSV olarak alınır.</p>
-        </article>
+      <div class="bolum-basligi"><h2 id="ne-yapar">Ne yapar</h2><p>Mevcut kameralarla, fabrikadaki bilgisayarda</p></div>
+      <div class="ozellik-izgara">
+        <article class="ozellik"><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-yasak"/></svg></span><h3>Bölge ihlali</h3><p>Yasak alan, yaya yolu, yükleme alanı gibi bölgeler kamera görüntüsünün üzerine çizilir. Kurala aykırı giriş anında uyarı üretir.</p></article>
+        <article class="ozellik"><span class="ikon-kutu "><svg class="simge" aria-hidden="true"><use href="#i-mesafe"/></svg></span><h3>Güvenli mesafe</h3><p>Zemin kalibrasyonuyla araç ile yaya arasındaki mesafe metre cinsinden ölçülür; sınırın altına inince uyarır.</p></article>
+        <article class="ozellik"><span class="ikon-kutu bal"><svg class="simge" aria-hidden="true"><use href="#i-kkd"/></svg></span><h3>Baret ve yelek</h3><p>KKD zorunlu alandaki kişilerde baret ve yelek kontrol edilir. Sistem emin değilse "belirsiz" der, ihlal yazmaz.</p></article>
+        <article class="ozellik"><span class="ikon-kutu mor"><svg class="simge" aria-hidden="true"><use href="#i-hiz"/></svg></span><h3>Araç hızı</h3><p>Araç sahasında hız sınırını aşan forklift ve araçlar için uyarı verir.</p></article>
+        <article class="ozellik"><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg></span><h3>Sesli anons</h3><p>Uyarı bilgisayarın hoparlöründen, Bluetooth ya da IP hoparlörden bölüm bölüm Türkçe anonsla duyurulur.</p></article>
+        <article class="ozellik"><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-rapor"/></svg></span><h3>Kanıt ve rapor</h3><p>Her olay kanıt fotoğrafıyla kaydedilir, incelenir ve yanlış alarm olarak işaretlenebilir. Dönem raporu PDF ya da CSV olarak alınır.</p></article>
       </div>
     </section>
 
     <section class="bolum" id="nasil" aria-labelledby="nasil-baslik">
-      <h2 id="nasil-baslik">Nasıl çalışır</h2>
-      <div class="ozellikler">
-        <article class="kart">
-          <h3>1 · Mevcut kameralar</h3>
-          <p>Fabrikadaki kameralar ya da kayıt cihazı bağlanır; yeni kamera gerekmez.</p>
-        </article>
-        <article class="kart">
-          <h3>2 · Fabrikadaki bilgisayar</h3>
-          <p>Tanıma, takip ve kural kararı fabrikadaki bilgisayarda yapılır. Görüntü işlenmek için buluta gönderilmez.</p>
-        </article>
-        <article class="kart">
-          <h3>3 · Uzaktan izleme</h3>
-          <p>Program bu siteye her 30 saniyede bir kısa, imzalı bir durum özeti gönderir. Bağlantı yalnız dışarı doğrudur; fabrikada port açılmaz.</p>
-        </article>
-      </div>
+      <div class="bolum-basligi"><h2 id="nasil-baslik">Nasıl çalışır</h2><p>Görüntü fabrikadan çıkmaz</p></div>
+      <ol class="adim-gostergesi">
+        <li><b>Mevcut kameralar</b><span>Fabrikadaki kameralar ya da kayıt cihazı bağlanır; yeni kamera gerekmez.</span></li>
+        <li><b>Fabrikadaki bilgisayar</b><span>Tanıma, takip ve kural kararı fabrikadaki bilgisayarda yapılır. Görüntü işlenmek için buluta gönderilmez.</span></li>
+        <li><b>Uzaktan izleme</b><span>Program bu siteye 30 saniyede bir kısa, imzalı bir durum özeti gönderir. Bağlantı yalnız dışarı doğrudur; fabrikada port açılmaz.</span></li>
+      </ol>
     </section>
 
     <section class="bolum" aria-labelledby="uzak">
-      <h2 id="uzak">Uzaktan izleme panosu</h2>
-      <div class="liste-iki">
-        <div class="kart">
-          <h3 class="basari-baslik">Panoda görünenler</h3>
-          <ul class="isaretli">
-            <li>Sistem çalışıyor mu, analiz yapılıyor mu</li>
-            <li>Hangi kamera canlı, hangisi görüntü vermiyor</li>
-            <li>Bugünkü ihlal sayısı, incelenmeyi bekleyenler</li>
-            <li>Son olayların başlığı, yeri ve saati</li>
-            <li>Fabrikadan haber kesilirse kırmızı uyarı</li>
+      <div class="bolum-basligi"><h2 id="uzak">Uzaktan izleme panosu</h2><p>Fabrika dışından, telefondan ya da bilgisayardan</p></div>
+      <div class="iki-kart">
+        <div class="liste-karti">
+          <h3><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Panoda görünenler</h3>
+          <ul class="gizlilik-listesi">
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Sistem çalışıyor mu, analiz yapılıyor mu</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Hangi kamera canlı, hangisi görüntü vermiyor</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Bugünkü ihlal sayısı, incelenmeyi bekleyenler</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Son olayların adı, yeri ve saati</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Fabrikadan haber kesilirse kırmızı uyarı</li>
           </ul>
         </div>
-        <div class="kart">
-          <h3 class="tehlike-baslik">Bu siteye hiç gelmeyenler</h3>
-          <ul class="isaretli">
-            <li>Kamera görüntüsü ve video</li>
-            <li>Kanıt fotoğrafları</li>
-            <li>Kamera adresleri, kullanıcı adları, şifreler</li>
-            <li>Kişiyi tanımlayan herhangi bir bilgi</li>
+        <div class="liste-karti">
+          <h3><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Bu siteye hiç gelmeyenler</h3>
+          <ul class="gizlilik-listesi">
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kamera görüntüsü ve video</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kanıt fotoğrafları</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kamera adresleri, kullanıcı adları, şifreler</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kişiyi tanımlayan herhangi bir bilgi</li>
           </ul>
         </div>
       </div>
-      <p class="not">Canlı görüntü bu siteden geçmez: fabrika ekranına uzaktan bakmak için fabrika
-        ağına VPN ya da Tailscale ile bağlanılır.</p>
-      <div class="dugmeler"><a class="dugme" href="/pano">Panoya giriş</a></div>
+      <p class="not">Canlı görüntü bu siteden geçmez: fabrika ekranına uzaktan bakmak için fabrika ağına VPN ya da Tailscale ile bağlanılır.</p>
+      <div class="dugmeler"><a class="dugme birincil" href="/pano">Panoya giriş<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
     </section>
 
     <section class="bolum" aria-labelledby="kvkk">
-      <h2 id="kvkk">Kişisel verilerin korunması</h2>
-      <div class="kart">
-        <p>Sistem görüntüyü yalnız iş sağlığı ve güvenliği amacıyla işler. Yüz tanıma yapmaz,
-          kişileri tanımlamaz ve kişi bazlı rapor üretmez; uyarılar bölge ve konum bazlıdır.
-          Kayıtlar belirlenen saklama sürelerinin sonunda kendiliğinden silinir.</p>
-        <p class="not">Ayrıntılar için işyerinizin aydınlatma metnine bakın.</p>
-      </div>
+      <div class="bolum-basligi"><h2 id="kvkk">Kişisel verilerin korunması</h2></div>
+      <p class="ikincil-metin">Sistem görüntüyü yalnız iş sağlığı ve güvenliği amacıyla işler. Yüz tanıma yapmaz,
+        kişileri tanımlamaz ve kişi bazlı rapor üretmez; uyarılar bölge ve konum bazlıdır.
+        Kayıtlar belirlenen saklama sürelerinin sonunda kendiliğinden silinir.</p>
+      <p class="not">Ayrıntılar için işyerinizin aydınlatma metnine bakın.</p>
     </section>
   </main>
 
-  <footer class="alt">
-    <div class="kap">DALSAN İSG Görüntü Analiz Sistemi · NextGen Detector</div>
-  </footer>
+  <footer class="site-alt">DALSAN İSG Görüntü Analiz Sistemi · NextGen Detector</footer>
 </body>
 </html>
