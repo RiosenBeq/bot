@@ -2,6 +2,7 @@
 betiğin aradığı öğeler gerçekten vardır, telefon kuralları korunur."""
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -66,3 +67,29 @@ def test_dokunmatikte_44_px():
         css,
     )
     assert "--dokunma: 44px;" in css
+
+
+LOGOLAR = ["logo.svg", "logo-kucuk.svg"]
+
+
+@pytest.mark.parametrize("ad", LOGOLAR)
+def test_logo_gecerli_svg(ad):
+    """Bozuk XML (ör. yorumda iki tire yan yana) logoyu her sayfada kırık resim
+    olarak gösterir: tarayıcı SVG'yi XML olarak ayrıştırır."""
+    kok = ET.parse(PUBLIC / ad).getroot()
+    assert kok.tag == "{http://www.w3.org/2000/svg}svg"
+    assert kok.get("viewBox")
+
+
+@pytest.mark.parametrize("sayfa", SAYFALAR, ids=lambda p: p.name)
+def test_logo_ve_simge_basvurulari_var_olan_dosyayi_gosterir(sayfa):
+    metin = sayfa.read_text(encoding="utf-8")
+    basvurular = re.findall(r'<img\s[^>]*\bsrc="([^"]+)"', metin)
+    basvurular += re.findall(r'<link\s[^>]*\bhref="([^"]+)"', metin)
+    assert basvurular, "sayfada logo ya da simge başvurusu yok"
+    for adres in basvurular:
+        assert adres.startswith("/") and not adres.startswith("//"), adres
+        dosya = PUBLIC / adres.lstrip("/").split("?")[0]
+        assert dosya.is_file(), f"{sayfa.name}: {adres} public/ altında yok"
+    # Sekme simgesi küçük boydur: 24 px ve altı için çizilen sürüm
+    assert re.search(r'<link rel="icon" href="/logo-kucuk.svg"', metin)
