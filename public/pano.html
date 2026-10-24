@@ -85,6 +85,7 @@
         <a class="menu-ogesi" href="#kameralar" data-gorunum="kameralar"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg>Kameralar<span class="sayac" data-sayac="kamera" hidden></span></a>
         <a class="menu-ogesi" href="#olaylar" data-gorunum="olaylar"><svg class="simge" aria-hidden="true"><use href="#i-olay"/></svg>Olaylar<span class="sayac" data-sayac="olay" hidden></span></a>
         <p class="grup-basligi">FABRİKA</p>
+        <a class="menu-ogesi" href="#mudahale" data-gorunum="mudahale"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Müdahale</a>
         <a class="menu-ogesi" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg>Sistem</a>
         <a class="menu-ogesi" id="kenar-fabrika" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrika ekranı<svg class="simge" aria-hidden="true"><use href="#i-dis"/></svg></a>
       </nav>
@@ -133,7 +134,12 @@
             <ul id="sorun-listesi"></ul>
           </section>
 
-          <section class="kpi veri" aria-label="Bugünün özeti">
+          <section id="ozet" class="kart ozet veri" aria-labelledby="ozet-baslik">
+            <div class="kart-basligi"><div><h2 id="ozet-baslik">Bugünün özeti</h2><p id="ozet-alt">Fabrikadan gelen son rapora göre</p></div></div>
+            <ul id="ozet-listesi" class="ozet-listesi"></ul>
+          </section>
+
+          <section class="kpi veri" aria-label="Bugünün sayıları">
             <div class="kpi-hucre">
               <span class="kpi-etiket"><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-siren"/></svg></span>Bugünkü ihlal</span>
               <span class="kpi-satir"><span class="kpi-deger" id="k-ihlal">-</span><span class="degisim notr" id="k-ihlal-degisim" hidden></span></span>
@@ -158,6 +164,15 @@
 
           <div class="izgara-23 veri">
             <div class="sutun">
+              <section id="gunluk-kart" class="kart" aria-labelledby="gunluk-baslik" hidden>
+                <div class="kart-basligi">
+                  <div><h2 id="gunluk-baslik">Son 14 gün</h2><p id="gunluk-ozet"></p></div>
+                  <span id="hafta-degisim" class="degisim notr"></span>
+                </div>
+                <div id="gunluk" class="saatlik gunluk" role="img"></div>
+                <div id="gun-etiketleri" class="saat-etiketleri gunluk" aria-hidden="true"></div>
+                <p id="inceleme-ozeti" class="kart-dipnot"></p>
+              </section>
               <section class="kart" aria-labelledby="saatlik-baslik">
                 <div class="kart-basligi">
                   <div><h2 id="saatlik-baslik">Bugün saat saat ihlal</h2><p id="saatlik-ozet"></p></div>
@@ -178,6 +193,10 @@
                 <div class="kart-basligi"><h2 id="genel-kamera-baslik">Kameralar</h2></div>
                 <ul id="genel-kameralar" class="satirlar"></ul>
                 <div class="kart-alt"><a class="bag" href="#kameralar">Tüm kameralar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
+              </section>
+              <section id="yerler-kart" class="kart" aria-labelledby="yerler-baslik" hidden>
+                <div class="kart-basligi"><div><h2 id="yerler-baslik">En çok ihlal görülen yerler</h2><p>Son 7 gün, kamera başına</p></div></div>
+                <ul id="yerler" class="lejant"></ul>
               </section>
               <section class="kart" aria-labelledby="oge-baslik">
                 <div class="kart-basligi"><div><h2 id="oge-baslik">İhlal türleri</h2><p>Son 7 gün</p></div></div>
@@ -224,6 +243,54 @@
           <p class="not">Son 20 olay. Kanıt fotoğrafları ve ayrıntılar fabrikadaki bilgisayarda kalır.</p>
         </div>
 
+        <!-- MÜDAHALE -->
+        <div class="gorunum" data-gorunum="mudahale" hidden>
+          <section id="mudahale-durumu" class="durum-bandi" aria-live="polite" aria-labelledby="mudahale-baslik">
+            <span class="ikon-kutu"><svg class="simge buyuk" aria-hidden="true"><use id="mudahale-simgesi" href="#i-anons"/></svg></span>
+            <div>
+              <h2 id="mudahale-baslik">Durum okunuyor</h2>
+              <p id="mudahale-alt"></p>
+            </div>
+            <button id="dinlemeyi-surdur" class="dugme ikincil" type="button" hidden>Sürdür</button>
+          </section>
+          <div class="izgara-23">
+            <div class="sutun">
+              <section class="kart" aria-labelledby="anons-baslik">
+                <div class="kart-basligi"><div><h2 id="anons-baslik">Anons yap</h2><p>Fabrikanın Anons sayfasındaki hazır mesajlardan biri çalar</p></div></div>
+                <form id="anons-formu" class="mudahale-formu" novalidate>
+                  <fieldset>
+                    <legend>Mesaj</legend>
+                    <div id="mesaj-secenekleri" class="secim-listesi"></div>
+                  </fieldset>
+                  <label for="anons-kanali">Nereden çalsın</label>
+                  <select id="anons-kanali"></select>
+                  <div id="anons-onayi" class="onay-kutusu" hidden>
+                    <p id="anons-onay-metni"></p>
+                    <div class="dugmeler">
+                      <button id="anons-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="anons-gonder" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Evet, çal</button>
+                    </div>
+                  </div>
+                  <button id="anons-dugmesi" class="dugme birincil tam" type="button"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Anonsu çal</button>
+                  <p id="anons-hatasi" class="hata" role="alert"></p>
+                </form>
+              </section>
+            </div>
+            <div class="sutun">
+              <section class="kart" aria-labelledby="deneme-baslik">
+                <div class="kart-basligi"><div><h2 id="deneme-baslik">Hoparlör denemesi</h2><p>Seçilen kanaldan kısa bir deneme sesi</p></div></div>
+                <ul id="kanal-listesi" class="satirlar"></ul>
+                <p id="deneme-hatasi" class="hata" role="alert"></p>
+              </section>
+              <section class="kart" aria-labelledby="gecmis-baslik">
+                <div class="kart-basligi"><div><h2 id="gecmis-baslik">Son müdahaleler</h2><p>Sonuç fabrikadan gelince kendiliğinden güncellenir</p></div></div>
+                <ul id="komut-listesi" class="cizelge"></ul>
+              </section>
+            </div>
+          </div>
+          <p class="not">Gerçek bir uyarı her zaman önce çalar. Her müdahale fabrikadaki Olaylar'a yazılır ve izleme ekranlarında görünür.</p>
+        </div>
+
         <!-- SİSTEM -->
         <div class="gorunum" data-gorunum="sistem" hidden>
           <div class="izgara-23">
@@ -231,6 +298,11 @@
               <section class="kart" aria-labelledby="sistem-baslik">
                 <div class="kart-basligi"><h2 id="sistem-baslik">Bağlantı ve program</h2></div>
                 <dl id="sistem-bilgisi" class="ozellikler-listesi"></dl>
+              </section>
+              <section class="kart" aria-labelledby="bilgisayar-baslik">
+                <div class="kart-basligi"><div><h2 id="bilgisayar-baslik">Kurulu olduğu bilgisayar</h2><p id="bilgisayar-alt">Programın çalıştığı makine</p></div></div>
+                <dl id="bilgisayar-bilgisi" class="ozellikler-listesi"></dl>
+                <p id="bilgisayar-yok" class="ikincil-metin" hidden>Fabrika programı bu bilgiyi henüz göndermiyor. Programın uzak pano bağlantısı güncellenince burada bilgisayarın adı, işletim sistemi, işlemcisi, belleği ve ekran kartı görünür.</p>
               </section>
               <section class="kart" aria-labelledby="canli-baslik">
                 <div class="kart-basligi"><h2 id="canli-baslik">Canlı görüntü</h2></div>
@@ -264,6 +336,7 @@
       <a class="sekme" href="#genel" data-gorunum="genel"><svg class="simge" aria-hidden="true"><use href="#i-genel"/></svg><span>Özet</span></a>
       <a class="sekme" href="#kameralar" data-gorunum="kameralar"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg><span>Kameralar</span><span class="sayac" data-sayac="kamera" hidden></span></a>
       <a class="sekme" href="#olaylar" data-gorunum="olaylar"><svg class="simge" aria-hidden="true"><use href="#i-olay"/></svg><span>Olaylar</span><span class="sayac" data-sayac="olay" hidden></span></a>
+      <a class="sekme" href="#mudahale" data-gorunum="mudahale"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg><span>Müdahale</span></a>
       <a class="sekme" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg><span>Sistem</span></a>
     </nav>
   </div>

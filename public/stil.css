@@ -731,7 +731,9 @@ time,
 }
 .degisim {
   display: inline-flex;
+  flex: none;
   align-items: center;
+  white-space: nowrap;
   min-height: 20px;
   padding: 0 6px;
   border-radius: 6px;
@@ -962,7 +964,7 @@ time,
   font-size: 14px;
   font-weight: 600;
 }
-.cizelge-govde span {
+.cizelge-govde > span {
   display: block;
   color: var(--metin-3);
   font-size: 13px;
@@ -1117,6 +1119,152 @@ time,
   gap: 10px;
   align-items: center;
   color: var(--metin-2);
+}
+
+/* ------------------------------------------- yönetici özeti ve eğilim */
+.ozet-listesi {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 8px;
+}
+.ozet-listesi li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--kuyu);
+  color: var(--metin);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.ozet-listesi .ikon-kutu {
+  margin-top: -2px;
+}
+.saatlik.gunluk,
+.saat-etiketleri.gunluk {
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+}
+.saat-etiketleri.gunluk span {
+  text-align: center;
+}
+.saat-etiketleri.gunluk span.bugun {
+  color: var(--birincil);
+  font-weight: 600;
+}
+.kart-dipnot {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ayrac);
+  color: var(--metin-3);
+  font-size: 13px;
+}
+.kart-dipnot:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------- müdahale */
+#mudahale-durumu {
+  align-items: center;
+}
+#mudahale-durumu > div {
+  flex: 1;
+  min-width: 0;
+}
+.mudahale-formu {
+  display: grid;
+  gap: 8px;
+}
+.mudahale-formu fieldset {
+  min-width: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+}
+.mudahale-formu legend,
+.mudahale-formu label[for] {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--metin-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mudahale-formu select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--alan-kenari);
+  border-radius: 8px;
+  background: var(--yuzey);
+  color: var(--metin);
+  font: inherit;
+  font-size: 16px; /* telefonda yakınlaştırma olmasın */
+}
+.mudahale-formu .dugme {
+  min-height: 44px;
+  margin-top: 8px;
+}
+.secim-listesi {
+  display: grid;
+  gap: 8px;
+}
+.secim {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--cizgi-guclu);
+  border-radius: 8px;
+  background: var(--yuzey);
+  cursor: pointer;
+}
+.secim input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--birincil);
+}
+.secim:has(input:checked) {
+  border-color: var(--birincil);
+  background: var(--birincil-acik);
+}
+.secim:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.onay-kutusu {
+  padding: 12px;
+  border: 1px solid var(--birincil);
+  border-radius: 8px;
+  background: var(--birincil-acik);
+}
+.onay-kutusu p {
+  font-weight: 500;
+}
+.onay-kutusu .dugmeler {
+  margin-top: 12px;
+}
+.onay-kutusu .dugmeler .dugme {
+  flex: 1;
+  margin-top: 0;
+}
+#kanal-listesi .dugme {
+  flex: none;
+  min-width: 96px;
+}
+.dugme.onayla {
+  background: var(--uyari-acik);
+  border-color: var(--uyari);
+  color: var(--uyari);
+}
+#mudahale-durumu .dugme[disabled],
+.mudahale-formu .dugme[disabled],
+#kanal-listesi .dugme[disabled] {
+  cursor: not-allowed;
 }
 
 /* ----------------------------------------- tek kartlık ekranlar (giriş vb.)

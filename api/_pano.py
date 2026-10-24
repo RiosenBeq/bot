@@ -10,6 +10,12 @@ Akış:
     fabrika programı --(imzalı JSON, 30 sn'de bir)--> /api/rapor --> Redis
     tarayıcı --(şifreyle giriş, oturum çerezi)--> /api/durum <-- Redis
 
+Uzaktan müdahale (anons, hoparlör denemesi) da aynı yönden geçer: pano komutu
+/api/mudahale ile kuyruğa koyar, fabrika programı /api/komut'tan imzalı
+istekle alır ve sonucunu bildirir. Fabrikaya dışarıdan bağlanılmaz; fabrika
+yalnız Müdahale ekranı açıkken birkaç saniyede bir sorar ("Uzaktan müdahale"
+bölümü).
+
 Görüntü bu siteye HİÇ gelmez: rapor yalnız durum, sayı ve olay başlığı taşır
 (README.md "Siteye ne gelir, ne gelmez"). Ayarlar Vercel'in Environment
 Variables ekranından okunur.
@@ -24,10 +30,12 @@ import json
 import math
 import os
 import re
+import secrets
 import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -77,6 +85,35 @@ GECIKME_KATSAYISI = 3
 KAMERA_DURUMLARI = ("online", "connecting", "offline", "pasif")
 ONEMLER = ("critical", "high", "medium", "low")
 OLAY_TURLERI = ("ihlal", "sistem")
+# ---- uzaktan müdahale
+# Pano yalnız bu işleri isteyebilir; fabrika programı da yalnız bunları tanır.
+KOMUT_TURLERI = ("anons", "ses_dene")
+KOMUT_DURUMLARI = ("bekliyor", "iletildi", "yapildi", "hata", "suresi_doldu")
+KOMUT_SIRA_ANAHTARI = "dalsan:komut:sira"  # fabrikanın henüz almadığı komutlar
+KOMUT_SON_ANAHTARI = "dalsan:komut:son"  # panoda görünen son komutların kimliği
+KOMUT_KAYIT_ONEKI = "dalsan:komut:kayit:"  # komutun durumu ve sonucu
+KOMUT_SAYAC_ANAHTARI = "dalsan:komut:sayac"
+# İki işaret fabrikaya "sık sor" der: Müdahale ekranı açık ya da yeni bir komut var.
+IZLEYEN_ANAHTARI = "dalsan:mudahale:izleyen"
+KOMUT_ISARET_ANAHTARI = "dalsan:komut:isaret"
+YOKLAMA_ANAHTARI = "dalsan:komut:yoklama"  # fabrikanın son sorduğu an
+# Fabrika komutu bu süre içinde almazsa komut düşer: saatler sonra bağlanan
+# bir fabrikada eski bir anons çalmasın.
+KOMUT_GECERLILIK_SN = 120
+KOMUT_SAKLAMA_SN = 2 * 24 * 3600
+KOMUT_SON_SAYISI = 20
+KOMUT_GOSTERILEN = 10
+# Çalınan bir şifreyle hoparlörler susturulamaz ama yağmur gibi anons da
+# yaptırılamasın: 5 dakikada en çok 10 komut.
+KOMUT_SINIRI = 10
+KOMUT_SINIR_PENCERESI_SN = 300
+IZLEYEN_SURESI_SN = 30
+YOKLAMA_TOPLU = 5
+# Fabrikaya iletilip bu süre sonuç gelmezse panoda "sonuç gelmedi" yazar.
+SONUC_BEKLEME_SN = 180
+KOMUT_EN_BUYUK_BAYT = 16 * 1024
+SURESI_DOLDU_METNI = "Fabrika komutu 2 dakika içinde almadı; yapılmadı."
+
 SAYI_ALANLARI = (
     "bugun_ihlal",
     "dun_ihlal",
@@ -179,7 +216,46 @@ def kurulum_tamam_mi(ayar: Ayar) -> None:
 # ---------------------------------------------------------------------- depo
 
 
-class UpstashDepo:
+class _OrtakDepo:
+    """İki deponun ortak yardımcıları. Alt sınıf yalnız Redis komutunu
+    çalıştırmayı bilir (`komut`, `boru_hatti`); geri kalan her iş bu
+    komutlarla yazılır, böylece yerel deneme ile Vercel aynı kodu çalıştırır."""
+
+    def komut(self, *parcalar: str) -> object:
+        raise NotImplementedError
+
+    def boru_hatti(self, komutlar: list[list[str]]) -> list[object]:
+        raise NotImplementedError
+
+    def al_coklu(self, anahtarlar: list[str]) -> list[str | None]:
+        sonuc = self.komut("MGET", *anahtarlar)
+        if not isinstance(sonuc, list):
+            raise DepoHatasi(f"MGET liste döndürmedi: {sonuc!r:.200}")
+        return [deger if isinstance(deger, str) else None for deger in sonuc]
+
+    def yaz_coklu(self, kayitlar: list[tuple[str, str, int | None]]) -> None:
+        self.boru_hatti([_set_komutu(anahtar, deger, sure) for anahtar, deger, sure in kayitlar])
+
+    def say(self, anahtar: str, sure_sn: int) -> int:
+        """Sayacı bir artırır. Sayaç yoksa `sure_sn` sonra silinmek üzere kurulur;
+        varsa süresi uzamaz (pencere ilk denemeden başlar)."""
+        sonuc = self.boru_hatti(
+            [["SET", anahtar, "0", "EX", str(sure_sn), "NX"], ["INCR", anahtar]]
+        )
+        return int(sonuc[1])
+
+    def sil(self, anahtar: str) -> None:
+        self.komut("DEL", anahtar)
+
+
+def _set_komutu(anahtar: str, deger: str, sure_sn: int | None) -> list[str]:
+    komut = ["SET", anahtar, deger]
+    if sure_sn:
+        komut += ["EX", str(sure_sn)]
+    return komut
+
+
+class UpstashDepo(_OrtakDepo):
     """Upstash Redis'in REST arayüzü: her komut bir HTTPS isteğidir.
 
     Komut, JSON dizisi olarak adresin köküne gönderilir (["GET", "a"]);
@@ -232,43 +308,32 @@ class UpstashDepo:
             raise DepoHatasi(f"Upstash boru hattı beklenmeyen cevap verdi: {cevap!r:.200}")
         return [self._sonuc(oge) for oge in cevap]
 
-    def al_coklu(self, anahtarlar: list[str]) -> list[str | None]:
-        sonuc = self.komut("MGET", *anahtarlar)
-        if not isinstance(sonuc, list):
-            raise DepoHatasi(f"MGET liste döndürmedi: {sonuc!r:.200}")
-        return [deger if isinstance(deger, str) else None for deger in sonuc]
 
-    def yaz_coklu(self, kayitlar: list[tuple[str, str, int | None]]) -> None:
-        komutlar = []
-        for anahtar, deger, sure_sn in kayitlar:
-            komut = ["SET", anahtar, deger]
-            if sure_sn:
-                komut += ["EX", str(sure_sn)]
-            komutlar.append(komut)
-        self.boru_hatti(komutlar)
-
-    def say(self, anahtar: str, sure_sn: int) -> int:
-        """Sayacı bir artırır. Sayaç yoksa `sure_sn` sonra silinmek üzere kurulur;
-        varsa süresi uzamaz (pencere ilk denemeden başlar)."""
-        sonuc = self.boru_hatti(
-            [["SET", anahtar, "0", "EX", str(sure_sn), "NX"], ["INCR", anahtar]]
-        )
-        return int(sonuc[1])
-
-    def sil(self, anahtar: str) -> None:
-        self.komut("DEL", anahtar)
-
-
-class BellekDepo:
+class BellekDepo(_OrtakDepo):
     """Bellekte duran depo. Yalnız testler ve yerel deneme (yerel_sunucu.py)
-    içindir: Vercel'de her istek ayrı bir süreçte çalışabilir, bellek paylaşılmaz."""
+    içindir: Vercel'de her istek ayrı bir süreçte çalışabilir, bellek paylaşılmaz.
+
+    Sitenin kullandığı Redis komutlarını Upstash'in döndürdüğü biçimde taklit
+    eder (dize ve liste değerler, süre). Bilmediği komutta DepoHatasi verir:
+    yeni bir komut kullanılırsa önce burada da yazılmalıdır.
+    """
 
     def __init__(self, saat: Callable[[], float] = time.time) -> None:
         self.saat = saat
-        self._veri: dict[str, tuple[str, float | None]] = {}
+        self._veri: dict[str, tuple[str | list[str], float | None]] = {}
         self._kilit = threading.Lock()
 
-    def _gecerli(self, anahtar: str) -> str | None:
+    def komut(self, *parcalar: str) -> object:
+        with self._kilit:
+            return self._calistir([str(parca) for parca in parcalar])
+
+    def boru_hatti(self, komutlar: list[list[str]]) -> list[object]:
+        with self._kilit:
+            return [self._calistir([str(parca) for parca in komut]) for komut in komutlar]
+
+    # ---- iç işler (kilit tutulurken çağrılır)
+
+    def _deger(self, anahtar: str) -> str | list[str] | None:
         kayit = self._veri.get(anahtar)
         if kayit is None:
             return None
@@ -278,28 +343,94 @@ class BellekDepo:
             return None
         return deger
 
-    def al_coklu(self, anahtarlar: list[str]) -> list[str | None]:
-        with self._kilit:
-            return [self._gecerli(anahtar) for anahtar in anahtarlar]
+    def _dize(self, anahtar: str) -> str | None:
+        deger = self._deger(anahtar)
+        if isinstance(deger, list):
+            raise DepoHatasi("WRONGTYPE Operation against a key holding the wrong kind of value")
+        return deger
 
-    def yaz_coklu(self, kayitlar: list[tuple[str, str, int | None]]) -> None:
-        with self._kilit:
-            for anahtar, deger, sure_sn in kayitlar:
-                self._veri[anahtar] = (deger, self.saat() + sure_sn if sure_sn else None)
+    def _liste(self, anahtar: str) -> list[str]:
+        deger = self._deger(anahtar)
+        if isinstance(deger, str):
+            raise DepoHatasi("WRONGTYPE Operation against a key holding the wrong kind of value")
+        return deger or []
 
-    def say(self, anahtar: str, sure_sn: int) -> int:
-        with self._kilit:
-            mevcut = self._gecerli(anahtar)
-            if mevcut is None:
-                self._veri[anahtar] = ("1", self.saat() + sure_sn)
-                return 1
-            yeni = int(mevcut) + 1
-            self._veri[anahtar] = (str(yeni), self._veri[anahtar][1])
+    def _liste_yaz(self, anahtar: str, liste: list[str]) -> None:
+        if not liste:
+            self._veri.pop(anahtar, None)  # Redis boş listeyi siler
+            return
+        bitis = self._veri[anahtar][1] if anahtar in self._veri else None
+        self._veri[anahtar] = (liste, bitis)
+
+    @staticmethod
+    def _aralik(uzunluk: int, bas: str, son: str) -> slice:
+        ilk, sonuncu = int(bas), int(son)
+        ilk = max(0, ilk + uzunluk if ilk < 0 else ilk)
+        sonuncu = sonuncu + uzunluk if sonuncu < 0 else sonuncu
+        return slice(ilk, max(ilk, sonuncu + 1))
+
+    def _calistir(self, parcalar: list[str]) -> object:
+        ad, *arg = parcalar
+        ad = ad.upper()
+        if ad == "GET":
+            return self._dize(arg[0])
+        if ad == "MGET":
+            return [d if isinstance(d, str) else None for d in map(self._deger, arg)]
+        if ad == "SET":
+            anahtar, deger, *secenekler = arg
+            secenekler = [s.upper() for s in secenekler]
+            if "NX" in secenekler and self._deger(anahtar) is not None:
+                return None
+            bitis = None
+            if "EX" in secenekler:
+                bitis = self.saat() + int(secenekler[secenekler.index("EX") + 1])
+            self._veri[anahtar] = (deger, bitis)
+            return "OK"
+        if ad == "DEL":
+            silinen = [anahtar for anahtar in arg if self._deger(anahtar) is not None]
+            for anahtar in silinen:
+                del self._veri[anahtar]
+            return len(silinen)
+        if ad == "INCR":
+            mevcut = self._dize(arg[0])
+            if mevcut is not None and not _rakam_mi(mevcut.lstrip("-")):
+                raise DepoHatasi("ERR value is not an integer or out of range")
+            yeni = int(mevcut or 0) + 1
+            bitis = self._veri[arg[0]][1] if mevcut is not None else None
+            self._veri[arg[0]] = (str(yeni), bitis)
             return yeni
-
-    def sil(self, anahtar: str) -> None:
-        with self._kilit:
-            self._veri.pop(anahtar, None)
+        if ad == "EXPIRE":
+            if self._deger(arg[0]) is None:
+                return 0
+            self._veri[arg[0]] = (self._veri[arg[0]][0], self.saat() + int(arg[1]))
+            return 1
+        if ad in ("RPUSH", "LPUSH"):
+            liste = list(self._liste(arg[0]))
+            for deger in arg[1:]:
+                if ad == "RPUSH":
+                    liste.append(deger)
+                else:
+                    liste.insert(0, deger)
+            self._liste_yaz(arg[0], liste)
+            return len(liste)
+        if ad == "LPOP":
+            liste = list(self._liste(arg[0]))
+            if not liste:
+                return None
+            adet = int(arg[1]) if len(arg) > 1 else None
+            alinan, kalan = liste[: adet or 1], liste[adet or 1 :]
+            self._liste_yaz(arg[0], kalan)
+            return alinan if adet is not None else alinan[0]
+        if ad == "LRANGE":
+            liste = self._liste(arg[0])
+            return liste[self._aralik(len(liste), arg[1], arg[2])]
+        if ad == "LTRIM":
+            liste = self._liste(arg[0])
+            self._liste_yaz(arg[0], liste[self._aralik(len(liste), arg[1], arg[2])])
+            return "OK"
+        if ad == "LLEN":
+            return len(self._liste(arg[0]))
+        raise DepoHatasi(f"ERR unknown command '{ad}'")
 
 
 # Testler ve yerel_sunucu.py buraya bir BellekDepo koyar; Vercel'de boştur.
@@ -449,6 +580,73 @@ def _saatlik(ham: object) -> list[int]:
     return [_tam(deger, 0, 10**7) for deger in ham]
 
 
+def _kimlik(deger: object) -> int | None:
+    if isinstance(deger, bool) or not isinstance(deger, int) or not 0 < deger < 2**31:
+        return None
+    return deger
+
+
+def _bilgisayar(ham: object) -> dict | None:
+    """Programın kurulu olduğu bilgisayar. Hepsi isteğe bağlıdır; hiçbiri
+    yoksa None (pano "henüz gönderilmiyor" der). IP adresi bilerek yoktur."""
+    if not isinstance(ham, dict):
+        return None
+    bilgi = {
+        "ad": _metin(ham.get("ad"), 80),  # kurulumun adı: "Gebze fabrikası"
+        "bilgisayar_adi": _metin(ham.get("bilgisayar_adi"), 64),
+        "isletim_sistemi": _metin(ham.get("isletim_sistemi"), 80),
+        "islemci": _metin(ham.get("islemci"), 120),
+        "cekirdek": _tam(ham.get("cekirdek"), 0, 1024) or None,
+        "bellek_gb": _sayi(ham.get("bellek_gb"), 0, 10**5),
+        "ekran_karti": _metin(ham.get("ekran_karti"), 120),
+        "cikarim": _metin(ham.get("cikarim"), 80),
+        "disk_toplam_gb": _sayi(ham.get("disk_toplam_gb"), 0, 10**6),
+        "kurulum_turu": _metin(ham.get("kurulum_turu"), 60),
+        "kurulum_tarihi": _zaman(ham.get("kurulum_tarihi")),
+        "acilis": _zaman(ham.get("acilis")),
+    }
+    return bilgi if any(bilgi.values()) else None
+
+
+def _gunluk(ham: object) -> list[int] | None:
+    """Son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün."""
+    if not isinstance(ham, list) or len(ham) != 14:
+        return None
+    return [_tam(deger, 0, 10**7) for deger in ham]
+
+
+def _yedi_gun(ham: object) -> dict | None:
+    if not isinstance(ham, dict):
+        return None
+    ihlal = _tam(ham.get("ihlal"), 0, 10**7)
+    return {
+        "ihlal": ihlal,
+        "incelenen": min(ihlal, _tam(ham.get("incelenen"), 0, 10**7)),
+        "yanlis_alarm": min(ihlal, _tam(ham.get("yanlis_alarm"), 0, 10**7)),
+    }
+
+
+def _mudahale(ham: object) -> dict:
+    """Fabrikanın uzaktan müdahaleye izni ve seçenekleri: hazır anons
+    mesajlarının metni ve ses kanallarının adı (adres ve cihaz adı gelmez)."""
+    ham = _sozluk(ham)
+    mesajlar = []
+    for oge in _liste(ham.get("mesajlar"), 30):
+        if isinstance(oge, dict) and (kimlik := _kimlik(oge.get("id"))):
+            mesajlar.append({"id": kimlik, "metin": _metin(oge.get("metin"), 160) or "Mesaj"})
+    kanallar = []
+    for oge in _liste(ham.get("kanallar"), 30):
+        if isinstance(oge, dict) and (kimlik := _kimlik(oge.get("id"))):
+            kanallar.append(
+                {
+                    "id": kimlik,
+                    "ad": _metin(oge.get("ad"), 80) or "Kanal",
+                    "bolum": _metin(oge.get("bolum"), 80),
+                }
+            )
+    return {"acik": ham.get("acik") is True, "mesajlar": mesajlar, "kanallar": kanallar}
+
+
 def rapor_temizle(ham: object) -> dict:
     """Gelen raporu bilinen alanlara indirger.
 
@@ -503,17 +701,35 @@ def rapor_temizle(ham: object) -> dict:
         "son_olaylar": [
             _olay(oge) for oge in _liste(ham.get("son_olaylar"), 50) if isinstance(oge, dict)
         ],
+        "mudahale": _mudahale(ham.get("mudahale")),
+        # Yönetici görünümü (eskiden gönderilmez; yoksa pano o kartı gizler)
+        "gunluk": _gunluk(ham.get("gunluk")),
+        "yedi_gun": _yedi_gun(ham.get("yedi_gun")),
+        "yerler": [
+            {
+                "ad": _metin(oge.get("ad"), 80) or "Adsız kamera",
+                "bolum": _metin(oge.get("bolum"), 80),
+                "sayi": _tam(oge.get("sayi"), 0, 10**7),
+            }
+            for oge in _liste(ham.get("yerler"), 10)
+            if isinstance(oge, dict)
+        ],
+        "bilgisayar": _bilgisayar(ham.get("bilgisayar")),
     }
 
 
-def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> None:
+def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> bool:
+    """Raporu yazar. Döner: fabrika komutları sık sormalı mı (Müdahale ekranı
+    açık ya da bekleyen komut var). Müdahale kapalıysa işaretler okunmaz."""
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
-    depo.yaz_coklu(
-        [
-            (DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
-            (SON_RAPOR_ANAHTARI, str(int(simdi)), None),
-        ]
-    )
+    komutlar = [
+        _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
+        _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
+    ]
+    if rapor["mudahale"]["acik"]:
+        komutlar.append(["MGET", IZLEYEN_ANAHTARI, KOMUT_ISARET_ANAHTARI])
+    sonuc = depo.boru_hatti(komutlar)
+    return len(sonuc) > 2 and isinstance(sonuc[2], list) and any(sonuc[2])
 
 
 def _iso(epoch: float) -> str:
@@ -552,6 +768,225 @@ def pano_verisi(depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float) -> dic
         "rapor": rapor if isinstance(rapor, dict) else None,
         "fabrika_adresi": ayar.fabrika_adresi,
     }
+
+
+# --------------------------------------------------------- uzaktan müdahale
+
+
+def _komut_kimligi_mi(deger: object) -> bool:
+    return isinstance(deger, str) and re.fullmatch(r"[0-9a-f]{16}", deger) is not None
+
+
+def _json_sozluk(ham: object) -> dict | None:
+    if not isinstance(ham, str):
+        return None
+    try:
+        deger = json.loads(ham)
+    except (ValueError, RecursionError):
+        return None
+    return deger if isinstance(deger, dict) else None
+
+
+def _kayit_metni(kayit: dict) -> str:
+    return json.dumps(kayit, ensure_ascii=False, separators=(",", ":"))
+
+
+def komut_gorunumu(kayit: dict, simdi: float) -> dict:
+    """Panonun gösterdiği hal. Süresi dolan ya da sonucu gelmeyen komut
+    burada adlandırılır: kuyruktaki kayıt kimse sormadan değişmez."""
+    durum = _secim(kayit.get("durum"), KOMUT_DURUMLARI) or "hata"
+    mesaj = _metin(kayit.get("mesaj"), 300)
+    guncellendi = _tam(kayit.get("guncellendi"), 0, 10**12)
+    if durum == "bekliyor" and simdi >= _tam(kayit.get("son_gecerlilik"), 0, 10**12):
+        durum, mesaj = "suresi_doldu", SURESI_DOLDU_METNI
+    elif durum == "iletildi" and simdi - guncellendi > SONUC_BEKLEME_SN:
+        durum, mesaj = "sonuc_yok", "Fabrikaya iletildi ama sonucu gelmedi."
+    return {
+        "id": kayit.get("id") if _komut_kimligi_mi(kayit.get("id")) else "",
+        "tur": _secim(kayit.get("tur"), KOMUT_TURLERI),
+        "ozet": _metin(kayit.get("ozet"), 300),
+        "olusturuldu": _iso(_tam(kayit.get("olusturuldu"), 0, 10**12)),
+        "durum": durum,
+        "mesaj": mesaj,
+    }
+
+
+def mudahale_verisi(depo: UpstashDepo | BellekDepo, simdi: float, izliyor: bool) -> dict:
+    """Müdahale ekranının verisi: son komutlar ve fabrikanın son sorduğu an.
+    `izliyor`: ekran açık; fabrika bir sonraki raporda sık sormaya başlar."""
+    komutlar = [
+        ["LRANGE", KOMUT_SON_ANAHTARI, "0", str(KOMUT_GOSTERILEN - 1)],
+        ["GET", YOKLAMA_ANAHTARI],
+    ]
+    if izliyor:
+        komutlar.append(_set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN))
+    sonuc = depo.boru_hatti(komutlar)
+    son = sonuc[0] if isinstance(sonuc[0], list) else []
+    kimlikler = [kimlik for kimlik in son if _komut_kimligi_mi(kimlik)]
+    kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + k for k in kimlikler]) if kimlikler else []
+    yoklama = sonuc[1] if isinstance(sonuc[1], str) and _rakam_mi(sonuc[1]) else None
+    return {
+        "komutlar": [
+            komut_gorunumu(kayit, simdi)
+            for kayit in map(_json_sozluk, kayitlar)
+            if kayit is not None
+        ],
+        "son_yoklama": _iso(int(yoklama)) if yoklama else None,
+        "yoklama_yasi_sn": max(0, round(simdi - int(yoklama))) if yoklama else None,
+    }
+
+
+def komut_olustur(depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi: float) -> dict:
+    """Panodan gelen isteği doğrular ve kuyruğa koyar. `veri` pano_verisi'dir:
+    seçilen mesaj ve kanal fabrikanın son raporunda olmalı."""
+    if veri["baglanti"] != "canli":
+        raise PanoHatasi(
+            409,
+            "fabrika_bagli_degil",
+            "Fabrika programından şu an haber gelmiyor; komut gönderilemez.",
+        )
+    mudahale = _sozluk(_sozluk(veri.get("rapor")).get("mudahale"))
+    if mudahale.get("acik") is not True:
+        raise PanoHatasi(
+            409,
+            "mudahale_kapali",
+            "Fabrika programında uzaktan müdahale kapalı. Açmak için fabrikadaki "
+            "bilgisayarda Ayarlar, Uzak izleme panosu, Uzaktan müdahale'yi seçin.",
+        )
+    tur = _secim(istek.get("tur"), KOMUT_TURLERI)
+    if not tur:
+        raise PanoHatasi(400, "tur", "Bilinmeyen müdahale.")
+    kanallar = {k["id"]: k for k in mudahale.get("kanallar", []) if isinstance(k, dict)}
+    kanal_id = istek.get("kanal_id")
+    if kanal_id is None and tur == "anons":
+        if not any(not k.get("bolum") for k in kanallar.values()):
+            raise PanoHatasi(
+                400,
+                "tum_fabrika_yok",
+                "Fabrikada “Tüm fabrika” kanalı yok; listeden bir kanal seçin.",
+            )
+        yer = "Tüm fabrika"
+    elif _kimlik(kanal_id) in kanallar:
+        kanal = kanallar[kanal_id]
+        yer = kanal["ad"] + (f" ({kanal['bolum']})" if kanal["bolum"] else "")
+    else:
+        raise PanoHatasi(400, "kanal", "Bu ses kanalı fabrikada yok; sayfayı yenileyin.")
+    yuk: dict = {"id": secrets.token_hex(8), "tur": tur, "kanal_id": kanal_id}
+    if tur == "anons":
+        mesajlar = {m["id"]: m for m in mudahale.get("mesajlar", []) if isinstance(m, dict)}
+        mesaj_id = _kimlik(istek.get("mesaj_id"))
+        if mesaj_id not in mesajlar:
+            raise PanoHatasi(400, "mesaj", "Bu anons mesajı fabrikada yok; sayfayı yenileyin.")
+        yuk["mesaj_id"] = mesaj_id
+        ozet = f"Anons: “{mesajlar[mesaj_id]['metin']}” · {yer}"
+    else:
+        ozet = f"Hoparlör denemesi · {yer}"
+    if depo.say(KOMUT_SAYAC_ANAHTARI, KOMUT_SINIR_PENCERESI_SN) > KOMUT_SINIRI:
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            f"Kısa sürede çok fazla komut gönderildi. {KOMUT_SINIR_PENCERESI_SN // 60} dakika "
+            "sonra yeniden deneyin.",
+        )
+    yuk["son_gecerlilik"] = int(simdi) + KOMUT_GECERLILIK_SN
+    kayit = {
+        "id": yuk["id"],
+        "tur": tur,
+        "ozet": ozet,
+        "olusturuldu": int(simdi),
+        "son_gecerlilik": yuk["son_gecerlilik"],
+        "durum": "bekliyor",
+        "mesaj": "",
+        "guncellendi": int(simdi),
+    }
+    depo.boru_hatti(
+        [
+            _set_komutu(KOMUT_KAYIT_ONEKI + yuk["id"], _kayit_metni(kayit), KOMUT_SAKLAMA_SN),
+            ["RPUSH", KOMUT_SIRA_ANAHTARI, _kayit_metni(yuk)],
+            ["EXPIRE", KOMUT_SIRA_ANAHTARI, str(KOMUT_SAKLAMA_SN)],
+            ["LPUSH", KOMUT_SON_ANAHTARI, yuk["id"]],
+            ["LTRIM", KOMUT_SON_ANAHTARI, "0", str(KOMUT_SON_SAYISI - 1)],
+            ["EXPIRE", KOMUT_SON_ANAHTARI, str(KOMUT_SAKLAMA_SN)],
+            _set_komutu(KOMUT_ISARET_ANAHTARI, "1", KOMUT_GECERLILIK_SN),
+            _set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
+        ]
+    )
+    return komut_gorunumu(kayit, simdi)
+
+
+def sonuclari_yaz(depo: UpstashDepo | BellekDepo, ham: object, simdi: float) -> None:
+    """Fabrikanın bildirdiği sonuçlar. Yalnız bekleyen ya da iletilmiş komutun
+    sonucu yazılır; bitmiş bir komut yeniden açılmaz."""
+    sonuclar: dict[str, tuple[str, str]] = {}
+    for oge in _liste(ham, 10):
+        if not isinstance(oge, dict) or not _komut_kimligi_mi(oge.get("id")):
+            continue
+        durum = _secim(oge.get("durum"), ("yapildi", "hata"))
+        if durum:
+            sonuclar[oge["id"]] = (durum, _metin(oge.get("mesaj"), 300))
+    if not sonuclar:
+        return
+    kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + kimlik for kimlik in sonuclar])
+    yazilacak = []
+    for (kimlik, (durum, mesaj)), ham_kayit in zip(sonuclar.items(), kayitlar, strict=True):
+        kayit = _json_sozluk(ham_kayit)
+        if kayit is None or kayit.get("durum") not in ("bekliyor", "iletildi"):
+            continue
+        kayit.update(durum=durum, mesaj=mesaj, guncellendi=int(simdi))
+        yazilacak.append(
+            _set_komutu(KOMUT_KAYIT_ONEKI + kimlik, _kayit_metni(kayit), KOMUT_SAKLAMA_SN)
+        )
+    if yazilacak:
+        depo.boru_hatti(yazilacak)
+
+
+def _komut_yuku(ham: object) -> dict | None:
+    yuk = _json_sozluk(ham)
+    if yuk is None or not _komut_kimligi_mi(yuk.get("id")):
+        return None
+    tur = _secim(yuk.get("tur"), KOMUT_TURLERI)
+    son = yuk.get("son_gecerlilik")
+    if not tur or isinstance(son, bool) or not isinstance(son, int):
+        return None
+    temiz = {"id": yuk["id"], "tur": tur, "kanal_id": _kimlik(yuk.get("kanal_id"))}
+    if tur == "anons":
+        temiz["mesaj_id"] = _kimlik(yuk.get("mesaj_id"))
+    return {**temiz, "son_gecerlilik": son}
+
+
+def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[list[dict], bool]:
+    """Kuyruktan en çok YOKLAMA_TOPLU komutu alır (alınan komut kuyruktan
+    çıkar: fabrika yeniden başlasa bile aynı anons ikinci kez çalmaz).
+    Döner: (fabrikaya gidecek komutlar, sık sormaya devam etsin mi)."""
+    cikan, isaretler, _ = depo.boru_hatti(
+        [
+            ["LPOP", KOMUT_SIRA_ANAHTARI, str(YOKLAMA_TOPLU)],
+            ["MGET", IZLEYEN_ANAHTARI, KOMUT_ISARET_ANAHTARI],
+            _set_komutu(YOKLAMA_ANAHTARI, str(int(simdi)), KOMUT_SAKLAMA_SN),
+        ]
+    )
+    hizli = isinstance(isaretler, list) and any(isaretler)
+    yukler = [y for y in map(_komut_yuku, cikan if isinstance(cikan, list) else []) if y]
+    if not yukler:
+        return [], hizli
+    kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + yuk["id"] for yuk in yukler])
+    teslim, yazilacak = [], []
+    for yuk, ham_kayit in zip(yukler, kayitlar, strict=True):
+        kayit = _json_sozluk(ham_kayit)
+        if kayit is None or kayit.get("durum") != "bekliyor":
+            continue  # kaydı olmayan komut yürütülmez
+        if simdi >= yuk["son_gecerlilik"]:
+            kayit.update(durum="suresi_doldu", mesaj=SURESI_DOLDU_METNI)
+        else:
+            kayit["durum"] = "iletildi"
+            teslim.append({**yuk, "kalan_sn": int(yuk["son_gecerlilik"] - simdi)})
+        kayit["guncellendi"] = int(simdi)
+        yazilacak.append(
+            _set_komutu(KOMUT_KAYIT_ONEKI + yuk["id"], _kayit_metni(kayit), KOMUT_SAKLAMA_SN)
+        )
+    if yazilacak:
+        depo.boru_hatti(yazilacak)
+    return teslim, hizli
 
 
 # -------------------------------------------------------------------- oturum
@@ -631,6 +1066,10 @@ class Isleyici(BaseHTTPRequestHandler):
     405 alır.
     """
 
+    # Doluysa cevap bu anahtarla imzalanır (fabrikaya giden komutlar): fabrika
+    # programı imzası tutmayan cevaptaki komutu yürütmez.
+    yanit_anahtari: str | None = None
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         # Her isteği Vercel günlüğüne yazmaz; hatalar `calistir` içinde yazılır.
         return
@@ -644,6 +1083,10 @@ class Isleyici(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if cerez is not None:
             self.send_header("Set-Cookie", cerez)
+        if self.yanit_anahtari:
+            damga = str(int(time.time()))
+            self.send_header(ZAMAN_BASLIGI, damga)
+            self.send_header(IMZA_BASLIGI, imza_hesapla(self.yanit_anahtari, damga, veri))
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(veri)
@@ -682,6 +1125,19 @@ class Isleyici(BaseHTTPRequestHandler):
             return ""
         return cerezler[ad].value if ad in cerezler else ""
 
+    def sorgu(self, ad: str) -> str:
+        degerler = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        return degerler.get(ad, [""])[0]
+
+    def koken_dogrula(self) -> None:
+        """Tarayıcı başka bir siteden istek gönderiyorsa reddedilir. Oturum
+        çerezi SameSite=Strict olduğu için zaten taşınmaz; bu ikinci kilittir."""
+        koken = self.headers.get("Origin")
+        if koken is None:
+            return
+        if urllib.parse.urlsplit(koken).netloc != (self.headers.get("Host") or ""):
+            raise PanoHatasi(403, "koken", "Bu istek başka bir siteden geldi; reddedildi.")
+
     def istemci_adresi(self) -> str:
         """Vercel, istemcinin gerçek adresini X-Real-IP / X-Forwarded-For'a
         kendisi yazar (istemcinin yazdığını ezer)."""
@@ -714,8 +1170,9 @@ class Isleyici(BaseHTTPRequestHandler):
 # ------------------------------------------------------------------ adresler
 
 
-def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/rapor - fabrika programının imzalı durum raporu."""
+def _fabrika_istegi(istek: Isleyici, en_cok: int) -> tuple[Ayar, object, float]:
+    """Fabrika programından gelen imzalı istek: (ayar, JSON gövdesi, şimdi).
+    Gövde imza doğrulanmadan ayrıştırılmaz."""
     ayar = ayar_oku()
     if len(ayar.rapor_anahtari) < ANAHTAR_EN_AZ:
         raise PanoHatasi(
@@ -723,7 +1180,7 @@ def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
             "kurulum_eksik",
             f"Sitede RAPOR_ANAHTARI tanımlı değil ya da {ANAHTAR_EN_AZ} karakterden kısa.",
         )
-    govde = istek.govde_oku(RAPOR_EN_BUYUK_BAYT)
+    govde = istek.govde_oku(en_cok)
     simdi = time.time()
     imza_dogrula(
         ayar.rapor_anahtari,
@@ -735,12 +1192,32 @@ def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
     try:
         ham = json.loads(govde)
     except (ValueError, RecursionError):
-        raise PanoHatasi(400, "json", "Rapor JSON değil.") from None
-    rapor = rapor_temizle(ham)
+        raise PanoHatasi(400, "json", "İstek JSON değil.") from None
     if DEPO is None and not (ayar.redis_adresi and ayar.redis_jetonu):
         raise PanoHatasi(503, "kurulum_eksik", "Sitede Upstash Redis bağlı değil.")
-    rapor_kaydet(depo_al(ayar), rapor, simdi)
-    return 200, {"tamam": True, "alindi": _iso(simdi)}, None
+    return ayar, ham, simdi
+
+
+def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/rapor - fabrika programının imzalı durum raporu. Cevaptaki
+    `komut.hizli`: Müdahale ekranı açık ya da komut bekliyor, fabrika sık sorsun."""
+    ayar, ham, simdi = _fabrika_istegi(istek, RAPOR_EN_BUYUK_BAYT)
+    rapor = rapor_temizle(ham)
+    hizli = rapor_kaydet(depo_al(ayar), rapor, simdi)
+    return 200, {"tamam": True, "alindi": _iso(simdi), "komut": {"hizli": hizli}}, None
+
+
+def komut_al(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/komut - fabrika programı sonuçları bildirir ve bekleyen
+    komutları alır. İstek de cevap da RAPOR_ANAHTARI ile imzalıdır."""
+    ayar, ham, simdi = _fabrika_istegi(istek, KOMUT_EN_BUYUK_BAYT)
+    if not isinstance(ham, dict) or ham.get("surum") != RAPOR_SURUMU:
+        raise PanoHatasi(400, "bicim", "Komut isteğinin biçimi tanınmadı.")
+    istek.yanit_anahtari = ayar.rapor_anahtari
+    depo = depo_al(ayar)
+    sonuclari_yaz(depo, ham.get("sonuclar"), simdi)
+    komutlar, hizli = komutlari_teslim_et(depo, simdi)
+    return 200, {"tamam": True, "komutlar": komutlar, "hizli": hizli}, None
 
 
 def giris(istek: Isleyici) -> tuple[int, dict, str | None]:
@@ -760,11 +1237,32 @@ def cikis(istek: Isleyici) -> tuple[int, dict, str | None]:
     return 200, {"tamam": True}, cerez_basligi("", 0)
 
 
-def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """GET /api/durum - panonun verisi; oturum ister."""
+def _oturumlu(istek: Isleyici) -> tuple[Ayar, float]:
     ayar = ayar_oku()
     kurulum_tamam_mi(ayar)
     simdi = time.time()
     if not cerez_gecerli_mi(ayar, istek.cerez_al(CEREZ_ADI), simdi):
         raise PanoHatasi(401, "giris_gerekli", "Panoyu görmek için giriş yapın.")
-    return 200, pano_verisi(depo_al(ayar), ayar, simdi), None
+    return ayar, simdi
+
+
+def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """GET /api/durum - panonun verisi; oturum ister. `?mudahale=1`: Müdahale
+    ekranı açık; son komutlar da gelir ve fabrika sık sormaya başlar."""
+    ayar, simdi = _oturumlu(istek)
+    depo = depo_al(ayar)
+    veri = pano_verisi(depo, ayar, simdi)
+    if istek.sorgu("mudahale") == "1":
+        veri["mudahale"] = mudahale_verisi(depo, simdi, izliyor=True)
+    return 200, veri, None
+
+
+def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/mudahale - {"tur": "anons", "mesaj_id": 3, "kanal_id": null}
+    ya da {"tur": "ses_dene", "kanal_id": 2}; oturum ister."""
+    ayar, simdi = _oturumlu(istek)
+    istek.koken_dogrula()
+    govde = istek.json_govdesi(KOMUT_EN_BUYUK_BAYT)
+    depo = depo_al(ayar)
+    komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi)
+    return 200, {"tamam": True, "komut": komut}, None

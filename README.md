@@ -6,7 +6,7 @@ Vercel'de duran sitesi. İki sayfası var:
 | Adres | Ne |
 |---|---|
 | `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, KVKK notu |
-| `/pano` | Şifreli **uzak izleme panosu**: sistem çalışıyor mu, kameralar canlı mı, bugün kaç ihlal oldu, son olaylar |
+| `/pano` | Şifreli **uzak izleme panosu**: bugünün özeti, son 14 günün eğilimi, kameralar, son olaylar, kurulu olduğu bilgisayar ve **Müdahale** (uzaktan anons, hoparlör denemesi) |
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
 bir durum özeti gönderir. Bağlantı yalnız fabrikadan dışarı doğrudur: fabrikada
@@ -32,6 +32,85 @@ O adres `FABRIKA_ADRESI` olarak yazılırsa panoda "Fabrika ekranını aç" dü�
 > ilişkilendirilebilir. Fabrika programında özelliği açmadan önce hukuk biriminin
 > görüşünü alın (DALSAN `docs/18-KVKK.md`). Program tarafında özellik varsayılan
 > olarak **kapalıdır**.
+
+## Yönetici (patron) görünümü
+
+Pano, fabrikaya hiç gitmeyen birinin bir dakikada okuyacağı biçimde kuruldu.
+Yurt dışındaki benzer ürünlerin yönetici ekranlarına bakıldı: Intenseye'ın
+[Global View'u](https://www.intenseye.com/software/) tesis başına eğilimi ve
+tehlike türlerini, [Protex AI](https://www.protex.ai/reporting/reporting-and-workflows)
+alan ve vardiya karşılaştırmasını, [Voxel](https://www.voxelai.com/news/voxel-launches-impact-boards-ai-powered-dashboards-to-improve-workplace-safety-management-and-operational-efficiency)
+risk eğilimini, Visionify ([G2](https://www.g2.com/products/visionify/reviews))
+günlük ve haftalık eğilimle "incelenen" sayısını öne koyuyor. İş güvenliği
+ölçümü üzerine yazılanlar da yöneticiye az ve güvenilir gösterge vermeyi,
+eğilimi haftadan haftaya karşılaştırmayı öneriyor
+([NSC](https://www.nsc.org/getmedia/a3f19e6b-6688-4474-84ed-54325c16155f/wp-practicalguidetoli.pdf),
+[EcoOnline](https://www.ecoonline.com/en-us/blog/leading-indicators/)).
+
+Buradan alınanlar, sade haliyle:
+
+- **Bugünün özeti:** 4-6 kısa cümle; önce sorun, sonra bugün, haftalık eğilim,
+  en çok ihlal görülen yer, inceleme ve kameralar.
+- **Son 14 gün:** günlük çubuk grafiği, son 7 günü önceki 7 günle karşılaştıran
+  rozet (azalma yeşil) ve inceleme oranı.
+- **En çok ihlal görülen yerler** (son 7 gün, kamera başına) ve ihlal türleri.
+- **Kurulu olduğu bilgisayar:** kurulum adı, bilgisayar adı, işletim sistemi,
+  işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi.
+
+Bilerek alınmayan: ürünlerin "güvenlik puanı". O puanın formülü her üreticide
+farklı ve gizli; uydurulmuş bir puan yerine her sayı gerçek bir sayımdır.
+
+## Uzaktan müdahale
+
+Panonun **Müdahale** ekranından iki küçük iş yapılır: fabrikanın Anons
+sayfasındaki **hazır** bir mesajı "Tüm fabrika" kanallarından ya da seçilen
+kanaldan çaldırmak ve bir kanaldan **deneme sesi** vermek. Başka hiçbir şey
+(serbest metin, kural, kamera, ayar) yapılamaz.
+
+- Fabrikaya dışarıdan bağlanılmaz. Ekran açıkken site, programın raporuna "sık
+  sor" der; program birkaç saniyede bir `/api/komut`'a imzalı istek gönderip
+  komutu alır, yürütür ve sonucu bildirir. Ekran kapalıyken program sormaz;
+  ekrana 10 dakika dokunulmazsa dinleme bekler.
+- Komut 2 dakika içinde alınmazsa düşer. 5 dakikada en çok 10 komut.
+- Anonsta onay, denemede çift dokunuş istenir (cepte yanlışlıkla ses çıkmasın).
+- Her müdahale fabrikadaki Olaylar'a yazılır ve izleme ekranlarında görünür.
+- Program tarafında ayrıca açılır (Ayarlar → Uzak izleme panosu → Uzaktan
+  müdahale); kapalıyken ekran nasıl açılacağını söyler.
+
+## Raporun biçimi (fabrika programı ile bağlarken)
+
+Fabrika programı `/api/rapor`'a JSON gönderir. Site yalnız aşağıdaki alanları
+tanır; gerisini atar. Kalın olanları fabrika programı henüz göndermiyor;
+`mudahale` alanını ve komut yoklamasını yapan kod DALSAN'da `uzaktan-mudahale`
+dalında, bağlama adımını bekliyor. Gelmeyen alanın kartını pano gizler ya da
+"henüz gönderilmiyor" der.
+
+| Alan | Biçim |
+|---|---|
+| `surum`, `uretildi`, `aralik_sn`, `kapanis` | 1, ISO zaman, saniye, true/false |
+| `program` | `{ad, surum}` |
+| `sistem` | `{analiz, hazir, model, uyari_garantisi, sorunlar[], bos_disk_gb, calisma_suresi_sn}` |
+| `kameralar[]` | `{ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` |
+| `sayilar` | `{bugun_ihlal, dun_ihlal, bekleyen, aktif_kural, kamera_toplam, kamera_canli}` |
+| `saatlik` | bugünün 24 saati, ihlal sayısı |
+| `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
+| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` |
+| `mudahale` | `{acik, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}` |
+| **`gunluk`** | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
+| **`yedi_gun`** | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
+| **`yerler[]`** | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
+| **`bilgisayar`** | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis}` |
+
+`bilgisayar.ad`, kurulumun okunur adıdır ("Gebze fabrikası"); fabrika
+programında elle yazılan bir ayar olması önerilir. Bilgisayar adı bazen bir
+kişinin adını taşır ("AHMET-PC"): bağlarken KVKK açısından gözden geçirilmeli.
+IP adresi bilerek yoktur.
+
+Komut yoklaması (`/api/komut`): istek `{surum: 1, sonuclar: [{id, durum:
+"yapildi"|"hata", mesaj}]}`, cevap `{komutlar: [{id, tur: "anons"|"ses_dene",
+mesaj_id, kanal_id, son_gecerlilik, kalan_sn}], hizli}`. İkisi de raporla aynı
+anahtarla, aynı başlıklarla imzalanır; program imzası tutmayan cevaptaki komutu
+yürütmez. Raporun cevabı `{komut: {hizli}}` taşır.
 
 ## Vercel'e kurulum (bir kez)
 
@@ -82,7 +161,9 @@ tarayıcı ──(şifreyle giriş, oturum çerezi)──> /api/durum <── Up
 |---|---|
 | `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
 | `api/giris.py`, `api/cikis.py` | Panoya giriş ve çıkış (oturum çerezi) |
-| `api/durum.py` | Panonun verisi; oturum ister |
+| `api/durum.py` | Panonun verisi; oturum ister (`?mudahale=1`: son komutlar da gelir) |
+| `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi); oturum ister |
+| `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek ve cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, kilit, rapor biçimi |
 | `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css` |
 | `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması |

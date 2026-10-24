@@ -16,31 +16,19 @@ JETON = "gizli-jeton"
 
 
 class SahteUpstash(BaseHTTPRequestHandler):
-    veri: dict = {}
+    # Komutları sitenin bellek deposu çalıştırır (Redis'i taklit eder); burada
+    # sınanan, UpstashDepo'nun istek ve cevap biçimidir.
+    depo = _pano.BellekDepo()
     istekler: list = []
 
     def log_message(self, *args):
         return
 
     def _komut(self, parcalar):
-        ad = parcalar[0].upper()
-        if ad == "GET":
-            return {"result": self.veri.get(parcalar[1])}
-        if ad == "MGET":
-            return {"result": [self.veri.get(a) for a in parcalar[1:]]}
-        if ad == "SET":
-            nx = "NX" in parcalar[3:]
-            if nx and parcalar[1] in self.veri:
-                return {"result": None}
-            self.veri[parcalar[1]] = parcalar[2]
-            return {"result": "OK"}
-        if ad == "INCR":
-            yeni = int(self.veri.get(parcalar[1], "0")) + 1
-            self.veri[parcalar[1]] = str(yeni)
-            return {"result": yeni}
-        if ad == "DEL":
-            return {"result": int(self.veri.pop(parcalar[1], None) is not None)}
-        return {"error": f"ERR unknown command '{ad}'"}
+        try:
+            return {"result": self.depo.komut(*parcalar)}
+        except _pano.DepoHatasi as hata:
+            return {"error": str(hata)}
 
     def do_POST(self):  # noqa: N802
         govde = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -62,7 +50,7 @@ class SahteUpstash(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def upstash():
-    SahteUpstash.veri = {}
+    SahteUpstash.depo = _pano.BellekDepo()
     SahteUpstash.istekler = []
     sunucu = ThreadingHTTPServer(("127.0.0.1", 0), SahteUpstash)
     threading.Thread(target=sunucu.serve_forever, daemon=True).start()
@@ -101,3 +89,12 @@ def test_ulasilamayan_depo_depo_hatasi_olur():
     depo = _pano.UpstashDepo("http://127.0.0.1:9", JETON, zaman_asimi=1)
     with pytest.raises(_pano.DepoHatasi):
         depo.al_coklu(["a"])
+
+
+def test_liste_komutlari_ve_hata(upstash):
+    depo = _pano.UpstashDepo(upstash, JETON)
+    sonuc = depo.boru_hatti([["RPUSH", "l", "a", "b"], ["LPOP", "l", "5"], ["LLEN", "l"]])
+    assert sonuc == [2, ["a", "b"], 0]
+    depo.komut("RPUSH", "l", "x")
+    with pytest.raises(_pano.DepoHatasi, match="WRONGTYPE"):
+        depo.komut("GET", "l")

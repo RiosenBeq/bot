@@ -1,7 +1,10 @@
 /* Uzak izleme panosu.
 
    /api/durum'u 15 saniyede bir okur (sekme görünürken) ve ekranı çizer.
-   Dört görünüm var (Genel bakış, Kameralar, Olaylar, Sistem); adres
+   Müdahale ekranı açıkken 5 saniyede bir okur ve `?mudahale=1` der: fabrika
+   o zaman komutları sık sormaya başlar. Ekrana 10 dakika dokunulmazsa
+   dinleme bekler (açık unutulan bir ekran fabrikayı boşuna sorgulatmasın).
+   Beş görünüm var (Genel bakış, Kameralar, Olaylar, Müdahale, Sistem); adres
    çubuğundaki #genel, #kameralar ... hangisinin açık olduğunu söyler, hem
    masaüstünün kenar çubuğu hem telefonun sekme çubuğu aynı bağlantılardır.
 
@@ -17,6 +20,11 @@
 (function () {
   const TAZELEME_MS = 15000;
   const GORECELI_MS = 5000;
+  const MUDAHALE_TAZELEME_MS = 5000;
+  const DINLEME_SURESI_MS = 10 * 60 * 1000;
+  // Fabrika son soruyu bu kadar saniye önce sorduysa "dinliyor" denir
+  // (fabrika 4 sn'de bir sorar; ağ gecikmesi payı).
+  const DINLIYOR_SN = 12;
   // Sunucudaki kuralın aynısı (api/_pano.py GECIKME_KATSAYISI): rapor aralığının
   // bu katı kadar haber gelmezse bağlantı yok sayılır. Site de ulaşılamaz
   // olursa pano son veriden kendisi karar verir.
@@ -28,7 +36,17 @@
     genel: ["Genel bakış", "Fabrikadan gelen son durum"],
     kameralar: ["Kameralar", "Bağlantı durumu ve kare hızı"],
     olaylar: ["Olaylar", "Son 20 olay, en yenisi üstte"],
+    mudahale: ["Müdahale", "Fabrikada uzaktan anons ve hoparlör denemesi"],
     sistem: ["Sistem", "Program, bağlantı ve canlı görüntü"],
+  };
+  // [rozet, rozet sınıfı, sonuç yokken açıklama]
+  const KOMUT_DURUMLARI = {
+    bekliyor: ["Sırada", "uyari", "Fabrikanın almasını bekliyor"],
+    iletildi: ["Fabrikada", "bilgi", "Çalınıyor"],
+    yapildi: ["Yapıldı", "basari", ""],
+    hata: ["Yapılamadı", "tehlike", ""],
+    suresi_doldu: ["Süresi doldu", "", ""],
+    sonuc_yok: ["Sonuç gelmedi", "uyari", ""],
   };
   const KAMERA_DURUMLARI = {
     online: ["Canlı", "basari"],
@@ -47,6 +65,11 @@
   let kameraSuzgeci = "hepsi";
   let olayTuru = "hepsi";
   let aktifGorunum = "genel";
+  let sonEtkilesim = Date.now();
+  let seciliMesaj = null;
+  let mudahaleImzasi = "";
+  let bekleyenKomutlar = []; // gönderildi, sunucudan henüz okunmadı
+  let kurulumMetni = ""; // "Gebze fabrikası · ISG-PC-01": Genel bakışın alt başlığı
 
   // ----------------------------------------------------------- yardımcılar
 
@@ -192,7 +215,9 @@
     }
     const [baslik, aciklama] = GORUNUMLER[ad];
     $("gorunum-basligi").textContent = baslik;
-    $("gorunum-aciklamasi").textContent = aciklama;
+    $("gorunum-aciklamasi").textContent = ad === "genel" && kurulumMetni ? kurulumMetni : aciklama;
+    // Müdahale ekranı bağlantıyı kendi bandında söyler; iki bant üst üste binmesin
+    $("durum-bandi").hidden = ad === "mudahale";
     $("yol-adi").textContent = baslik;
     document.title = baslik + " · Uzak izleme panosu";
   }
@@ -201,6 +226,11 @@
     if (!gorunumAdi()) return;
     gorunumuUygula();
     window.scrollTo(0, 0);
+    if (aktifGorunum === "mudahale" && sonVeri) {
+      sonEtkilesim = Date.now();
+      mudahaleyiCiz(sonVeri);
+      yukle();
+    }
   });
 
   // ------------------------------------------------------------- kurulum
@@ -330,7 +360,13 @@
 
     $("k-bekleyen").textContent = sayiMetni(s.bekleyen);
     $("k-bekleyen").classList.toggle("dikkat", s.bekleyen > 0);
-    $("k-bekleyen-ref").textContent = s.bekleyen ? "fabrika ekranında incelenir" : "kuyruk boş";
+    const y = rapor.yedi_gun;
+    $("k-bekleyen-ref").textContent =
+      y && y.ihlal
+        ? "son 7 günde inceleme oranı %" + Math.round((y.incelenen / y.ihlal) * 100)
+        : s.bekleyen
+          ? "fabrika ekranında incelenir"
+          : "kuyruk boş";
 
     const pasif = rapor.kameralar.filter((k) => k.durum === "pasif").length;
     const kopuk = kopukKameraSayisi(rapor);
@@ -591,12 +627,133 @@
       liste.appendChild(bosDurum("Son 7 günde ihlal yok", ""));
       return;
     }
-    const enCok = Math.max(...rapor.ogeler.map((o) => o.sayi));
-    for (const o of rapor.ogeler) {
+    lejantCiz(liste, rapor.ogeler, (o) => o.ad);
+  }
+
+  // ------------------------------------------------------- yönetici özeti
+
+  function toplamAl(dizi) {
+    return dizi.reduce((a, b) => a + b, 0);
+  }
+
+  function yerAdi(yer) {
+    return yer.ad + (yer.bolum ? " (" + yer.bolum + ")" : "");
+  }
+
+  /* Patronun tek bakışta okuyacağı cümleler: önce sorun, sonra bugün, eğilim,
+     en çok ihlal görülen yer, inceleme ve kameralar. Hepsi rapordaki sayıdan
+     kurulur; tahmin ya da puan yoktur. */
+  function ozetCumleleri(rapor) {
+    const s = rapor.sayilar;
+    const satirlar = [];
+    if (rapor.sistem.analiz === false) {
+      satirlar.push(["i-uyari", "gul", "Program açık ama analiz çalışmıyor: şu an ihlal yakalanmıyor."]);
+    }
+    const fark = s.bugun_ihlal - s.dun_ihlal;
+    let bugun =
+      s.bugun_ihlal === 0 ? "Bugün henüz ihlal yakalanmadı" : "Bugün " + sayiMetni(s.bugun_ihlal) + " ihlal yakalandı";
+    if (s.bugun_ihlal || s.dun_ihlal) {
+      bugun += fark < 0 ? ", dünden " + -fark + " az." : fark > 0 ? ", dünden " + fark + " fazla." : ", dünle aynı.";
+    } else {
+      bugun += ".";
+    }
+    satirlar.push(["i-siren", fark > 0 ? "gul" : "yesil", bugun]);
+    if (rapor.gunluk) {
+      const bu = toplamAl(rapor.gunluk.slice(7));
+      const gecen = toplamAl(rapor.gunluk.slice(0, 7));
+      let metin = "Son 7 günde " + sayiMetni(bu) + " ihlal";
+      if (gecen === 0) metin += bu ? "; önceki 7 günde hiç yoktu." : ".";
+      else if (bu === gecen) metin += ", önceki 7 günle aynı.";
+      else metin += "; önceki 7 güne göre %" + Math.round((Math.abs(bu - gecen) / gecen) * 100) + (bu < gecen ? " azaldı." : " arttı.");
+      satirlar.push(["i-rapor", bu > gecen ? "gul" : "yesil", metin]);
+    }
+    const yer = rapor.yerler && rapor.yerler[0];
+    const tur = rapor.ogeler[0];
+    if (yer && yer.sayi > 0) {
+      satirlar.push([
+        "i-kamera",
+        "bal",
+        "En çok ihlal " + yerAdi(yer) + " kamerasında: " + sayiMetni(yer.sayi) + " (son 7 gün)" +
+          (tur ? "; en sık tür " + tur.ad.toLocaleLowerCase("tr") + "." : "."),
+      ]);
+    } else if (tur) {
+      satirlar.push(["i-uyari", "bal", "Son 7 günün en sık ihlali: " + tur.ad.toLocaleLowerCase("tr") + "."]);
+    }
+    satirlar.push(
+      s.bekleyen > 0
+        ? ["i-inceleme", "bal", sayiMetni(s.bekleyen) + " ihlal fabrikada incelenmeyi bekliyor."]
+        : ["i-tamam", "yesil", "İncelenmeyi bekleyen ihlal yok."]
+    );
+    const kopuk = kopukKameraSayisi(rapor);
+    if (s.kamera_toplam === 0) satirlar.push(["i-kamera", "gri", "Henüz kamera eklenmedi."]);
+    else if (kopuk) satirlar.push(["i-kopuk", "gul", kopuk + " kamera görüntü vermiyor; o alanlar şu an izlenmiyor."]);
+    else satirlar.push(["i-tamam", "yesil", "Açık bütün kameralar görüntü veriyor."]);
+    return satirlar;
+  }
+
+  function ozetiCiz(rapor) {
+    const liste = $("ozet-listesi");
+    temizle(liste);
+    for (const [ikon, ton, metin] of ozetCumleleri(rapor)) {
+      const satir = el("li");
+      const kutu = el("span", "ikon-kutu " + ton);
+      kutu.appendChild(simge(ikon));
+      satir.appendChild(kutu);
+      satir.appendChild(el("span", "", metin));
+      liste.appendChild(satir);
+    }
+  }
+
+  function gunlukCiz(rapor) {
+    const kart = $("gunluk-kart");
+    kart.hidden = !rapor.gunluk;
+    if (!rapor.gunluk) return;
+    const g = rapor.gunluk;
+    const kutu = $("gunluk");
+    const etiketler = $("gun-etiketleri");
+    temizle(kutu);
+    temizle(etiketler);
+    const enCok = Math.max(...g);
+    g.forEach(function (n, i) {
+      const gun = new Date(simdiMs() - (13 - i) * 86400000);
+      const tarih = gun.toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long", timeZone: SAAT_DILIMI });
+      const sutun = el("div", "sutun" + (n > 0 ? " dolu" : "") + (i === 13 ? " simdi" : ""));
+      sutun.title = tarih + " · " + n + " ihlal";
+      const dolgu = el("div", "dolgu");
+      dolgu.style.height = enCok && n ? Math.max(6, Math.round((n / enCok) * 100)) + "%" : "4px";
+      sutun.appendChild(dolgu);
+      kutu.appendChild(sutun);
+      const etiket = el("span", i === 13 ? "bugun" : "", gun.toLocaleDateString("tr-TR", { day: "numeric", timeZone: SAAT_DILIMI }));
+      etiketler.appendChild(etiket);
+    });
+    const bu = toplamAl(g.slice(7));
+    const gecen = toplamAl(g.slice(0, 7));
+    $("gunluk-ozet").textContent =
+      "Son 7 gün " + sayiMetni(bu) + ", önceki 7 gün " + sayiMetni(gecen) + " ihlal · günde ortalama " + ondalik(bu / 7);
+    const degisim = $("hafta-degisim");
+    const fark = bu - gecen;
+    degisim.className = "degisim " + (fark > 0 ? "kotu" : fark < 0 ? "iyi" : "notr");
+    degisim.textContent =
+      fark === 0 ? "=" : (fark > 0 ? "▲ " : "▼ ") + (gecen ? "%" + Math.round((Math.abs(fark) / gecen) * 100) : Math.abs(fark));
+    degisim.setAttribute("aria-label", fark === 0 ? "önceki haftayla aynı" : "önceki haftaya göre " + (fark > 0 ? "arttı" : "azaldı"));
+    kutu.setAttribute("aria-label", "Son 14 gün günlük ihlal sayıları. " + $("gunluk-ozet").textContent);
+    const y = rapor.yedi_gun;
+    $("inceleme-ozeti").textContent =
+      y && y.ihlal
+        ? "Son 7 günde inceleme oranı %" + Math.round((y.incelenen / y.ihlal) * 100) +
+          (y.yanlis_alarm ? " · yanlış alarm " + sayiMetni(y.yanlis_alarm) : " · yanlış alarm yok")
+        : "";
+  }
+
+  /* İhlal türleri ve yerler aynı çizimle: ad, sayı ve en büyüğe göre çubuk. */
+  function lejantCiz(liste, ogeler, adAl) {
+    temizle(liste);
+    const enCok = Math.max(...ogeler.map((o) => o.sayi));
+    for (const o of ogeler) {
       const satir = el("li");
       const ust = el("div", "ust");
       ust.appendChild(el("span", "centik"));
-      ust.appendChild(el("span", "", o.ad));
+      ust.appendChild(el("span", "", adAl(o)));
       ust.appendChild(el("b", "", sayiMetni(o.sayi)));
       satir.appendChild(ust);
       const iz = el("span", "iz");
@@ -606,6 +763,360 @@
       satir.appendChild(iz);
       liste.appendChild(satir);
     }
+  }
+
+  function yerleriCiz(rapor) {
+    const yerler = (rapor.yerler || []).filter((y) => y.sayi > 0);
+    $("yerler-kart").hidden = !rapor.yerler || !rapor.yerler.length;
+    if (yerler.length) lejantCiz($("yerler"), yerler, yerAdi);
+    else {
+      temizle($("yerler"));
+      $("yerler").appendChild(bosDurum("Son 7 günde ihlal yok", ""));
+    }
+  }
+
+  function bilgisayariCiz(rapor) {
+    const b = rapor && rapor.bilgisayar;
+    $("bilgisayar-yok").hidden = !!b;
+    const liste = $("bilgisayar-bilgisi");
+    temizle(liste);
+    kurulumMetni = b ? [b.ad, b.bilgisayar_adi].filter(Boolean).join(" · ") : "";
+    if (!b) return;
+    const bos = rapor.sistem.bos_disk_gb;
+    const satirlar = [
+      ["Kurulum", b.ad],
+      ["Bilgisayar adı", b.bilgisayar_adi],
+      ["İşletim sistemi", b.isletim_sistemi],
+      ["İşlemci", b.islemci + (b.islemci && b.cekirdek ? " · " + b.cekirdek + " çekirdek" : "")],
+      ["Bellek", b.bellek_gb ? ondalik(b.bellek_gb) + " GB" : ""],
+      ["Ekran kartı", b.ekran_karti],
+      ["Tespit nerede çalışıyor", b.cikarim],
+      [
+        "Disk",
+        b.disk_toplam_gb
+          ? (bos !== null ? ondalik(bos) + " GB boş / " : "") + ondalik(b.disk_toplam_gb) + " GB"
+          : "",
+      ],
+      ["Kurulum türü", b.kurulum_turu],
+      ["Kurulum tarihi", b.kurulum_tarihi ? gunMetni(b.kurulum_tarihi) : ""],
+      ["Bilgisayar açık", b.acilis ? sureMetni((simdiMs() - Date.parse(b.acilis)) / 1000) : ""],
+    ];
+    for (const [ad, deger] of satirlar) {
+      if (!deger) continue;
+      const satir = el("div");
+      satir.appendChild(el("dt", "", ad));
+      satir.appendChild(el("dd", "", deger));
+      liste.appendChild(satir);
+    }
+  }
+
+  // ------------------------------------------------------------- müdahale
+
+  function dinleniyor() {
+    return aktifGorunum === "mudahale" && Date.now() - sonEtkilesim < DINLEME_SURESI_MS;
+  }
+
+  function kanalAdi(kanal) {
+    return kanal.ad + (kanal.bolum ? " (" + kanal.bolum + ")" : " (Tüm fabrika)");
+  }
+
+  /* Müdahalenin şu an yapılıp yapılamayacağı ve neden. */
+  function mudahaleHali(veri) {
+    const rapor = veri.rapor;
+    const m = rapor && rapor.mudahale;
+    if (!rapor || baglantiDurumu(veri) !== "canli") {
+      return {
+        acik: false,
+        sinif: "tehlike",
+        ikon: "i-kopuk",
+        baslik: "Fabrikadan haber gelmiyor",
+        alt: "Fabrika programı çalışmıyor ya da internete bağlı değil; müdahale gönderilemez.",
+      };
+    }
+    if (!m || !m.acik) {
+      return {
+        acik: false,
+        sinif: "",
+        ikon: "i-kilit",
+        baslik: "Uzaktan müdahale kapalı",
+        alt:
+          "Fabrikadaki bilgisayarda Ayarlar → Uzak izleme panosu → Uzaktan müdahale'yi " +
+          "\"Açık\" yapıp sistemi yeniden başlatın. Kapalıyken pano yalnız izler.",
+      };
+    }
+    if (rapor.sistem.analiz === false) {
+      return {
+        acik: false,
+        sinif: "uyari",
+        ikon: "i-uyari",
+        baslik: "Analiz çalışmıyor",
+        alt: "Anons ve deneme sesi analizin kuyruğundan çalar; önce fabrikada sistemi başlatın.",
+      };
+    }
+    if (!m.kanallar.length) {
+      return {
+        acik: false,
+        sinif: "uyari",
+        ikon: "i-anons",
+        baslik: "Açık ses kanalı yok",
+        alt: "Fabrikada Anons ekranında açık bir hoparlör kanalı olmadan anons çalınamaz.",
+      };
+    }
+    if (!dinleniyor()) {
+      return {
+        acik: true,
+        bekliyor: true,
+        sinif: "",
+        ikon: "i-saat",
+        baslik: "Dinleme beklemede",
+        alt: "Ekrana 10 dakikadır dokunulmadı. Fabrikanın komutları sık sorması için sürdürün.",
+      };
+    }
+    const yas = veri.mudahale ? veri.mudahale.yoklama_yasi_sn : null;
+    if (yas !== null && yas !== undefined && yas <= DINLIYOR_SN) {
+      return {
+        acik: true,
+        sinif: "basari",
+        ikon: "i-tamam",
+        baslik: "Fabrika komutları dinliyor",
+        alt: "Son soru " + sureMetni(yas) + " önce. Gönderdiğiniz komut birkaç saniyede çalar.",
+      };
+    }
+    return {
+      acik: true,
+      sinif: "uyari",
+      ikon: "i-saat",
+      baslik: "Fabrika birazdan dinlemeye başlar",
+      alt:
+        "Bu ekran açıkken fabrika bir sonraki raporunda (en çok " + rapor.aralik_sn +
+        " saniye) sık sormaya başlar. Komutu şimdi gönderebilirsiniz; sırada bekler.",
+    };
+  }
+
+  function secenekleriCiz(m) {
+    const mesajlar = (m && m.mesajlar) || [];
+    const kanallar = (m && m.kanallar) || [];
+    // Liste değişmediyse yeniden kurulmaz: seçim ve odak kaybolmasın
+    const imza = JSON.stringify([mesajlar, kanallar]);
+    if (imza === mudahaleImzasi) return;
+    mudahaleImzasi = imza;
+
+    const kutu = $("mesaj-secenekleri");
+    temizle(kutu);
+    if (!mesajlar.some((ms) => ms.id === seciliMesaj)) seciliMesaj = null;
+    if (!mesajlar.length) {
+      kutu.appendChild(el("p", "ikincil-metin", "Fabrikada açık bir anons mesajı yok."));
+    }
+    for (const ms of mesajlar) {
+      const secim = el("label", "secim");
+      const girdi = el("input");
+      girdi.type = "radio";
+      girdi.name = "mesaj";
+      girdi.value = String(ms.id);
+      girdi.checked = ms.id === seciliMesaj;
+      girdi.addEventListener("change", function () {
+        seciliMesaj = ms.id;
+        anonsOnayiniKapat();
+      });
+      secim.appendChild(girdi);
+      secim.appendChild(el("span", "", ms.metin));
+      kutu.appendChild(secim);
+    }
+
+    const secici = $("anons-kanali");
+    const onceki = secici.value;
+    temizle(secici);
+    if (kanallar.some((k) => !k.bolum)) {
+      const tum = el("option", "", "Tüm fabrika kanalları");
+      tum.value = "";
+      secici.appendChild(tum);
+    }
+    for (const k of kanallar) {
+      const secenek = el("option", "", kanalAdi(k));
+      secenek.value = String(k.id);
+      secici.appendChild(secenek);
+    }
+    if ([...secici.options].some((o) => o.value === onceki)) secici.value = onceki;
+
+    const liste = $("kanal-listesi");
+    temizle(liste);
+    if (!kanallar.length) liste.appendChild(bosDurum("Açık ses kanalı yok", "Fabrikada Anons ekranından eklenir"));
+    for (const k of kanallar) {
+      const satir = el("li");
+      const govde = el("div", "satir-govde");
+      govde.appendChild(el("b", "", k.ad));
+      govde.appendChild(el("span", "", k.bolum || "Tüm fabrika"));
+      satir.appendChild(govde);
+      const dugme = el("button", "dugme ikincil", "Dene");
+      dugme.type = "button";
+      dugme.dataset.kanal = String(k.id);
+      dugme.addEventListener("click", denemeTiklandi);
+      satir.appendChild(dugme);
+      liste.appendChild(satir);
+    }
+  }
+
+  function komutSatiri(k) {
+    const satir = el("li");
+    const [ad, sinif, varsayilan] = KOMUT_DURUMLARI[k.durum] || KOMUT_DURUMLARI.hata;
+    const kutu = el("span", "ikon-kutu " + ({ basari: "yesil", tehlike: "gul", uyari: "bal" }[sinif] || "gri"));
+    kutu.appendChild(simge(k.tur === "ses_dene" ? "i-sistem" : "i-anons"));
+    satir.appendChild(kutu);
+    const govde = el("div", "cizelge-govde");
+    govde.appendChild(el("b", "", k.ozet));
+    const aciklama = k.mesaj || varsayilan;
+    if (aciklama) govde.appendChild(el("span", "", aciklama));
+    const rozetler = el("div", "rozetler");
+    const suruyor = k.durum === "bekliyor" || k.durum === "iletildi";
+    rozetler.appendChild(rozet(ad, sinif, true, suruyor));
+    govde.appendChild(rozetler);
+    satir.appendChild(govde);
+    const zaman = el("time", "cizelge-zaman");
+    zaman.dateTime = k.olusturuldu;
+    zaman.appendChild(el("b", "", saatMetni(k.olusturuldu)));
+    const gun = gunEtiketi(k.olusturuldu);
+    if (gun) zaman.appendChild(el("span", "", gun));
+    satir.appendChild(zaman);
+    return satir;
+  }
+
+  function komutlariCiz(veri) {
+    const sunucudan = (veri.mudahale && veri.mudahale.komutlar) || [];
+    // Gönderilip henüz sunucudan okunmayan komut da görünür
+    const bilinen = new Set(sunucudan.map((k) => k.id));
+    bekleyenKomutlar = bekleyenKomutlar.filter((k) => !bilinen.has(k.id));
+    const komutlar = [...bekleyenKomutlar, ...sunucudan];
+    const liste = $("komut-listesi");
+    temizle(liste);
+    if (!komutlar.length) liste.appendChild(bosDurum("Henüz müdahale yok", "Gönderdiğiniz anons burada görünür"));
+    for (const k of komutlar) liste.appendChild(komutSatiri(k));
+  }
+
+  function mudahaleyiCiz(veri) {
+    const hal = mudahaleHali(veri);
+    $("mudahale-durumu").className = "durum-bandi" + (hal.sinif ? " " + hal.sinif : "");
+    $("mudahale-simgesi").setAttribute("href", "#" + hal.ikon);
+    $("mudahale-baslik").textContent = hal.baslik;
+    $("mudahale-alt").textContent = hal.alt;
+    $("dinlemeyi-surdur").hidden = !hal.bekliyor;
+    secenekleriCiz(veri.rapor && veri.rapor.mudahale);
+    const kilitli = !hal.acik;
+    for (const oge of document.querySelectorAll(
+      "#anons-formu input, #anons-formu select, #anons-formu button, #kanal-listesi button"
+    )) {
+      oge.disabled = kilitli;
+    }
+    if (kilitli) anonsOnayiniKapat();
+    komutlariCiz(veri);
+  }
+
+  function anonsOnayiniKapat() {
+    $("anons-onayi").hidden = true;
+    $("anons-dugmesi").hidden = false;
+  }
+
+  async function mudahaleGonder(istek) {
+    const yanit = await fetch("/api/mudahale", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(istek),
+    });
+    const veri = await yanit.json().catch(() => ({}));
+    if (yanit.status === 401) {
+      sonVeri = null;
+      tekEkranGoster("giris");
+      throw new Error("Oturumun süresi doldu; yeniden giriş yapın.");
+    }
+    if (!yanit.ok) throw new Error(veri.mesaj || "Gönderilemedi (HTTP " + yanit.status + ").");
+    bekleyenKomutlar.unshift(veri.komut);
+    if (sonVeri) komutlariCiz(sonVeri);
+    duyur("Komut gönderildi: " + veri.komut.ozet);
+    return veri.komut;
+  }
+
+  $("anons-dugmesi").addEventListener("click", function () {
+    $("anons-hatasi").textContent = "";
+    const mesajlar = (sonVeri && sonVeri.rapor && sonVeri.rapor.mudahale.mesajlar) || [];
+    const mesaj = mesajlar.find((m) => m.id === seciliMesaj);
+    if (!mesaj) {
+      $("anons-hatasi").textContent = "Önce çalınacak mesajı seçin.";
+      return;
+    }
+    const secici = $("anons-kanali");
+    const yer = secici.value === "" ? "Tüm fabrika kanallarından" : secici.selectedOptions[0].textContent + " kanalından";
+    $("anons-onay-metni").textContent = "“" + mesaj.metin + "” " + yer + " çalınsın mı?";
+    $("anons-onayi").hidden = false;
+    this.hidden = true;
+    $("anons-gonder").focus();
+  });
+
+  $("anons-vazgec").addEventListener("click", function () {
+    anonsOnayiniKapat();
+    $("anons-dugmesi").focus();
+  });
+
+  $("anons-kanali").addEventListener("change", anonsOnayiniKapat);
+
+  $("anons-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    const dugme = $("anons-gonder");
+    dugme.disabled = true;
+    try {
+      const kanal = $("anons-kanali").value;
+      await mudahaleGonder({ tur: "anons", mesaj_id: seciliMesaj, kanal_id: kanal === "" ? null : Number(kanal) });
+      anonsOnayiniKapat();
+      setTimeout(yukle, 1500);
+    } catch (hata) {
+      $("anons-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
+
+  /* Deneme iki dokunuşla gider: ilki sorar, ikincisi gönderir (cepte yanlışlıkla
+     dokunulup fabrikada ses çıkmasın). Soru 4 saniye sonra kendiliğinden kalkar. */
+  async function denemeTiklandi() {
+    const dugme = this;
+    $("deneme-hatasi").textContent = "";
+    if (!dugme.classList.contains("onayla")) {
+      for (const diger of document.querySelectorAll("#kanal-listesi .onayla")) {
+        diger.classList.remove("onayla");
+        diger.textContent = "Dene";
+      }
+      dugme.classList.add("onayla");
+      dugme.textContent = "Çalınsın mı?";
+      setTimeout(function () {
+        if (dugme.classList.contains("onayla")) {
+          dugme.classList.remove("onayla");
+          dugme.textContent = "Dene";
+        }
+      }, 4000);
+      return;
+    }
+    dugme.classList.remove("onayla");
+    dugme.textContent = "Dene";
+    dugme.disabled = true;
+    try {
+      await mudahaleGonder({ tur: "ses_dene", kanal_id: Number(dugme.dataset.kanal) });
+      setTimeout(yukle, 1500);
+    } catch (hata) {
+      $("deneme-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  }
+
+  $("dinlemeyi-surdur").addEventListener("click", function () {
+    sonEtkilesim = Date.now();
+    if (sonVeri) mudahaleyiCiz(sonVeri);
+    yukle();
+  });
+
+  for (const tur of ["pointerdown", "keydown"]) {
+    document.addEventListener(tur, function () {
+      sonEtkilesim = Date.now();
+    });
   }
 
   // ---------------------------------------------------------------- sistem
@@ -663,7 +1174,11 @@
     sorunlariCiz(rapor);
     sayaclariCiz(rapor);
     for (const kutu of document.querySelectorAll(".veri")) kutu.hidden = !rapor;
+    bilgisayariCiz(rapor);
     if (rapor) {
+      ozetiCiz(rapor);
+      gunlukCiz(rapor);
+      yerleriCiz(rapor);
       sayilariCiz(rapor);
       kameralariCiz(rapor);
       olaylariCiz(rapor);
@@ -675,6 +1190,10 @@
       $("olay-cizelgesi").appendChild(bosDurum("Henüz rapor yok", "Fabrikadan ilk rapor gelince görünür"));
     }
     sistemiCiz(veri);
+    mudahaleyiCiz(veri);
+    if (aktifGorunum === "genel") {
+      $("gorunum-aciklamasi").textContent = kurulumMetni || GORUNUMLER.genel[1];
+    }
   }
 
   // ----------------------------------------------------------- sunucu
@@ -683,7 +1202,8 @@
     if (istekSuruyor) return;
     istekSuruyor = true;
     try {
-      const yanit = await fetch("/api/durum", { credentials: "same-origin", cache: "no-store" });
+      const adres = dinleniyor() ? "/api/durum?mudahale=1" : "/api/durum";
+      const yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store" });
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
         sonVeri = null;
@@ -793,10 +1313,17 @@
     if (document.visibilityState === "visible" && $("giris").hidden) yukle();
   });
   // Giriş ekranında tazelenmez (yazılan şifre silinmesin); öbür her durumda
-  // (pano, kurulum, ilk yüklemede ulaşılamayan site) tazelenir.
+  // (pano, kurulum, ilk yüklemede ulaşılamayan site) tazelenir. Müdahale
+  // ekranı dinlerken daha sık: komutun sonucu birkaç saniyede görünsün.
+  let sonTazeleme = 0;
   setInterval(function () {
-    if (document.visibilityState === "visible" && $("giris").hidden) yukle();
-  }, TAZELEME_MS);
+    if (document.visibilityState !== "visible" || !$("giris").hidden) return;
+    const aralik = dinleniyor() ? MUDAHALE_TAZELEME_MS : TAZELEME_MS;
+    if (Date.now() - sonTazeleme >= aralik - 250) {
+      sonTazeleme = Date.now();
+      yukle();
+    }
+  }, MUDAHALE_TAZELEME_MS);
   // "12 saniye önce" ve bağlantı durumu istek arasında da ilerler
   setInterval(function () {
     if (sonVeri && !$("kabuk").hidden) durumBandiniCiz(sonVeri);
