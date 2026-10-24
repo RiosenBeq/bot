@@ -5,33 +5,39 @@ Vercel'de duran sitesi. İki sayfası var:
 
 | Adres | Ne |
 |---|---|
-| `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, KVKK notu |
-| `/pano` | Şifreli **uzak izleme panosu**: bugünün özeti, son 14 günün eğilimi, kameralar, son olaylar, kurulu olduğu bilgisayar ve **Müdahale** (uzaktan anons, hoparlör denemesi) |
+| `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, veri güvenliği notu |
+| `/pano` | Şifreli **uzak izleme panosu**: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve **Müdahale** (uzaktan anons, hoparlör denemesi) |
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
-bir durum özeti gönderir. Bağlantı yalnız fabrikadan dışarı doğrudur: fabrikada
+bir durum özeti, ihlallerin kanıt fotoğrafını ve (Kameralar ekranı açıkken)
+kameraların anlık görüntüsünü gönderir. Bağlantı yalnız fabrikadan dışarı doğrudur: fabrikada
 port açılmaz, modeme dokunulmaz. Fabrikadan 90 saniye haber gelmezse pano
 kırmızıyla "haber yok" der; program kapatılırken son bir "kapatıldı" raporu
 gönderdiği için bilerek kapatmayı bağlantı kopmasından ayırır.
 
 ## Siteye ne gelir, ne gelmez
 
-| Siteye gelir | Siteye HİÇ gelmez |
-|---|---|
-| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | Kamera görüntüsü, video, kanıt fotoğrafı |
-| Kameraların adı, bölümü, bağlantı durumu, kare hızı | Kamera ve hoparlör adresleri, kullanıcı adları, şifreler |
-| Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım | Takip numarası, olayın ayrıntı kaydı, kural ayarları |
-| Son 20 olayın adı, yeri, önemi, durumu ve zamanı | Sistem olayının serbest metni (yerine olayın adı gelir) |
+| Siteye gelir | Ne kadar durur | Siteye gelmez |
+|---|---|---|
+| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, kullanıcı adları, şifreler |
+| Kameraların adı, bölümü, bağlantı durumu, kare hızı | 7 gün | Video kaydı (yalnız tek kareler gelir) |
+| Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
+| Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (şifresi gizlenmiş) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
+| İhlallerin **kanıt fotoğrafı** (en çok 960 px, ihlal başına bir kez) | 7 gün, en çok 60 fotoğraf | |
+| Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken gelir | |
+| Kurulu olduğu bilgisayar: adı, IP adresi, işletim sistemi, donanım | 7 gün | Oturum açan kullanıcının adı |
 
-**Canlı görüntü bu siteden geçmez.** Görüntüye uzaktan bakmak için fabrika
-ağına VPN ya da Tailscale ile bağlanılır (DALSAN `docs/15-UZAKTAN-ERISIM.md` §4.1).
-O adres `FABRIKA_ADRESI` olarak yazılırsa panoda "Fabrika ekranını aç" düğmesi çıkar.
+**Akıcı canlı görüntü bu siteden geçmez.** Panodaki anlık görüntü 10 saniyede
+bir yenilenir. Akıcı görüntü için fabrika ağına VPN ya da Tailscale ile
+bağlanılır (DALSAN `docs/15-UZAKTAN-ERISIM.md` §4.1). O adres `FABRIKA_ADRESI`
+olarak yazılırsa panoda "Fabrika ekranını aç" düğmesi çıkar.
 
-> **KVKK:** Vercel ve Upstash'in sunucuları yurt dışındadır. Rapor görüntü taşımaz
-> ama bir olayın zamanı, kamerası ve türü bir çalışanla dolaylı olarak
-> ilişkilendirilebilir. Fabrika programında özelliği açmadan önce hukuk biriminin
-> görüşünü alın (DALSAN `docs/18-KVKK.md`). Program tarafında özellik varsayılan
-> olarak **kapalıdır**.
+> **Fabrika içi kullanım (operatör kararı 24.10.2026).** Pano fabrikanın kendi
+> kullanımı içindir; görüntünün siteye gelmesi bu kararla açıldı. Bilinmesi
+> gerekenler: Vercel ve Upstash'in sunucuları yurt dışındadır; görüntüler
+> yalnız şifreyle giren kişiye gösterilir ve yukarıdaki sürelerin sonunda
+> kendiliğinden silinir. Program tarafında uzak pano varsayılan olarak
+> **kapalıdır**; açmak fabrikanın kararıdır.
 
 ## Yönetici (patron) görünümü
 
@@ -54,8 +60,11 @@ Buradan alınanlar, sade haliyle:
 - **Son 14 gün:** günlük çubuk grafiği, son 7 günü önceki 7 günle karşılaştıran
   rozet (azalma yeşil) ve inceleme oranı.
 - **En çok ihlal görülen yerler** (son 7 gün, kamera başına) ve ihlal türleri.
-- **Kurulu olduğu bilgisayar:** kurulum adı, bilgisayar adı, işletim sistemi,
-  işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi.
+- **Kurulu olduğu bilgisayar:** kurulum adı, bilgisayar adı, IP adresi,
+  işletim sistemi, işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi.
+- **Kanıt fotoğrafı ve anlık görüntü:** her ihlalin yanında fotoğrafı durur
+  (dokununca büyür); Kameralar ekranında kameraların 10 saniyede bir yenilenen
+  görüntüsü, köşesinde bağlantı durumu.
 
 Bilerek alınmayan: ürünlerin "güvenlik puanı". O puanın formülü her üreticide
 farklı ve gizli; uydurulmuş bir puan yerine her sayı gerçek bir sayımdır.
@@ -77,34 +86,58 @@ kanaldan çaldırmak ve bir kanaldan **deneme sesi** vermek. Başka hiçbir şey
 - Program tarafında ayrıca açılır (Ayarlar → Uzak izleme panosu → Uzaktan
   müdahale); kapalıyken ekran nasıl açılacağını söyler.
 
+## Kanıt fotoğrafı ve anlık görüntü
+
+İkisi de raporla aynı anahtarla, aynı başlıklarla imzalı `POST` olarak gelir;
+pano onları yalnız oturumla görür (`GET /api/foto?olay=ID`, `GET
+/api/kare?kamera=ID`). Site JPEG olmayan içeriği (`FF D8 FF` ile başlamayan)
+ve sınırı aşanı depoya hiç yazmaz.
+
+- **Kanıt fotoğrafı:** `POST /api/foto`, gövde `{surum: 1, olay_id, jpeg:
+  "<base64>"}`, en çok 400 KB. Site hangi olayların fotoğrafını tuttuğunu
+  kendisi bilir ve raporun cevabında söyler: `foto.var` = raporundaki
+  olaylardan fotoğrafı sitede zaten olanların kimliği. Fabrika her rapordan
+  sonra, `son_olaylar`'daki fotoğraflı **ihlallerden** `foto.var`'da olmayanları
+  gönderir (en yenisi önce, turda en çok 5; genişlik en çok 960 px). Böylece
+  program yeniden başlasa da fotoğraf iki kez gitmez. Site en çok 60 fotoğraf
+  tutar, en eskisini siler; fotoğraf 7 gün sonra kendiliğinden silinir.
+- **Anlık görüntü:** panoda Kameralar ekranı açıkken raporun cevabı
+  `kare.iste: true` der. Fabrika o zaman 10 saniyede bir, görüntü veren her
+  kamera için `POST /api/kare` gönderir: `{surum: 1, kamera_id, jpeg}`, en çok
+  300 KB (640 px önerilir). Cevaptaki `iste` yanlışa dönünce ya da 60 saniye
+  boyunca doğru gelmezse bırakır. Görüntü 2 dakikada silinir; ekrana 10
+  dakika dokunulmazsa pano istemeyi bırakır.
+
+Raporun cevabı: `{tamam, alindi, komut: {hizli}, kare: {iste}, foto: {var: []}}`.
+Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü göndermemelidir.
+
 ## Raporun biçimi (fabrika programı ile bağlarken)
 
 Fabrika programı `/api/rapor`'a JSON gönderir. Site yalnız aşağıdaki alanları
-tanır; gerisini atar. Kalın olanları fabrika programı henüz göndermiyor;
-`mudahale` alanını ve komut yoklamasını yapan kod DALSAN'da `uzaktan-mudahale`
-dalında, bağlama adımını bekliyor. Gelmeyen alanın kartını pano gizler ya da
-"henüz gönderilmiyor" der.
+tanır; gerisini atar. Kalın olanları fabrika programı henüz göndermiyor (DALSAN
+tarafındaki iş: kameranın ve olayın kimliği, sistem olayının açıklaması,
+bilgisayarın IP adresi, fotoğraf ve anlık görüntü gönderimi). Gelmeyen alanın
+kartını pano gizler ya da "henüz gönderilmiyor" der.
 
 | Alan | Biçim |
 |---|---|
 | `surum`, `uretildi`, `aralik_sn`, `kapanis` | 1, ISO zaman, saniye, true/false |
 | `program` | `{ad, surum}` |
 | `sistem` | `{analiz, hazir, model, uyari_garantisi, sorunlar[], bos_disk_gb, calisma_suresi_sn}` |
-| `kameralar[]` | `{ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` |
+| `kameralar[]` | `{ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` ve **`id`** (veritabanındaki kamera kimliği; anlık görüntünün anahtarı) |
 | `sayilar` | `{bugun_ihlal, dun_ihlal, bekleyen, aktif_kural, kamera_toplam, kamera_canli}` |
 | `saatlik` | bugünün 24 saati, ihlal sayısı |
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
-| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` |
+| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` ve **`id`** (olay kimliği; kanıt fotoğrafının anahtarı), **`ayrinti`** (sistem olayının açıklaması, adresteki şifre gizlenmiş, en çok 300 karakter) |
 | `mudahale` | `{acik, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}` |
-| **`gunluk`** | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
-| **`yedi_gun`** | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
-| **`yerler[]`** | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
-| **`bilgisayar`** | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis}` |
+| `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
+| `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
+| `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
+| `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis}` ve **`ip`** (yerel ağdaki adresleri, en çok 4) |
 
 `bilgisayar.ad`, kurulumun okunur adıdır ("Gebze fabrikası"); fabrika
-programında elle yazılan bir ayar olması önerilir. Bilgisayar adı bazen bir
-kişinin adını taşır ("AHMET-PC"): bağlarken KVKK açısından gözden geçirilmeli.
-IP adresi bilerek yoktur.
+programında elle yazılan bir ayardır. `olay.foto` fabrikadan okunmaz: sitede
+fotoğrafı olup olmadığını site kendisi yazar.
 
 Komut yoklaması (`/api/komut`): istek `{surum: 1, sonuclar: [{id, durum:
 "yapildi"|"hata", mesaj}]}`, cevap `{komutlar: [{id, tur: "anons"|"ses_dene",
@@ -146,22 +179,29 @@ yürütmez. Raporun cevabı `{komut: {hizli}}` taşır.
 
 - **Vercel:** ücretsiz Hobby planı Vercel'in şartlarına göre yalnız kişisel ve
   ticari olmayan kullanım içindir. Bir fabrika için **Pro** planı gerekir.
-- **Upstash:** site az komut kullanır. Her rapor 1 istekte 2 komuttur (30 sn
-  aralıkla günde yaklaşık 5.800), pano açıkken 15 saniyede bir okur. Ücretsiz
-  planın güncel sınırını Upstash'in fiyat sayfasında kontrol edin.
+- **Upstash:** her rapor 1 istekte 3 komuttur: 30 sn aralıkla ayda yaklaşık
+  260 bin. Pano açıkken saatte yaklaşık 240 komut okur. Kanıt fotoğrafı başına
+  3-4 komut. Kameralar ekranı açıkken 4 kamerada saatte yaklaşık 8 bin komut ve
+  dakikada 3 MB kadar veri akar; ekrana 10 dakika dokunulmazsa durur. Ücretsiz
+  plan (ayda 500 bin komut) günde birkaç kez bakmaya yeter. Pano bir ekranda
+  sürekli açık kalacaksa ya da Kameralar sık açılacaksa kullandıkça öde planına
+  geçip harcama sınırı koyun. Depoda en çok 60 fotoğraf durur (24 MB'tan az).
+  Güncel sınırları Upstash'in fiyat sayfasında kontrol edin.
 
 ## Nasıl çalışır
 
 ```
-fabrika programı ──(HTTPS POST, imzalı JSON)──> /api/rapor ──> Upstash Redis
-tarayıcı ──(şifreyle giriş, oturum çerezi)──> /api/durum <── Upstash Redis
+fabrika programı ──(HTTPS POST, imzalı JSON)──> /api/rapor, /api/foto, /api/kare ──> Upstash Redis
+tarayıcı ──(şifreyle giriş, oturum çerezi)──> /api/durum, /api/foto, /api/kare <── Upstash Redis
 ```
 
 | Dosya | İşi |
 |---|---|
 | `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
 | `api/giris.py`, `api/cikis.py` | Panoya giriş ve çıkış (oturum çerezi) |
-| `api/durum.py` | Panonun verisi; oturum ister (`?mudahale=1`: son komutlar da gelir) |
+| `api/durum.py` | Panonun verisi; oturum ister (`?mudahale=1`: son komutlar da gelir; `?kare=1`: kameraların son görüntüsünün zamanı da gelir ve fabrikaya "anlık görüntü gönder" denir) |
+| `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
+| `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi); oturum ister |
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek ve cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, kilit, rapor biçimi |
@@ -184,7 +224,9 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
   `X-Dalsan-Zaman`, `X-Dalsan-Imza`). İmza tutmayan ya da saati 5 dakikadan fazla
   kaymış rapor reddedilir; gövde imzadan önce okunmaz.
 - **Alan süzme:** rapordaki alanlar tek tek tip ve uzunluk denetiminden geçer;
-  bilinmeyen alan depoya yazılmaz (kazayla eklenen bir fotoğraf bile siteye girmez).
+  bilinmeyen alan depoya yazılmaz. Görüntü yalnız kendi imzalı adresinden gelir:
+  base64 sıkı çözülür, boyut sınırı aşılmaz, JPEG olmayan içerik reddedilir.
+  Panoya `image/jpeg` ve `nosniff` ile, yalnız oturumla verilir.
 - **Giriş:** şifre sabit sürede karşılaştırılır. Aynı adresten 5 yanlış denemede
   5 dakika, bütün adreslerden 15 dakikada 100 yanlış denemede 15 dakika kilit.
   Kilit sayacında IP adresinin kendisi değil, geri çevrilemeyen özeti tutulur.
@@ -193,7 +235,8 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 - **Sayfa:** sıkı Content-Security-Policy (yalnız sitenin kendi dosyaları), çerçeve
   içine alınamaz, arama motorlarına kapalı (`noindex`, `robots.txt`). Veri sayfaya
   yalnız `textContent` ile yazılır.
-- **Saklama:** son durum 7 gün tutulur; rapor kesilirse olay adları süresiz kalmaz.
+- **Saklama:** son durum ve kanıt fotoğrafları 7 gün (en çok 60 fotoğraf),
+  anlık görüntü 2 dakika tutulur; rapor kesilirse hiçbiri süresiz kalmaz.
 
 ## Sorun giderme
 
@@ -206,6 +249,10 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 | Program: "beklenmeyen bir cevap verdi (HTTP 401)" | Önizleme adresi yazılmış; Vercel'in ana (Production) adresini yazın |
 | Program: "Siteye ulaşılamadı" | İnternet yok ya da şirket güvenlik duvarı `vercel.app` adreslerini engelliyor |
 | Pano: "Veri deposuna ulaşılamadı" | Storage sekmesinde Upstash bağlantısını kontrol edin; Vercel → Logs |
+| Kameralar: "Fabrika programı anlık görüntü göndermiyor" | Programın uzak pano bağlantısı eski; güncellenince kameralar görüntüsüyle çıkar |
+| Kameralar: "Görüntü beklemede" | Ekrana 10 dakikadır dokunulmadı; Sürdür'e basın |
+| Kameralar: "Fabrika bir sonraki raporunda göndermeye başlar" uzun sürüyor | Program rapor aralığı kadar (varsayılan 30 sn) bekler; sürüyorsa programın Ayarlar → Uzak izleme panosu bölümündeki durum satırına bakın |
+| Olaylar: "Fotoğraf alınamadı" | Fotoğraf sitede silinmiş (7 gün, en çok 60) ya da henüz gelmedi; asılları fabrikadaki bilgisayardadır |
 
 ## Bu bilgisayarda denemek
 

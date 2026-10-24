@@ -182,7 +182,7 @@
               </section>
               <section class="kart" aria-labelledby="genel-olay-baslik">
                 <div class="kart-basligi">
-                  <div><h2 id="genel-olay-baslik">Son olaylar</h2><p>Fotoğraflar fabrikada kalır</p></div>
+                  <div><h2 id="genel-olay-baslik">Son olaylar</h2><p>Fotoğrafa dokununca büyür</p></div>
                 </div>
                 <ul id="genel-olaylar" class="cizelge"></ul>
                 <div class="kart-alt"><a class="bag" href="#olaylar">Tüm olaylar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
@@ -208,6 +208,13 @@
 
         <!-- KAMERALAR -->
         <div class="gorunum" data-gorunum="kameralar" hidden>
+          <section id="kare-bolumu" class="kart" aria-labelledby="kare-baslik" hidden>
+            <div class="kart-basligi">
+              <div><h2 id="kare-baslik">Anlık görüntü</h2><p id="kare-alt"></p></div>
+              <button id="kare-surdur" class="dugme ikincil" type="button" hidden><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg>Sürdür</button>
+            </div>
+            <div id="kare-izgarasi" class="kare-izgarasi"></div>
+          </section>
           <div class="araclar">
             <div class="cipler" id="kamera-cipleri" role="group" aria-label="Kamera süzgeci">
               <button class="cip" type="button" data-suzgec="hepsi" aria-pressed="true">Tümü <span class="sayac" data-cip="hepsi">0</span></button>
@@ -240,7 +247,7 @@
           <section class="kart" aria-label="Olay listesi">
             <ul id="olay-cizelgesi" class="cizelge"></ul>
           </section>
-          <p class="not">Son 20 olay. Kanıt fotoğrafları ve ayrıntılar fabrikadaki bilgisayarda kalır.</p>
+          <p class="not">Son 20 olay. Fotoğrafa dokununca büyür; kanıt fotoğrafları 7 gün sonra bu siteden silinir, asılları fabrikadaki bilgisayarda kalır.</p>
         </div>
 
         <!-- MÜDAHALE -->
@@ -312,12 +319,13 @@
             </div>
             <div class="sutun">
               <section class="kart" aria-labelledby="gizlilik-baslik">
-                <div class="kart-basligi"><h2 id="gizlilik-baslik">Bu siteye hiç gelmeyenler</h2></div>
+                <div class="kart-basligi"><div><h2 id="gizlilik-baslik">Bu siteye ne gelir</h2><p>Yalnız şifreyle giren görür</p></div></div>
                 <ul class="gizlilik-listesi">
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kamera görüntüsü ve video</li>
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kanıt fotoğrafları</li>
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kamera adresleri ve şifreler</li>
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Kişiyi tanımlayan bilgi</li>
+                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Durum, sayılar ve son olaylar</li>
+                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Kanıt fotoğrafları: 7 gün sonra silinir</li>
+                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Anlık görüntü: yalnız Kameralar açıkken, 2 dakikada silinir</li>
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Gelmez: kamera ve hoparlör şifreleri</li>
+                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Gelmez: video kayıtları</li>
                 </ul>
               </section>
               <section class="kart yalniz-mobil" aria-label="Hesap">
@@ -340,5 +348,13 @@
       <a class="sekme" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg><span>Sistem</span></a>
     </nav>
   </div>
+
+  <dialog id="foto-penceresi" class="foto-penceresi" aria-labelledby="foto-baslik">
+    <div class="ust">
+      <div><h2 id="foto-baslik"></h2><p id="foto-alt"></p></div>
+      <button id="foto-kapat" class="dugme ikincil" type="button">Kapat</button>
+    </div>
+    <img id="foto-buyuk" alt="">
+  </dialog>
 </body>
 </html>

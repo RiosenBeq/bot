@@ -2,7 +2,8 @@
 
 Fabrika programı bu alanları henüz göndermeyebilir (bağlama adımı ayrı):
 gelmeyen alan boş döner ve pano o kartı gizler. Gelen alan tip ve uzunluk
-denetiminden geçer; bilinmeyen alan (IP adresi gibi) depoya girmez.
+denetiminden geçer; bilinmeyen alan (oturumdaki kullanıcı gibi) depoya girmez.
+Bilgisayarın IP adresi fabrika içi kullanım kararıyla (24.10.2026) gelir.
 """
 
 import _pano
@@ -39,7 +40,11 @@ def test_alanlar_suzulur():
             "gunluk": [3, 1, 0, 2, 5, 1, 0, 4, 2, 9, 1, 0, 3, 7],
             "yedi_gun": {"ihlal": 20, "incelenen": 99, "yanlis_alarm": 2},
             "yerler": [{"ad": "Forklift Yolu", "bolum": "Üretim", "sayi": 21, "ip": "10.0.0.5"}],
-            "bilgisayar": {**BILGISAYAR, "ip": "192.168.1.20", "kullanici": "ahmet"},
+            "bilgisayar": {
+                **BILGISAYAR,
+                "ip": ["192.168.1.20", "fe80::1", "değil-bir-adres", 7],
+                "kullanici": "ahmet",
+            },
         }
     )
     assert temiz["gunluk"][-1] == 7 and len(temiz["gunluk"]) == 14
@@ -47,7 +52,8 @@ def test_alanlar_suzulur():
     assert temiz["yedi_gun"] == {"ihlal": 20, "incelenen": 20, "yanlis_alarm": 2}
     assert temiz["yerler"] == [{"ad": "Forklift Yolu", "bolum": "Üretim", "sayi": 21}]
     bilgi = temiz["bilgisayar"]
-    assert "ip" not in bilgi and "kullanici" not in bilgi
+    assert "kullanici" not in bilgi
+    assert bilgi["ip"] == ["192.168.1.20", "fe80::1"]
     assert bilgi["bilgisayar_adi"] == "ISG-PC-01"
     assert bilgi["cekirdek"] == 16 and bilgi["bellek_gb"] == 31.7
     assert bilgi["kurulum_tarihi"] == "2026-09-23T06:00:00+00:00"

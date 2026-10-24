@@ -16,16 +16,22 @@ istekle alır ve sonucunu bildirir. Fabrikaya dışarıdan bağlanılmaz; fabrik
 yalnız Müdahale ekranı açıkken birkaç saniyede bir sorar ("Uzaktan müdahale"
 bölümü).
 
-Görüntü bu siteye HİÇ gelmez: rapor yalnız durum, sayı ve olay başlığı taşır
-(README.md "Siteye ne gelir, ne gelmez"). Ayarlar Vercel'in Environment
-Variables ekranından okunur.
+Görüntü (fabrika içi kullanım kararı, 24.10.2026): ihlallerin kanıt
+fotoğrafı /api/foto'ya, Kameralar ekranı açıkken kameraların anlık görüntüsü
+/api/kare'ye gelir; ikisi de imzalı ve küçültülmüştür, yalnız giriş yapan görür,
+kısa süre sonra silinir. Şifreler, kamera adresleri ve video gelmez (README.md
+"Siteye ne gelir, ne gelmez"). Ayarlar Vercel'in Environment Variables
+ekranından okunur.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import http.cookies
+import ipaddress
 import json
 import math
 import os
@@ -85,6 +91,7 @@ GECIKME_KATSAYISI = 3
 KAMERA_DURUMLARI = ("online", "connecting", "offline", "pasif")
 ONEMLER = ("critical", "high", "medium", "low")
 OLAY_TURLERI = ("ihlal", "sistem")
+OLAY_EN_COK = 50  # rapordaki son olaylar (pano 20'sini gösterir)
 # ---- uzaktan müdahale
 # Pano yalnız bu işleri isteyebilir; fabrika programı da yalnız bunları tanır.
 KOMUT_TURLERI = ("anons", "ses_dene")
@@ -113,6 +120,28 @@ YOKLAMA_TOPLU = 5
 SONUC_BEKLEME_SN = 180
 KOMUT_EN_BUYUK_BAYT = 16 * 1024
 SURESI_DOLDU_METNI = "Fabrika komutu 2 dakika içinde almadı; yapılmadı."
+
+# ---- görüntü (fabrika içi kullanım kararı, 24.10.2026)
+# Kanıt fotoğrafı: ihlal başına bir kez gelir, 7 gün durur (durumla aynı).
+# Hangi olayın fotoğrafı olduğunu site kendisi tutar (tek anahtar, en yenisi
+# önde) ve rapor cevabında fabrikaya söyler: fabrika aynı fotoğrafı iki kez
+# göndermez. En çok FOTO_EN_COK fotoğraf durur; pano son 20 olayı gösterir ve
+# depo 256 MB ile sınırlıdır (Upstash ücretsiz plan).
+FOTO_ONEKI = "dalsan:foto:"
+FOTO_LISTESI_ANAHTARI = "dalsan:fotolar"
+FOTO_EN_BUYUK_BAYT = 400 * 1024
+FOTO_SAKLAMA_SN = DURUM_SAKLAMA_SN
+FOTO_EN_COK = 60
+# Anlık görüntü: yalnız Kameralar ekranı açıkken gelir; 2 dakikada silinir
+# (eski bir kare "şu anki görüntü" diye gösterilmesin).
+KARE_ONEKI = "dalsan:kare:"
+KARE_ZAMAN_ONEKI = "dalsan:kare_zaman:"
+KARE_IZLEYEN_ANAHTARI = "dalsan:kare:izleyen"
+KARE_EN_BUYUK_BAYT = 300 * 1024
+KARE_SAKLAMA_SN = 120
+KARE_ARALIK_SN = 10  # fabrikaya önerilen gönderme aralığı (README)
+JPEG_BASI = b"\xff\xd8\xff"
+IP_EN_COK = 4
 
 SAYI_ALANLARI = (
     "bugun_ihlal",
@@ -549,6 +578,7 @@ def _zaman(deger: object) -> str:
 
 def _kamera(ham: dict) -> dict:
     return {
+        "id": _kimlik(ham.get("id")),  # anlık görüntünün anahtarı
         "ad": _metin(ham.get("ad"), 80) or "Adsız kamera",
         "bolum": _metin(ham.get("bolum"), 80),
         "durum": _secim(ham.get("durum"), KAMERA_DURUMLARI) or "offline",
@@ -562,6 +592,10 @@ def _kamera(ham: dict) -> dict:
 
 def _olay(ham: dict) -> dict:
     return {
+        "id": _kimlik(ham.get("id")),  # kanıt fotoğrafının anahtarı
+        "foto": False,  # sitede fotoğrafı var mı: pano_verisi doldurur
+        # Sistem olayının açıklaması (şifreler fabrikada gizlenir)
+        "ayrinti": _metin(ham.get("ayrinti"), 300),
         "zaman": _zaman(ham.get("zaman")),
         "tur": _secim(ham.get("tur"), OLAY_TURLERI) or "ihlal",
         "baslik": _metin(ham.get("baslik"), 160) or "Olay",
@@ -586,9 +620,21 @@ def _kimlik(deger: object) -> int | None:
     return deger
 
 
+def _ip_listesi(ham: object) -> list[str]:
+    adresler = []
+    for oge in _liste(ham, IP_EN_COK):
+        if not isinstance(oge, str):
+            continue  # ip_address(7) "0.0.0.7" olurdu
+        try:
+            adresler.append(str(ipaddress.ip_address(oge.strip())))
+        except ValueError:
+            continue
+    return adresler
+
+
 def _bilgisayar(ham: object) -> dict | None:
     """Programın kurulu olduğu bilgisayar. Hepsi isteğe bağlıdır; hiçbiri
-    yoksa None (pano "henüz gönderilmiyor" der). IP adresi bilerek yoktur."""
+    yoksa None (pano "henüz gönderilmiyor" der)."""
     if not isinstance(ham, dict):
         return None
     bilgi = {
@@ -604,6 +650,7 @@ def _bilgisayar(ham: object) -> dict | None:
         "kurulum_turu": _metin(ham.get("kurulum_turu"), 60),
         "kurulum_tarihi": _zaman(ham.get("kurulum_tarihi")),
         "acilis": _zaman(ham.get("acilis")),
+        "ip": _ip_listesi(ham.get("ip")),  # fabrika ağındaki adresi
     }
     return bilgi if any(bilgi.values()) else None
 
@@ -652,7 +699,8 @@ def rapor_temizle(ham: object) -> dict:
 
     Fabrika programı imzayla doğrulanmış olsa da depoya yalnız bilinen,
     tipi denetlenmiş, kısaltılmış alanlar yazılır: bilinmeyen bir alan
-    (ileride biri kazayla fotoğraf eklese bile) bu siteye girmez.
+    (bir şifre, büyük bir görüntü) bu siteye girmez. Kanıt fotoğrafı ayrı
+    ve imzalı gelir: foto_al.
     """
     if not isinstance(ham, dict):
         raise PanoHatasi(400, "bicim", "Rapor bir JSON nesnesi olmalı.")
@@ -699,7 +747,9 @@ def rapor_temizle(ham: object) -> dict:
             if isinstance(oge, dict)
         ],
         "son_olaylar": [
-            _olay(oge) for oge in _liste(ham.get("son_olaylar"), 50) if isinstance(oge, dict)
+            _olay(oge)
+            for oge in _liste(ham.get("son_olaylar"), OLAY_EN_COK)
+            if isinstance(oge, dict)
         ],
         "mudahale": _mudahale(ham.get("mudahale")),
         # Yönetici görünümü (eskiden gönderilmez; yoksa pano o kartı gizler)
@@ -718,18 +768,34 @@ def rapor_temizle(ham: object) -> dict:
     }
 
 
-def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> bool:
-    """Raporu yazar. Döner: fabrika komutları sık sormalı mı (Müdahale ekranı
-    açık ya da bekleyen komut var). Müdahale kapalıysa işaretler okunmaz."""
+def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> dict:
+    """Raporu yazar ve fabrikaya cevabı kurar: komutları sık sorsun mu
+    (Müdahale ekranı açık ya da komut bekliyor; müdahale kapalıysa hayır),
+    anlık görüntü göndersin mi (Kameralar ekranı açık) ve raporundaki hangi
+    olayların fotoğrafı sitede zaten var. Hepsi tek komutla okunur."""
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
-    komutlar = [
-        _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
-        _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
-    ]
-    if rapor["mudahale"]["acik"]:
-        komutlar.append(["MGET", IZLEYEN_ANAHTARI, KOMUT_ISARET_ANAHTARI])
-    sonuc = depo.boru_hatti(komutlar)
-    return len(sonuc) > 2 and isinstance(sonuc[2], list) and any(sonuc[2])
+    _, _, isaretler = depo.boru_hatti(
+        [
+            _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
+            _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
+            [
+                "MGET",
+                IZLEYEN_ANAHTARI,
+                KOMUT_ISARET_ANAHTARI,
+                KARE_IZLEYEN_ANAHTARI,
+                FOTO_LISTESI_ANAHTARI,
+            ],
+        ]
+    )
+    if not (isinstance(isaretler, list) and len(isaretler) == 4):
+        isaretler = [None] * 4
+    izleyen, komut_var, kare, ham_fotolar = isaretler
+    fotolar = foto_kimlikleri(ham_fotolar, simdi)
+    return {
+        "komut": {"hizli": bool(rapor["mudahale"]["acik"] and (izleyen or komut_var))},
+        "kare": {"iste": bool(kare)},
+        "foto": {"var": [o["id"] for o in rapor["son_olaylar"] if o["id"] in fotolar]},
+    }
 
 
 def _iso(epoch: float) -> str:
@@ -742,13 +808,20 @@ def pano_verisi(depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float) -> dic
     baglanti: "hic" (hiç rapor gelmedi) · "canli" · "yok" (rapor kesildi)
     · "kapandi" (fabrika programı kapatılırken son raporu gönderdi).
     """
-    ham_durum, ham_son = depo.al_coklu([DURUM_ANAHTARI, SON_RAPOR_ANAHTARI])
+    ham_durum, ham_son, ham_fotolar = depo.al_coklu(
+        [DURUM_ANAHTARI, SON_RAPOR_ANAHTARI, FOTO_LISTESI_ANAHTARI]
+    )
     rapor = None
     if ham_durum:
         try:
             rapor = _sozluk(json.loads(ham_durum)).get("rapor")
         except ValueError:
             rapor = None
+    if isinstance(rapor, dict):
+        fotolar = foto_kimlikleri(ham_fotolar, simdi)
+        for olay in _liste(rapor.get("son_olaylar"), OLAY_EN_COK):
+            if isinstance(olay, dict):
+                olay["foto"] = olay.get("id") in fotolar
     son = int(ham_son) if ham_son and _rakam_mi(ham_son) else None
     if son is None:
         baglanti = "hic"
@@ -1059,6 +1132,15 @@ def giris_dene(
 # ------------------------------------------------------------ istek işleyici
 
 
+@dataclass(frozen=True)
+class Ikili:
+    """JSON olmayan cevap (fotoğraf): `calistir` onu olduğu gibi yazar."""
+
+    veri: bytes
+    tur: str
+    onbellek: str
+
+
 class Isleyici(BaseHTTPRequestHandler):
     """`api/*.py` dosyalarındaki `handler` sınıflarının ortak tabanı.
 
@@ -1090,6 +1172,16 @@ class Isleyici(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(veri)
+
+    def ikili_yanit(self, kod: int, ikili: Ikili) -> None:
+        self.send_response(kod)
+        self.send_header("Content-Type", ikili.tur)
+        self.send_header("Content-Length", str(len(ikili.veri)))
+        self.send_header("Cache-Control", ikili.onbellek)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(ikili.veri)
 
     def _izin_yok(self) -> None:
         self.yanit(405, {"hata": "yontem", "mesaj": "Bu adres bu yöntemi kabul etmez."})
@@ -1146,7 +1238,7 @@ class Isleyici(BaseHTTPRequestHandler):
             adres = (self.headers.get("X-Forwarded-For") or "").split(",")[0]
         return adres.strip() or self.client_address[0]
 
-    def calistir(self, islem: Callable[[Isleyici], tuple[int, dict, str | None]]) -> None:
+    def calistir(self, islem: Callable[[Isleyici], tuple[int, dict | Ikili, str | None]]) -> None:
         try:
             kod, govde, cerez = islem(self)
         except PanoHatasi as hata:
@@ -1163,6 +1255,9 @@ class Isleyici(BaseHTTPRequestHandler):
                     "yeniden deneyin; sürerse Vercel'de Storage bağlantısına bakın.",
                 },
             )
+            return
+        if isinstance(govde, Ikili):
+            self.ikili_yanit(kod, govde)
             return
         self.yanit(kod, govde, cerez)
 
@@ -1200,11 +1295,12 @@ def _fabrika_istegi(istek: Isleyici, en_cok: int) -> tuple[Ayar, object, float]:
 
 def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/rapor - fabrika programının imzalı durum raporu. Cevaptaki
-    `komut.hizli`: Müdahale ekranı açık ya da komut bekliyor, fabrika sık sorsun."""
+    `komut.hizli`: Müdahale ekranı açık ya da komut bekliyor, fabrika sık sorsun;
+    `kare.iste`: Kameralar ekranı açık, fabrika anlık görüntü göndersin."""
     ayar, ham, simdi = _fabrika_istegi(istek, RAPOR_EN_BUYUK_BAYT)
     rapor = rapor_temizle(ham)
-    hizli = rapor_kaydet(depo_al(ayar), rapor, simdi)
-    return 200, {"tamam": True, "alindi": _iso(simdi), "komut": {"hizli": hizli}}, None
+    cevap = rapor_kaydet(depo_al(ayar), rapor, simdi)
+    return 200, {"tamam": True, "alindi": _iso(simdi), **cevap}, None
 
 
 def komut_al(istek: Isleyici) -> tuple[int, dict, str | None]:
@@ -1248,12 +1344,16 @@ def _oturumlu(istek: Isleyici) -> tuple[Ayar, float]:
 
 def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/durum - panonun verisi; oturum ister. `?mudahale=1`: Müdahale
-    ekranı açık; son komutlar da gelir ve fabrika sık sormaya başlar."""
+    ekranı açık; son komutlar da gelir ve fabrika sık sormaya başlar.
+    `?kare=1`: Kameralar ekranı açık; kameraların son görüntüsünün zamanı da
+    gelir ve fabrika anlık görüntü göndermeye başlar."""
     ayar, simdi = _oturumlu(istek)
     depo = depo_al(ayar)
     veri = pano_verisi(depo, ayar, simdi)
     if istek.sorgu("mudahale") == "1":
         veri["mudahale"] = mudahale_verisi(depo, simdi, izliyor=True)
+    if istek.sorgu("kare") == "1":
+        veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"))
     return 200, veri, None
 
 
@@ -1266,3 +1366,152 @@ def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
     depo = depo_al(ayar)
     komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi)
     return 200, {"tamam": True, "komut": komut}, None
+
+
+# ------------------------------------------------------------------ görüntü
+
+
+def _jpeg_al(ham: object, en_cok: int) -> str:
+    """Fabrikanın gönderdiği base64 JPEG; doğrulanmış base64 metni döner.
+    JPEG olmayan içerik (bir HTML sayfası gibi) depoya hiç girmez."""
+    if not isinstance(ham, str) or not ham:
+        raise PanoHatasi(400, "jpeg", "Görüntü (jpeg) eksik.")
+    try:
+        veri = base64.b64decode(ham, validate=True)
+    except (binascii.Error, ValueError):
+        raise PanoHatasi(400, "jpeg", "Görüntü base64 değil.") from None
+    if len(veri) > en_cok:
+        raise PanoHatasi(
+            413, "cok_buyuk", f"Görüntü çok büyük (en çok {en_cok // 1024} KB); küçültüp gönderin."
+        )
+    if not veri.startswith(JPEG_BASI):
+        raise PanoHatasi(400, "jpeg", "Görüntü JPEG değil.")
+    return ham
+
+
+def _goruntu_istegi(istek: Isleyici, en_cok: int) -> tuple[Ayar, dict, float]:
+    # base64 4/3 büyütür; alanlar için 4 KB pay
+    ayar, ham, simdi = _fabrika_istegi(istek, en_cok * 4 // 3 + 4096)
+    if not isinstance(ham, dict) or ham.get("surum") != RAPOR_SURUMU:
+        raise PanoHatasi(400, "bicim", "Görüntü isteğinin biçimi tanınmadı.")
+    return ayar, ham, simdi
+
+
+def foto_listesi(ham: object, simdi: float) -> list[tuple[int, int]]:
+    """Sitedeki kanıt fotoğrafları: (olay_id, geldiği an), en yenisi önde.
+    Süresi dolan (fotoğrafı silinmiş) ve bozuk kayıtlar atılır."""
+    try:
+        liste = json.loads(ham) if isinstance(ham, str) else []
+    except ValueError:
+        return []
+    sonuc = []
+    for oge in _liste(liste, FOTO_EN_COK * 2):
+        if not (isinstance(oge, list) and len(oge) == 2):
+            continue
+        kimlik, an = _kimlik(oge[0]), oge[1]
+        if kimlik is None or isinstance(an, bool) or not isinstance(an, int):
+            continue
+        if simdi - an < FOTO_SAKLAMA_SN:
+            sonuc.append((kimlik, an))
+    return sonuc
+
+
+def foto_kimlikleri(ham: object, simdi: float) -> set[int]:
+    return {kimlik for kimlik, _ in foto_listesi(ham, simdi)}
+
+
+def foto_al(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/foto - {"surum": 1, "olay_id": 123, "jpeg": "<base64>"}; imzalı.
+    İhlalin kanıt fotoğrafı (küçültülmüş); FOTO_SAKLAMA_SN sonra silinir.
+    Listeden taşan (en eski) fotoğraf hemen silinir: depo büyümez."""
+    ayar, ham, simdi = _goruntu_istegi(istek, FOTO_EN_BUYUK_BAYT)
+    olay_id = _kimlik(ham.get("olay_id"))
+    if olay_id is None:
+        raise PanoHatasi(400, "olay", "Olay kimliği (olay_id) eksik ya da geçersiz.")
+    jpeg = _jpeg_al(ham.get("jpeg"), FOTO_EN_BUYUK_BAYT)
+    depo = depo_al(ayar)
+    # Fabrika fotoğrafları sırayla gönderir; aynı anda iki yazım yarışmaz.
+    # Yarışsa bile kaybolan kayıt bir sonraki raporda yeniden istenir.
+    (ham_liste,) = depo.al_coklu([FOTO_LISTESI_ANAHTARI])
+    liste = [(k, an) for k, an in foto_listesi(ham_liste, simdi) if k != olay_id]
+    liste.insert(0, (olay_id, int(simdi)))
+    tasan = [k for k, _ in liste[FOTO_EN_COK:]]
+    liste = liste[:FOTO_EN_COK]
+    komutlar = [
+        _set_komutu(FOTO_ONEKI + str(olay_id), jpeg, FOTO_SAKLAMA_SN),
+        _set_komutu(FOTO_LISTESI_ANAHTARI, json.dumps(liste), FOTO_SAKLAMA_SN),
+    ]
+    if tasan:
+        komutlar.append(["DEL", *(FOTO_ONEKI + str(k) for k in tasan)])
+    depo.boru_hatti(komutlar)
+    return 200, {"tamam": True}, None
+
+
+def kare_al(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/kare - {"surum": 1, "kamera_id": 4, "jpeg": "<base64>"}; imzalı.
+    Kameranın anlık görüntüsü. Cevaptaki `iste`: Kameralar ekranı hâlâ açık mı;
+    hayırsa fabrika göndermeyi bırakır."""
+    ayar, ham, simdi = _goruntu_istegi(istek, KARE_EN_BUYUK_BAYT)
+    kamera_id = _kimlik(ham.get("kamera_id"))
+    if kamera_id is None:
+        raise PanoHatasi(400, "kamera", "Kamera kimliği (kamera_id) eksik ya da geçersiz.")
+    jpeg = _jpeg_al(ham.get("jpeg"), KARE_EN_BUYUK_BAYT)
+    # Zaman sitenin saatiyle yazılır: fabrikanın saati birkaç dakika kaymış
+    # olsa da "8 sn önce" doğru çıkar.
+    _, _, izleyen = depo_al(ayar).boru_hatti(
+        [
+            _set_komutu(KARE_ONEKI + str(kamera_id), jpeg, KARE_SAKLAMA_SN),
+            _set_komutu(KARE_ZAMAN_ONEKI + str(kamera_id), _iso(simdi), KARE_SAKLAMA_SN),
+            ["GET", KARE_IZLEYEN_ANAHTARI],
+        ]
+    )
+    return 200, {"tamam": True, "iste": bool(izleyen)}, None
+
+
+def kare_zamanlari(depo: UpstashDepo | BellekDepo, rapor: object) -> dict[str, str]:
+    """Kameralar ekranı açık: her kameranın son görüntüsünün zamanı. Fabrikaya
+    "anlık görüntü gönder" işareti de burada konur (IZLEYEN_SURESI_SN)."""
+    kimlikler = [
+        k["id"]
+        for k in _sozluk(rapor).get("kameralar", [])
+        if isinstance(k, dict) and _kimlik(k.get("id"))
+    ]
+    komutlar: list[list[str]] = [
+        _set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
+    ]
+    if kimlikler:
+        komutlar.append(["MGET", *(KARE_ZAMAN_ONEKI + str(k) for k in kimlikler)])
+    sonuc = depo.boru_hatti(komutlar)
+    zamanlar = sonuc[1] if len(sonuc) > 1 and isinstance(sonuc[1], list) else []
+    return {
+        str(kimlik): zaman
+        for kimlik, zaman in zip(kimlikler, zamanlar, strict=False)
+        if isinstance(zaman, str) and zaman
+    }
+
+
+def _resim_ver(istek: Isleyici, parametre: str, onek: str, onbellek: str) -> tuple:
+    """Oturumlu GET: depodaki base64 JPEG'i resim olarak döndürür."""
+    ayar, _ = _oturumlu(istek)
+    deger = istek.sorgu(parametre)
+    if not _rakam_mi(deger) or _kimlik(int(deger)) is None:
+        raise PanoHatasi(400, parametre, "Geçersiz istek.")
+    ham = depo_al(ayar).al_coklu([onek + deger])[0]
+    if not ham:
+        raise PanoHatasi(404, "yok", "Görüntü yok ya da süresi doldu.")
+    try:
+        veri = base64.b64decode(ham, validate=True)
+    except (binascii.Error, ValueError):
+        raise PanoHatasi(404, "yok", "Görüntü okunamadı.") from None
+    return 200, Ikili(veri, "image/jpeg", onbellek), None
+
+
+def foto_ver(istek: Isleyici) -> tuple[int, Ikili, str | None]:
+    """GET /api/foto?olay=123 - kanıt fotoğrafı; oturum ister. Fotoğraf
+    değişmez: tarayıcı bir gün önbellekte tutar (yalnız bu cihazda)."""
+    return _resim_ver(istek, "olay", FOTO_ONEKI, "private, max-age=86400")
+
+
+def kare_ver(istek: Isleyici) -> tuple[int, Ikili, str | None]:
+    """GET /api/kare?kamera=4 - anlık görüntü; oturum ister, önbelleğe alınmaz."""
+    return _resim_ver(istek, "kamera", KARE_ONEKI, "no-store")

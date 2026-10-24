@@ -98,6 +98,12 @@
   --grafik: #2132ba;
   --grafik-acik: #e3e7ff;
 
+  /* Görüntü: resim gelmeden önceki koyu alan ve üstündeki yazı (11:1),
+     büyütülmüş fotoğrafın arkasındaki perde */
+  --kare-zemin: #20232c;
+  --kare-yazi: #c9ccd3;
+  --perde: rgba(12, 14, 27, 0.72);
+
   /* Telefonun yüzen kromu (lafmobil glass.chrome yedeği + chrome gölgesi) */
   --krom: rgba(255, 255, 255, 0.86);
   --krom-kenar: rgba(255, 255, 255, 0.9);
@@ -986,6 +992,153 @@ time,
   font-size: 13px;
   font-weight: 600;
 }
+.cizelge-govde > .olay-ayrinti {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------- kanıt fotoğrafı
+   Olayın altında 16:9 küçük resim; dokununca büyür. */
+.olay-foto {
+  display: block;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  margin-top: 8px;
+  padding: 0;
+  border: 1px solid var(--cizgi);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--kare-zemin);
+  cursor: zoom-in;
+}
+#genel-olaylar .olay-foto {
+  width: 120px;
+}
+.olay-foto img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cizelge-govde > .foto-yok {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* ------------------------------------------------------ anlık görüntü
+   Kamera başına 16:9 kutu; durum rozeti resmin köşesinde (kayıt
+   cihazlarının ekranındaki gibi). Eski kare soluk. */
+.kare-izgarasi {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.kare {
+  margin: 0;
+  min-width: 0;
+}
+.kare-resim {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--kare-zemin);
+  color: var(--kare-yazi);
+  cursor: zoom-in;
+}
+.kare-resim[disabled] {
+  cursor: default;
+}
+.kare-resim img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.2s;
+}
+.kare.bayat .kare-resim img {
+  opacity: 0.5;
+}
+.kare-bos {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 13px;
+  text-align: center;
+}
+.kare-rozet {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+.kare figcaption {
+  display: grid;
+  margin-top: 6px;
+}
+.kare figcaption b {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kare figcaption span {
+  color: var(--metin-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.kare.bayat figcaption span {
+  color: var(--uyari);
+}
+
+/* ----------------------------------------------------- fotoğraf penceresi */
+.foto-penceresi {
+  width: min(960px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--cizgi);
+  border-radius: 12px;
+  background: var(--yuzey);
+  color: var(--metin);
+  overflow: hidden;
+}
+.foto-penceresi::backdrop {
+  background: var(--perde);
+}
+.foto-penceresi .ust {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--ayrac);
+}
+.foto-penceresi .ust > div {
+  min-width: 0;
+}
+.foto-penceresi h2 {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.foto-penceresi p {
+  color: var(--metin-3);
+  font-size: 12px;
+}
+.foto-penceresi img {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  background: var(--kare-zemin);
+}
 
 /* ------------------------------------------------------- grafik, lejant */
 .saatlik {
@@ -1694,6 +1847,19 @@ time,
   .rozetler {
     max-width: 50%;
   }
+  /* Telefonda dört kamera tek bakışta: iki sütun, dokununca büyür */
+  .kare-izgarasi {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .kare-rozet {
+    top: 6px;
+    left: 6px;
+  }
+  .foto-penceresi {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
   /* Tablo telefonda satır listesine döner (masaüstü sütunları çok dar) */
   .tablo-kap.mobil-gizle {
     display: none;
@@ -1765,7 +1931,8 @@ time,
     animation: none;
   }
   .dugme,
-  .sekme {
+  .sekme,
+  .kare-resim img {
     transition: none;
   }
   .dugme:active,

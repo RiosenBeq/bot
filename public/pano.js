@@ -2,14 +2,17 @@
 
    /api/durum'u 15 saniyede bir okur (sekme görünürken) ve ekranı çizer.
    Müdahale ekranı açıkken 5 saniyede bir okur ve `?mudahale=1` der: fabrika
-   o zaman komutları sık sormaya başlar. Ekrana 10 dakika dokunulmazsa
-   dinleme bekler (açık unutulan bir ekran fabrikayı boşuna sorgulatmasın).
+   o zaman komutları sık sormaya başlar. Kameralar ekranı açıkken de 5
+   saniyede bir okur ve `?kare=1` der: fabrika o zaman 10 saniyede bir anlık
+   görüntü gönderir. Ekrana 10 dakika dokunulmazsa ikisi de bekler (açık
+   unutulan bir ekran fabrikayı boşuna sorgulatmasın).
    Beş görünüm var (Genel bakış, Kameralar, Olaylar, Müdahale, Sistem); adres
    çubuğundaki #genel, #kameralar ... hangisinin açık olduğunu söyler, hem
    masaüstünün kenar çubuğu hem telefonun sekme çubuğu aynı bağlantılardır.
 
    Veri fabrikadan gelir: metinler textContent ile yazılır, innerHTML
-   KULLANILMAZ. Saatler her zaman Türkiye saatiyle gösterilir; telefonun
+   KULLANILMAZ. Görüntüler yalnız bu sitenin oturumlu adreslerinden gelir
+   (/api/foto, /api/kare). Saatler her zaman Türkiye saatiyle gösterilir; telefonun
    saat dilimi farklı olsa da.
 
    Dört durum (lafmobil add-screen kuralı): yükleniyor, hata (site
@@ -20,8 +23,13 @@
 (function () {
   const TAZELEME_MS = 15000;
   const GORECELI_MS = 5000;
-  const MUDAHALE_TAZELEME_MS = 5000;
+  const HIZLI_TAZELEME_MS = 5000; // Müdahale ve Kameralar ekranı açıkken
   const DINLEME_SURESI_MS = 10 * 60 * 1000;
+  // Fabrika 10 saniyede bir gönderir; bundan eski kare soluk gösterilir
+  // (kamera ya da bağlantı durmuş olabilir).
+  const KARE_BAYAT_SN = 35;
+  // Gelmeyen kanıt fotoğrafı bu süre geçmeden yeniden istenmez
+  const FOTO_YENIDEN_MS = 2 * 60 * 1000;
   // Fabrika son soruyu bu kadar saniye önce sorduysa "dinliyor" denir
   // (fabrika 4 sn'de bir sorar; ağ gecikmesi payı).
   const DINLIYOR_SN = 12;
@@ -34,7 +42,7 @@
 
   const GORUNUMLER = {
     genel: ["Genel bakış", "Fabrikadan gelen son durum"],
-    kameralar: ["Kameralar", "Bağlantı durumu ve kare hızı"],
+    kameralar: ["Kameralar", "Anlık görüntü, bağlantı durumu ve kare hızı"],
     olaylar: ["Olaylar", "Son 20 olay, en yenisi üstte"],
     mudahale: ["Müdahale", "Fabrikada uzaktan anons ve hoparlör denemesi"],
     sistem: ["Sistem", "Program, bağlantı ve canlı görüntü"],
@@ -70,6 +78,11 @@
   let mudahaleImzasi = "";
   let bekleyenKomutlar = []; // gönderildi, sunucudan henüz okunmadı
   let kurulumMetni = ""; // "Gebze fabrikası · ISG-PC-01": Genel bakışın alt başlığı
+  let kareImzasi = ""; // ızgaradaki kameralar; değişmedikçe ızgara yeniden kurulmaz
+  const kareKutulari = new Map(); // kamera kimliği -> anlık görüntü kutusu
+  const fotoHatalari = new Map(); // olay kimliği -> fotoğrafın gelmediği an
+  const fotoKucukleri = new Map(); // "genel:123" -> küçük fotoğraf (tazelemede yeniden inmesin)
+  let acikKare = null; // büyütülmüş anlık görüntünün kamerası (canlı yenilenir)
 
   // ----------------------------------------------------------- yardımcılar
 
@@ -226,9 +239,10 @@
     if (!gorunumAdi()) return;
     gorunumuUygula();
     window.scrollTo(0, 0);
-    if (aktifGorunum === "mudahale" && sonVeri) {
+    if ((aktifGorunum === "mudahale" || aktifGorunum === "kameralar") && sonVeri) {
       sonEtkilesim = Date.now();
-      mudahaleyiCiz(sonVeri);
+      if (aktifGorunum === "mudahale") mudahaleyiCiz(sonVeri);
+      else kareleriCiz(sonVeri);
       yukle();
     }
   });
@@ -518,6 +532,180 @@
     }
   }
 
+  // ------------------------------------------------------- anlık görüntü
+
+  function kareIzleniyor() {
+    return aktifGorunum === "kameralar" && Date.now() - sonEtkilesim < DINLEME_SURESI_MS;
+  }
+
+  function kareAdresi(kimlik, zaman) {
+    return "/api/kare?kamera=" + kimlik + "&z=" + encodeURIComponent(zaman);
+  }
+
+  function kareYasi(zaman) {
+    return zaman ? Math.max(0, (simdiMs() - Date.parse(zaman)) / 1000) : null;
+  }
+
+  function yasMetni(yas) {
+    return yas < 3 ? "az önce" : sureMetni(yas) + " önce";
+  }
+
+  function kareAltMetni(veri, kimlikli, izleniyor, kareler) {
+    if (baglantiDurumu(veri) !== "canli") return "Fabrikadan haber gelmediği için görüntü gelmiyor.";
+    if (!kimlikli.length) {
+      return (
+        "Fabrika programı anlık görüntü göndermiyor. Programın uzak pano bağlantısı " +
+        "güncellenince kameraların görüntüsü burada çıkar."
+      );
+    }
+    if (!izleniyor) return "Görüntü beklemede: ekrana 10 dakikadır dokunulmadı.";
+    if (!Object.keys(kareler).length) {
+      return "Fabrika bir sonraki raporunda (en çok " + veri.rapor.aralik_sn + " saniye) göndermeye başlar.";
+    }
+    return "10 saniyede bir yenilenir; yalnız bu ekran açıkken gelir.";
+  }
+
+  /* Kutu kamera kimliğiyle bir kez kurulur ve yerinde güncellenir: resim
+     yalnız yeni kare gelince yeniden istenir, eski kare yenisi inene kadar
+     ekranda kalır (titremez). */
+  function kareKutusu(k) {
+    const kutu = { kamera: k, zaman: "" };
+    kutu.figur = el("figure", "kare");
+    kutu.dugme = el("button", "kare-resim");
+    kutu.dugme.type = "button";
+    kutu.resim = el("img");
+    kutu.resim.alt = "";
+    kutu.resim.decoding = "async";
+    kutu.resim.hidden = true;
+    kutu.resim.addEventListener("load", function () {
+      if (kutu.zaman) kutu.resim.hidden = false;
+    });
+    kutu.resim.addEventListener("error", function () {
+      // Kare istekle gösterim arasında silinmiş olabilir: bir sonraki kare bekler
+      kutu.zaman = "";
+      kutu.resim.hidden = true;
+      kutu.bos.hidden = false;
+      kutu.bosMetni.textContent = "Görüntü alınamadı";
+      kutu.dugme.disabled = true;
+    });
+    kutu.bos = el("span", "kare-bos");
+    kutu.bos.appendChild(simge("i-kamera", "buyuk"));
+    kutu.bosMetni = el("span");
+    kutu.bos.appendChild(kutu.bosMetni);
+    kutu.rozetYeri = el("span", "kare-rozet");
+    kutu.dugme.append(kutu.resim, kutu.bos, kutu.rozetYeri);
+    const yazi = el("figcaption");
+    kutu.ad = el("b");
+    kutu.alt = el("span");
+    yazi.append(kutu.ad, kutu.alt);
+    kutu.figur.append(kutu.dugme, yazi);
+    kutu.dugme.addEventListener("click", function () {
+      if (!kutu.zaman) return;
+      acikKare = kutu.kamera.id;
+      fotoGoster(kutu.resim.src, kutu.kamera.ad, kareAciklamasi(kutu));
+    });
+    return kutu;
+  }
+
+  function kareAciklamasi(kutu) {
+    const yas = kareYasi(kutu.zaman);
+    return [kutu.kamera.bolum, yas === null ? "" : "görüntü " + yasMetni(yas)]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  function kareBosMetni(veri, k, izleniyor) {
+    if (baglantiDurumu(veri) !== "canli") return "Fabrikadan haber yok";
+    if (!izleniyor) return "Görüntü beklemede";
+    if (k.durum === "offline") return "Kameradan görüntü gelmiyor";
+    if (k.durum === "connecting") return "Kamera yeniden bağlanıyor";
+    return "Görüntü bekleniyor";
+  }
+
+  function kareKutusunuGuncelle(veri, kutu, k, zaman, izleniyor) {
+    kutu.kamera = k;
+    kutu.ad.textContent = k.ad;
+    const [durumAdi, durumSinifi] = KAMERA_DURUMLARI[k.durum] || KAMERA_DURUMLARI.offline;
+    temizle(kutu.rozetYeri);
+    kutu.rozetYeri.appendChild(rozet(durumAdi, durumSinifi, true));
+    if (!zaman) {
+      kutu.zaman = "";
+      kutu.resim.hidden = true;
+      kutu.resim.removeAttribute("src");
+    } else if (zaman !== kutu.zaman) {
+      kutu.zaman = zaman;
+      kutu.resim.src = kareAdresi(k.id, zaman);
+      if (acikKare === k.id && $("foto-penceresi").open) $("foto-buyuk").src = kutu.resim.src;
+    }
+    kutu.bos.hidden = !!kutu.zaman;
+    kutu.bosMetni.textContent = kareBosMetni(veri, k, izleniyor);
+    const yas = kareYasi(kutu.zaman);
+    kutu.figur.classList.toggle("bayat", yas !== null && yas > KARE_BAYAT_SN);
+    kutu.alt.textContent = [k.bolum, yas === null ? "" : yasMetni(yas)].filter(Boolean).join(" · ");
+    kutu.dugme.disabled = !kutu.zaman;
+    kutu.dugme.setAttribute("aria-label", k.ad + ", " + durumAdi + (kutu.zaman ? ": görüntüyü büyüt" : ""));
+    if (acikKare === k.id && $("foto-penceresi").open) $("foto-alt").textContent = kareAciklamasi(kutu);
+  }
+
+  function kareleriCiz(veri) {
+    const rapor = veri.rapor;
+    const bolum = $("kare-bolumu");
+    bolum.hidden = !rapor || !rapor.kameralar.length;
+    if (bolum.hidden) return;
+    // Pasif kamera görüntü vermez; kimliği olmayan kamerayı eski program gönderir
+    const kimlikli = rapor.kameralar.filter((k) => k.id && k.durum !== "pasif");
+    const izleniyor = kareIzleniyor();
+    // Görüntü yalnız ?kare=1 ile gelen cevapta vardır; öbür cevapta kutular bekler
+    const kareler = (izleniyor && veri.kareler) || {};
+    $("kare-alt").textContent = kareAltMetni(veri, kimlikli, izleniyor, kareler);
+    $("kare-surdur").hidden = izleniyor || !kimlikli.length || baglantiDurumu(veri) !== "canli";
+
+    const imza = kimlikli.map((k) => k.id).join(",");
+    if (imza !== kareImzasi) {
+      kareImzasi = imza;
+      temizle($("kare-izgarasi"));
+      kareKutulari.clear();
+      for (const k of kimlikli) {
+        const kutu = kareKutusu(k);
+        kareKutulari.set(k.id, kutu);
+        $("kare-izgarasi").appendChild(kutu.figur);
+      }
+    }
+    $("kare-izgarasi").hidden = !kimlikli.length;
+    for (const k of kimlikli) {
+      kareKutusunuGuncelle(veri, kareKutulari.get(k.id), k, kareler[String(k.id)] || "", izleniyor);
+    }
+  }
+
+  $("kare-surdur").addEventListener("click", function () {
+    sonEtkilesim = Date.now();
+    if (sonVeri) kareleriCiz(sonVeri);
+    yukle();
+  });
+
+  // -------------------------------------------------- fotoğraf penceresi
+
+  function fotoGoster(adres, baslik, aciklama) {
+    $("foto-buyuk").src = adres;
+    $("foto-buyuk").alt = baslik;
+    $("foto-baslik").textContent = baslik;
+    $("foto-alt").textContent = aciklama;
+    const pencere = $("foto-penceresi");
+    if (!pencere.open) pencere.showModal();
+  }
+
+  $("foto-kapat").addEventListener("click", function () {
+    $("foto-penceresi").close();
+  });
+  // Karartılmış zemine dokununca kapanır (pencerenin içi tamamen dolu)
+  $("foto-penceresi").addEventListener("click", function (olay) {
+    if (olay.target === this) this.close();
+  });
+  $("foto-penceresi").addEventListener("close", function () {
+    acikKare = null;
+    $("foto-buyuk").removeAttribute("src");
+  });
+
   for (const cip of document.querySelectorAll("#kamera-cipleri .cip")) {
     cip.addEventListener("click", function () {
       kameraSuzgeci = this.dataset.suzgec;
@@ -530,7 +718,7 @@
 
   // -------------------------------------------------------------- olaylar
 
-  function olaySatiri(o) {
+  function olaySatiri(o, liste) {
     const satir = el("li");
     const sistem = o.tur === "sistem";
     const kutu = el("span", "ikon-kutu " + (sistem ? "" : ONEM_KUTUSU[o.onem] || "gri"));
@@ -540,12 +728,14 @@
     const govde = el("div", "cizelge-govde");
     govde.appendChild(el("b", "", o.baslik));
     if (o.yer) govde.appendChild(el("span", "", o.yer));
+    if (o.ayrinti) govde.appendChild(el("span", "olay-ayrinti", o.ayrinti));
     const rozetler = el("div", "rozetler");
     if (sistem) rozetler.appendChild(rozet("Sistem", "bilgi"));
     else if (o.onem_adi) rozetler.appendChild(rozet(o.onem_adi, ONEM_ROZETI[o.onem] || ""));
     if (o.suruyor) rozetler.appendChild(rozet("Sürüyor" + (o.sure ? " · " + o.sure : ""), "uyari"));
     if (o.durum_adi) rozetler.appendChild(rozet(o.durum_adi, ""));
     if (rozetler.childNodes.length) govde.appendChild(rozetler);
+    if (o.foto && o.id) govde.appendChild(fotoKucuk(o, liste));
     satir.appendChild(govde);
 
     const zaman = el("time", "cizelge-zaman");
@@ -561,17 +751,55 @@
     return satir;
   }
 
+  /* Kanıt fotoğrafının küçüğü; dokununca büyür. Liste her tazelemede yeniden
+     kurulur ama küçük fotoğraf aynı öğedir (yeni satıra taşınır): resim
+     yeniden inmez, ekran titremez. Gelmeyen fotoğraf FOTO_YENIDEN_MS
+     geçmeden yeniden istenmez. */
+  function fotoKucuk(o, liste) {
+    const anahtar = liste + ":" + o.id;
+    const hazir = fotoKucukleri.get(anahtar);
+    if (hazir) return hazir;
+    const hata = fotoHatalari.get(o.id);
+    if (hata && Date.now() - hata < FOTO_YENIDEN_MS) return el("span", "foto-yok", "Fotoğraf alınamadı");
+    const adres = "/api/foto?olay=" + o.id;
+    const dugme = el("button", "olay-foto");
+    dugme.type = "button";
+    dugme.setAttribute("aria-label", "Kanıt fotoğrafını büyüt: " + o.baslik);
+    const resim = el("img");
+    resim.alt = "";
+    resim.width = 160;
+    resim.height = 90;
+    resim.loading = "lazy";
+    resim.addEventListener("error", function () {
+      fotoHatalari.set(o.id, Date.now());
+      fotoKucukleri.delete(anahtar);
+      dugme.replaceWith(el("span", "foto-yok", "Fotoğraf alınamadı"));
+    });
+    resim.src = adres;
+    dugme.appendChild(resim);
+    dugme.addEventListener("click", function () {
+      acikKare = null;
+      fotoGoster(adres, o.baslik, [o.yer, tarihSaatMetni(o.zaman)].filter(Boolean).join(" · "));
+    });
+    fotoKucukleri.set(anahtar, dugme);
+    return dugme;
+  }
+
   function olaylariCiz(rapor) {
     const genel = $("genel-olaylar");
     temizle(genel);
     if (!rapor.son_olaylar.length) genel.appendChild(bosDurum("Henüz olay yok", ""));
-    for (const o of rapor.son_olaylar.slice(0, GENEL_OLAY_SAYISI)) genel.appendChild(olaySatiri(o));
+    for (const o of rapor.son_olaylar.slice(0, GENEL_OLAY_SAYISI)) genel.appendChild(olaySatiri(o, "genel"));
 
     const liste = $("olay-cizelgesi");
     temizle(liste);
     const gorunen = rapor.son_olaylar.filter((o) => olayTuru === "hepsi" || o.tur === olayTuru);
     if (!gorunen.length) liste.appendChild(bosDurum("Bu türde olay yok", "Son 20 olayın içinde"));
-    for (const o of gorunen) liste.appendChild(olaySatiri(o));
+    for (const o of gorunen) liste.appendChild(olaySatiri(o, "olaylar"));
+    // Listeden düşen olayın küçük fotoğrafı unutulur
+    for (const [anahtar, dugme] of fotoKucukleri) {
+      if (!dugme.isConnected) fotoKucukleri.delete(anahtar);
+    }
   }
 
   for (const dugme of document.querySelectorAll("#olay-segmenti button")) {
@@ -786,6 +1014,7 @@
     const satirlar = [
       ["Kurulum", b.ad],
       ["Bilgisayar adı", b.bilgisayar_adi],
+      ["IP adresi", (b.ip || []).join(", ")],
       ["İşletim sistemi", b.isletim_sistemi],
       ["İşlemci", b.islemci + (b.islemci && b.cekirdek ? " · " + b.cekirdek + " çekirdek" : "")],
       ["Bellek", b.bellek_gb ? ondalik(b.bellek_gb) + " GB" : ""],
@@ -1115,7 +1344,10 @@
 
   for (const tur of ["pointerdown", "keydown"]) {
     document.addEventListener(tur, function () {
+      const bekliyordu = !dinleniyor() && !kareIzleniyor();
       sonEtkilesim = Date.now();
+      // Bekleyen Müdahale ya da Kameralar ekranı dokununca hemen canlanır
+      if (bekliyordu && (dinleniyor() || kareIzleniyor()) && $("giris").hidden) yukle();
     });
   }
 
@@ -1158,12 +1390,13 @@
       if (adres) bag.href = adres;
     }
     $("canli-metni").textContent = adres
-      ? "Canlı görüntü bu siteden geçmez; düğme doğrudan fabrikadaki bilgisayarın ekranını " +
-        "açar. Yalnız fabrika ağına VPN ya da Tailscale ile bağlıyken çalışır ve fabrika " +
-        "ekranının şifresini sorar."
-      : "Canlı görüntü bu siteden geçmez (KVKK). Fabrika dışından izlemek için fabrika " +
-        "bilgisayarına VPN ya da Tailscale ile bağlanılır. Bağlantı kurulunca adresi " +
-        "Vercel'de FABRIKA_ADRESI olarak tanımlarsanız burada bir düğme çıkar.";
+      ? "Kameraların 10 saniyede bir yenilenen görüntüsü Kameralar ekranındadır. Akıcı " +
+        "canlı görüntü için düğme doğrudan fabrikadaki bilgisayarın ekranını açar; yalnız " +
+        "fabrika ağına VPN ya da Tailscale ile bağlıyken çalışır ve fabrika ekranının " +
+        "şifresini sorar."
+      : "Kameraların 10 saniyede bir yenilenen görüntüsü Kameralar ekranındadır. Akıcı " +
+        "canlı görüntü için fabrika bilgisayarına VPN ya da Tailscale ile bağlanılır; " +
+        "adresi Vercel'de FABRIKA_ADRESI olarak tanımlarsanız burada bir düğme çıkar.";
   }
 
   // ------------------------------------------------------------ hepsi
@@ -1182,10 +1415,12 @@
       sayilariCiz(rapor);
       kameralariCiz(rapor);
       olaylariCiz(rapor);
+      kareleriCiz(veri);
       saatligiCiz(rapor);
       ogeleriCiz(rapor);
     } else {
       for (const kimlik of ["kamera-listesi", "kamera-tablosu", "olay-cizelgesi"]) temizle($(kimlik));
+      $("kare-bolumu").hidden = true;
       $("kamera-listesi").appendChild(bosDurum("Henüz rapor yok", "Fabrikadan ilk rapor gelince görünür"));
       $("olay-cizelgesi").appendChild(bosDurum("Henüz rapor yok", "Fabrikadan ilk rapor gelince görünür"));
     }
@@ -1202,7 +1437,11 @@
     if (istekSuruyor) return;
     istekSuruyor = true;
     try {
-      const adres = dinleniyor() ? "/api/durum?mudahale=1" : "/api/durum";
+      const adres = dinleniyor()
+        ? "/api/durum?mudahale=1"
+        : kareIzleniyor()
+          ? "/api/durum?kare=1"
+          : "/api/durum";
       const yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store" });
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
@@ -1315,15 +1554,16 @@
   // Giriş ekranında tazelenmez (yazılan şifre silinmesin); öbür her durumda
   // (pano, kurulum, ilk yüklemede ulaşılamayan site) tazelenir. Müdahale
   // ekranı dinlerken daha sık: komutun sonucu birkaç saniyede görünsün.
+  // Kameralar ekranında da: yeni kare birkaç saniyede görünsün.
   let sonTazeleme = 0;
   setInterval(function () {
     if (document.visibilityState !== "visible" || !$("giris").hidden) return;
-    const aralik = dinleniyor() ? MUDAHALE_TAZELEME_MS : TAZELEME_MS;
+    const aralik = dinleniyor() || kareIzleniyor() ? HIZLI_TAZELEME_MS : TAZELEME_MS;
     if (Date.now() - sonTazeleme >= aralik - 250) {
       sonTazeleme = Date.now();
       yukle();
     }
-  }, MUDAHALE_TAZELEME_MS);
+  }, HIZLI_TAZELEME_MS);
   // "12 saniye önce" ve bağlantı durumu istek arasında da ilerler
   setInterval(function () {
     if (sonVeri && !$("kabuk").hidden) durumBandiniCiz(sonVeri);

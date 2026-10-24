@@ -59,11 +59,11 @@
     </section>
 
     <section class="bolum" id="nasil" aria-labelledby="nasil-baslik">
-      <div class="bolum-basligi"><h2 id="nasil-baslik">Nasıl çalışır</h2><p>Görüntü fabrikadan çıkmaz</p></div>
+      <div class="bolum-basligi"><h2 id="nasil-baslik">Nasıl çalışır</h2><p>Tespit fabrikada yapılır</p></div>
       <ol class="adim-gostergesi">
         <li><b>Mevcut kameralar</b><span>Fabrikadaki kameralar ya da kayıt cihazı bağlanır; yeni kamera gerekmez.</span></li>
         <li><b>Fabrikadaki bilgisayar</b><span>Tanıma, takip ve kural kararı fabrikadaki bilgisayarda yapılır. Görüntü işlenmek için buluta gönderilmez.</span></li>
-        <li><b>Uzaktan izleme</b><span>Program bu siteye 30 saniyede bir kısa, imzalı bir durum özeti gönderir. Bağlantı yalnız dışarı doğrudur; fabrikada port açılmaz.</span></li>
+        <li><b>Uzaktan izleme</b><span>Program bu siteye 30 saniyede bir imzalı bir durum özeti ve ihlallerin kanıt fotoğrafını gönderir. Bağlantı yalnız dışarı doğrudur; fabrikada port açılmaz.</span></li>
       </ol>
     </section>
 
@@ -76,30 +76,31 @@
             <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Sistem çalışıyor mu, analiz yapılıyor mu</li>
             <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Hangi kamera canlı, hangisi görüntü vermiyor</li>
             <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Bugünkü ihlal sayısı, incelenmeyi bekleyenler</li>
-            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Son olayların adı, yeri ve saati</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Son olayların adı, yeri, saati ve kanıt fotoğrafı</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Kameraların 10 saniyede bir yenilenen anlık görüntüsü</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Uzaktan anons ve hoparlör denemesi</li>
             <li><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg>Fabrikadan haber kesilirse kırmızı uyarı</li>
           </ul>
         </div>
         <div class="liste-karti">
-          <h3><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Bu siteye hiç gelmeyenler</h3>
+          <h3><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Bu siteye gelmeyenler</h3>
           <ul class="gizlilik-listesi">
-            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kamera görüntüsü ve video</li>
-            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kanıt fotoğrafları</li>
             <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kamera adresleri, kullanıcı adları, şifreler</li>
-            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Kişiyi tanımlayan herhangi bir bilgi</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Video kayıtları (yalnız tek kareler gelir)</li>
+            <li><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Ayarlar ve kurallar (yalnız fabrikadan değişir)</li>
           </ul>
         </div>
       </div>
-      <p class="not">Canlı görüntü bu siteden geçmez: fabrika ekranına uzaktan bakmak için fabrika ağına VPN ya da Tailscale ile bağlanılır.</p>
+      <p class="not">Akıcı canlı görüntü için fabrika ekranına VPN ya da Tailscale ile bağlanılır; panodaki anlık görüntü yalnız Kameralar ekranı açıkken gelir.</p>
       <div class="dugmeler"><a class="dugme birincil" href="/pano">Panoya giriş<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
     </section>
 
     <section class="bolum" aria-labelledby="kvkk">
-      <div class="bolum-basligi"><h2 id="kvkk">Kişisel verilerin korunması</h2></div>
-      <p class="ikincil-metin">Sistem görüntüyü yalnız iş sağlığı ve güvenliği amacıyla işler. Yüz tanıma yapmaz,
-        kişileri tanımlamaz ve kişi bazlı rapor üretmez; uyarılar bölge ve konum bazlıdır.
-        Kayıtlar belirlenen saklama sürelerinin sonunda kendiliğinden silinir.</p>
-      <p class="not">Ayrıntılar için işyerinizin aydınlatma metnine bakın.</p>
+      <div class="bolum-basligi"><h2 id="kvkk">Veri güvenliği</h2><p>Fabrika içi kullanım için</p></div>
+      <p class="ikincil-metin">Pano yalnız şifreyle açılır. Fabrikadan gelen her şey imzalıdır; görüntüler
+        küçültülmüş gelir, kanıt fotoğrafları 7 gün, anlık görüntüler 2 dakika sonra bu siteden silinir.
+        Sistem görüntüyü iş sağlığı ve güvenliği için işler: yüz tanıma yapmaz, kişileri tanımlamaz;
+        uyarılar bölge ve konum bazlıdır.</p>
     </section>
   </main>
 

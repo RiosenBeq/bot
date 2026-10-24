@@ -135,6 +135,7 @@ def test_yanlis_tipler_guvenli_degere_duser():
     assert temiz["sistem"]["sorunlar"] == []
     assert temiz["kameralar"] == [
         {
+            "id": None,
             "ad": "Adsız kamera",
             "bolum": "",
             "durum": "offline",
