@@ -142,6 +142,9 @@ KARE_SAKLAMA_SN = 120
 KARE_ARALIK_SN = 10  # fabrikaya önerilen gönderme aralığı (README)
 JPEG_BASI = b"\xff\xd8\xff"
 IP_EN_COK = 4
+# Sistem olayının açıklamasında adres olmaz (kamera şifresi adresin içinde
+# durur). Fabrika da çıkarır; bu ikinci kilittir.
+ADRES_DESENI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S*")
 
 SAYI_ALANLARI = (
     "bugun_ihlal",
@@ -594,8 +597,8 @@ def _olay(ham: dict) -> dict:
     return {
         "id": _kimlik(ham.get("id")),  # kanıt fotoğrafının anahtarı
         "foto": False,  # sitede fotoğrafı var mı: pano_verisi doldurur
-        # Sistem olayının açıklaması (şifreler fabrikada gizlenir)
-        "ayrinti": _metin(ham.get("ayrinti"), 300),
+        # Sistem olayının açıklaması; adres ve dosya yolu fabrikada çıkarılır
+        "ayrinti": _metin(ADRES_DESENI.sub("(adres)", _metin(ham.get("ayrinti"), 600)), 300),
         "zaman": _zaman(ham.get("zaman")),
         "tur": _secim(ham.get("tur"), OLAY_TURLERI) or "ihlal",
         "baslik": _metin(ham.get("baslik"), 160) or "Olay",

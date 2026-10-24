@@ -179,7 +179,7 @@ def test_sistem_olayinin_ayrintisi_ve_kamera_kimligi_suzulur():
                     "foto": "evet",
                     "tur": "sistem",
                     "baslik": "Kamera çevrimdışı",
-                    "ayrinti": "Kameraya ulaşılamıyor\n(192.168.1.30:554)",
+                    "ayrinti": "Kameraya ulaşılamıyor\n(10 sn'dir kare yok)",
                 }
             ],
         }
@@ -188,4 +188,24 @@ def test_sistem_olayinin_ayrintisi_ve_kamera_kimligi_suzulur():
     olay = temiz["son_olaylar"][0]
     # "foto" fabrikadan okunmaz: sitede fotoğraf olup olmadığını site bilir
     assert (olay["id"], olay["foto"]) == (None, False)
-    assert olay["ayrinti"] == "Kameraya ulaşılamıyor (192.168.1.30:554)"
+    assert olay["ayrinti"] == "Kameraya ulaşılamıyor (10 sn'dir kare yok)"
+
+
+def test_sistem_olayinin_ayrintisina_adres_girmez():
+    """Fabrika adresi çıkarmayı unutsa da kamera şifresi siteye yazılmaz."""
+    temiz = _pano.rapor_temizle(
+        {
+            **RAPOR,
+            "son_olaylar": [
+                {
+                    "tur": "sistem",
+                    "baslik": "Kamera çevrimdışı",
+                    "ayrinti": "Ulaşılamıyor: rtsp://admin:gizli@10.0.0.5:554/akis ve "
+                    "http://kayit/x?password=1 (10 sn)",
+                }
+            ],
+        }
+    )
+    ayrinti = temiz["son_olaylar"][0]["ayrinti"]
+    assert ayrinti == "Ulaşılamıyor: (adres) ve (adres) (10 sn)"
+    assert "gizli" not in ayrinti and "10.0.0.5" not in ayrinti

@@ -22,7 +22,7 @@ gönderdiği için bilerek kapatmayı bağlantı kopmasından ayırır.
 | Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, kullanıcı adları, şifreler |
 | Kameraların adı, bölümü, bağlantı durumu, kare hızı | 7 gün | Video kaydı (yalnız tek kareler gelir) |
 | Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
-| Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (şifresi gizlenmiş) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
+| Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (adres ve dosya yolu çıkarılmış) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
 | İhlallerin **kanıt fotoğrafı** (en çok 960 px, ihlal başına bir kez) | 7 gün, en çok 60 fotoğraf | |
 | Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken gelir | |
 | Kurulu olduğu bilgisayar: adı, IP adresi, işletim sistemi, donanım | 7 gün | Oturum açan kullanıcının adı |
@@ -128,7 +128,7 @@ kartını pano gizler ya da "henüz gönderilmiyor" der.
 | `sayilar` | `{bugun_ihlal, dun_ihlal, bekleyen, aktif_kural, kamera_toplam, kamera_canli}` |
 | `saatlik` | bugünün 24 saati, ihlal sayısı |
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
-| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` ve **`id`** (olay kimliği; kanıt fotoğrafının anahtarı), **`ayrinti`** (sistem olayının açıklaması, adresteki şifre gizlenmiş, en çok 300 karakter) |
+| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` ve **`id`** (olay kimliği; kanıt fotoğrafının anahtarı), **`ayrinti`** (sistem olayının açıklaması, en çok 300 karakter; fabrika adresleri ve dosya yollarını çıkarır, site de içinde kalan `xxx://` adresini "(adres)" yapar) |
 | `mudahale` | `{acik, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}` |
 | `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
 | `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
