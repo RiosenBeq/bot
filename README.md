@@ -6,7 +6,7 @@ Vercel'de duran sitesi. İki sayfası var:
 | Adres | Ne |
 |---|---|
 | `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, veri güvenliği notu |
-| `/pano` | Şifreli **uzak izleme panosu**: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve **Müdahale** (uzaktan anons, hoparlör denemesi) |
+| `/pano` | **Kişisel hesapla** giren uzak izleme ve yönetim panosu: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve role göre **Müdahale** (anons, hoparlör denemesi, olay inceleme) ile **Yönetim** (teşhis, yeniden başlatma, güncelleme) |
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
 bir durum özeti, ihlallerin kanıt fotoğrafını ve (Kameralar ekranı açıkken)
@@ -15,17 +15,68 @@ port açılmaz, modeme dokunulmaz. Fabrikadan 90 saniye haber gelmezse pano
 kırmızıyla "haber yok" der; program kapatılırken son bir "kapatıldı" raporu
 gönderdiği için bilerek kapatmayı bağlantı kopmasından ayırır.
 
+Komut (anons, yeniden başlatma, güncelleme ...) fabrikaya ancak program sorduğunda
+gider; site fabrikaya hiç bağlanmaz. İki depo arasındaki sözleşme DALSAN
+`docs/19-SITEDEN-YONETIM.md`'dir; bu README aynı tabloları site gözünden tekrar
+eder.
+
+## Hesaplar ve roller
+
+Panoya artık ortak bir şifreyle değil, **kişiye özel hesapla** girilir. Her
+hesabın bir rolü vardır; rol her istekte hesap kaydından okunur. Yetkisi olmayan
+düğme ekranda gizlenir, istek yine rolle denetlenir.
+
+| İş | İzleyici | Operatör | Yönetici |
+|---|:-:|:-:|:-:|
+| Durum, özet, olaylar, kanıt fotoğrafı, kameraların anlık görüntüsü | var | var | var |
+| Kendi şifresini değiştirme | var | var | var |
+| Hazır anons, hoparlör denemesi, olay inceleme | | var | var |
+| Teşhis, yeniden başlatma, güncelleme | | | var |
+| Hesap açma, rol, yeni şifre, girişi kapatma / açma, silme | | | var |
+| İşlem kaydını görme | | | var |
+
+- **İzleyici** - durumu, olayları ve kamera görüntülerini görür; hiçbir şey
+  değiştiremez. Bilgisayarın IP adreslerini ve bilgisayar adını göremez.
+- **Operatör** - izleyiciye ek olarak hazır anons çaldırır, hoparlörü dener,
+  olayları İncelendi ya da Yanlış alarm diye işaretler.
+- **Yönetici** - operatöre ek olarak programı yeniden başlatır, günceller, teşhis
+  alır, hesapları ve işlem kaydını yönetir.
+
+**Kurucu hesap.** Site ilk kurulduğunda tek hesap vardır: kullanıcı adı `kurucu`,
+şifresi Vercel'deki `PANO_SIFRESI`. Kurucu tam yetkilidir, silinemez, düşürülemez;
+şifresi yalnız Vercel'de değişir. Yönetici hesaplarına dokunan her işi (yönetici
+yapma / düşürme, yöneticiye yeni şifre, kapatma, silme) yalnız kurucu yapar:
+çalınan bir yönetici hesabı kendine kalıcı yetki açamaz. Kurucuyla girince her
+ekranda bir bant çıkar ("... Kullanıcılar ekranından herkese kendi hesabını açın,
+sonra Vercel'de PANO_SIFRESI'ni değiştirin."), çünkü ortak şifreyle yapılan işin
+sahibi işlem kaydında görünmez.
+
+### Geçiş sırası (ilk kurulumda bir kez)
+
+1. Siteye `kurucu` + bugünkü `PANO_SIFRESI` ile girin; **Kullanıcılar**'dan
+   kendinize bir **Yönetici** hesabı açın.
+2. Herkese kendi hesabını açın (İzleyici / Operatör).
+3. Vercel'de `PANO_SIFRESI`'ni yalnız sizin bildiğiniz yeni bir değerle (en az 16
+   karakter) değiştirip **Redeploy** edin: bütün oturumlar düşer, eski ortak
+   şifre artık hiçbir şey açmaz.
+4. Programda "Uzaktan yönetim"i ancak bundan sonra açın (Ayarlar → Uzak izleme
+   panosu).
+
 ## Siteye ne gelir, ne gelmez
 
 | Siteye gelir | Ne kadar durur | Siteye gelmez |
 |---|---|---|
-| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, kullanıcı adları, şifreler |
+| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, fabrikadaki kullanıcı adları ve şifreler |
 | Kameraların adı, bölümü, bağlantı durumu, kare hızı | 7 gün | Video kaydı (yalnız tek kareler gelir) |
 | Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
 | Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (adres ve dosya yolu çıkarılmış) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
 | İhlallerin **kanıt fotoğrafı** (en çok 960 px, ihlal başına bir kez) | 7 gün, en çok 60 fotoğraf | |
 | Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken gelir | |
 | Kurulu olduğu bilgisayar: adı, IP adresi, işletim sistemi, donanım | 7 gün | Oturum açan kullanıcının adı |
+
+Pano hesapları siteye ait ayrı hesaplardır; şifreleri yalnız geri çevrilemeyen
+`scrypt` özetiyle saklanır (aşağıda Güvenlik). Fabrikanın kendi kullanıcı adları
+ve şifreleri siteye hiç gelmez.
 
 **Akıcı canlı görüntü bu siteden geçmez.** Panodaki anlık görüntü 10 saniyede
 bir yenilenir. Akıcı görüntü için fabrika ağına VPN ya da Tailscale ile
@@ -35,7 +86,7 @@ olarak yazılırsa panoda "Fabrika ekranını aç" düğmesi çıkar.
 > **Fabrika içi kullanım (operatör kararı 24.10.2026).** Pano fabrikanın kendi
 > kullanımı içindir; görüntünün siteye gelmesi bu kararla açıldı. Bilinmesi
 > gerekenler: Vercel ve Upstash'in sunucuları yurt dışındadır; görüntüler
-> yalnız şifreyle giren kişiye gösterilir ve yukarıdaki sürelerin sonunda
+> yalnız hesabıyla giren kişiye gösterilir ve yukarıdaki sürelerin sonunda
 > kendiliğinden silinir. Program tarafında uzak pano varsayılan olarak
 > **kapalıdır**; açmak fabrikanın kararıdır.
 
@@ -69,22 +120,46 @@ Buradan alınanlar, sade haliyle:
 Bilerek alınmayan: ürünlerin "güvenlik puanı". O puanın formülü her üreticide
 farklı ve gizli; uydurulmuş bir puan yerine her sayı gerçek bir sayımdır.
 
-## Uzaktan müdahale
+## Uzaktan müdahale ve yönetim
 
-Panonun **Müdahale** ekranından iki küçük iş yapılır: fabrikanın Anons
-sayfasındaki **hazır** bir mesajı "Tüm fabrika" kanallarından ya da seçilen
-kanaldan çaldırmak ve bir kanaldan **deneme sesi** vermek. Başka hiçbir şey
-(serbest metin, kural, kamera, ayar) yapılamaz.
+Panonun **Müdahale** (operatör ve üstü) ve **Yönetim** (yönetici) ekranlarından
+sayılı iş istenebilir. Hepsi aşağıdaki tabloyla sınırlıdır:
+
+| Komut | Ekran | En az rol | Ne yapar | Onay |
+|---|---|---|---|---|
+| Anons (`anons`) | Müdahale | Operatör | Anons sayfasındaki **hazır** bir mesajı seçilen kanaldan ya da "Tüm fabrika"dan çaldırır | Onay kutusu |
+| Hoparlör denemesi (`ses_dene`) | Müdahale | Operatör | Bir kanaldan deneme sesi verir | Çift dokunuş |
+| Olay inceleme (`olay_incele`) | Olaylar | Operatör | Son rapordaki bir ihlali İncelendi ya da Yanlış alarm işaretler | Çift dokunuş |
+| Teşhis (`teshis`) | Yönetim | Yönetici | Programdan tek seferlik durum metni ister (adres ve dosya yolu süzülür) | Tek dokunuş |
+| Yeniden başlat (`yeniden_baslat`) | Yönetim | Yönetici | Programı yeniden başlatır (1-3 dakika kameralar izlenmez) | Kendi şifresi |
+| Güncelle (`guncelle`) | Yönetim | Yönetici | GitHub'daki resmi son sürüme günceller (önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür) | Kendi şifresi |
+
+**Hâlâ yapılamayanlar (sözleşme §0).** Serbest metin okutma; kural, kamera,
+bölge ya da ayar değiştirme; fabrikada keyfi komut ya da betik çalıştırma; dosya
+yükleme; GitHub'daki resmi depo dışından kod ya da paket kurma; siteden fabrikaya
+bağlanma. Yeni bir iş eklemek ayrı karardır.
+
+Nasıl yürür:
 
 - Fabrikaya dışarıdan bağlanılmaz. Ekran açıkken site, programın raporuna "sık
-  sor" der; program birkaç saniyede bir `/api/komut`'a imzalı istek gönderip
-  komutu alır, yürütür ve sonucu bildirir. Ekran kapalıyken program sormaz;
-  ekrana 10 dakika dokunulmazsa dinleme bekler.
-- Komut 2 dakika içinde alınmazsa düşer. 5 dakikada en çok 10 komut.
-- Anonsta onay, denemede çift dokunuş istenir (cepte yanlışlıkla ses çıkmasın).
-- Her müdahale fabrikadaki Olaylar'a yazılır ve izleme ekranlarında görünür.
-- Program tarafında ayrıca açılır (Ayarlar → Uzak izleme panosu → Uzaktan
-  müdahale); kapalıyken ekran nasıl açılacağını söyler.
+  sor" der; program birkaç saniyede bir `/api/komut`'a **imzalı** ve o soruya
+  özgü bir `nonce` taşıyan istek gönderip komutu alır, yürütür ve sonucunu
+  bildirir. Cevap da imzalıdır ve aynı `nonce`'u taşır: eski bir cevap yeniden
+  oynatılamaz. Ekran kapalıyken program sormaz; ekrana 10 dakika dokunulmazsa
+  dinleme bekler.
+- Komut 2 dakika içinde alınmazsa düşer. Sınırlar (site ve program aynı sayıyla):
+  anons ve hoparlör denemesi 5 dakikada 10; olay inceleme 5 dakikada 60; teşhis
+  5 dakikada 3; yeniden başlatma ve güncelleme birlikte saatte 3, aynı anda tek
+  iş.
+- Yeniden başlatma, güncelleme ve her hesap işi, işi yapanın **kendi şifresini**
+  ister (cepte yanlışlıkla iş yapılmasın; çalınan açık bir oturum tek başına
+  fabrikayı yeniden başlatamasın).
+- Her müdahale ve yönetim işi fabrikadaki Olaylar'a ve sitedeki işlem kaydına
+  kim yaptığıyla yazılır. Teşhis izleme ekranında bant göstermez (fabrikada bir
+  şey değiştirmez).
+- Program tarafında ayrıca açılır: Müdahale için Ayarlar → Uzak izleme panosu →
+  "Uzaktan müdahale"; Yönetim için "Uzaktan yönetim" (varsayılan kapalı). Kapalı
+  bir program siteden açılamaz.
 
 ## Kanıt fotoğrafı ve anlık görüntü
 
@@ -114,36 +189,57 @@ Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü göndermemeli
 ## Raporun biçimi (fabrika programı ile bağlarken)
 
 Fabrika programı `/api/rapor`'a JSON gönderir. Site yalnız aşağıdaki alanları
-tanır; gerisini atar. Kalın olanları fabrika programı henüz göndermiyor (DALSAN
-tarafındaki iş: kameranın ve olayın kimliği, sistem olayının açıklaması,
-bilgisayarın IP adresi, fotoğraf ve anlık görüntü gönderimi). Gelmeyen alanın
-kartını pano gizler ya da "henüz gönderilmiyor" der.
+tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 
 | Alan | Biçim |
 |---|---|
-| `surum`, `uretildi`, `aralik_sn`, `kapanis` | 1, ISO zaman, saniye, true/false |
-| `program` | `{ad, surum}` |
+| `surum`, `uretildi`, `aralik_sn`, `kapanis` | 1, ISO zaman, saniye (5-3600), true/false |
+| `kapanis_sebebi` | `""` / `guncelleme` / `yeniden_baslatma` (yalnız kapanış raporunda dolu) |
+| `program` | `{ad, surum, yapi: {commit (7-40 küçük hex ya da boş), tarih (ISO ya da boş), calistirma}}` |
 | `sistem` | `{analiz, hazir, model, uyari_garantisi, sorunlar[], bos_disk_gb, calisma_suresi_sn}` |
-| `kameralar[]` | `{ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` ve **`id`** (veritabanındaki kamera kimliği; anlık görüntünün anahtarı) |
+| `kameralar[]` | `{id, ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` (`id` anlık görüntünün anahtarı) |
 | `sayilar` | `{bugun_ihlal, dun_ihlal, bekleyen, aktif_kural, kamera_toplam, kamera_canli}` |
 | `saatlik` | bugünün 24 saati, ihlal sayısı |
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
-| `son_olaylar[]` | `{zaman, tur, baslik, yer, onem, onem_adi, durum_adi, suruyor, sure}` ve **`id`** (olay kimliği; kanıt fotoğrafının anahtarı), **`ayrinti`** (sistem olayının açıklaması, en çok 300 karakter; fabrika adresleri ve dosya yollarını çıkarır, site de içinde kalan `xxx://` adresini "(adres)" yapar) |
-| `mudahale` | `{acik, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}` |
+| `son_olaylar[]` | `{id, zaman, tur, baslik, yer, onem, onem_adi, durum_adi, durum, suruyor, sure, ayrinti}` (`id` kanıt fotoğrafının anahtarı; `ayrinti` sistem olayının açıklaması, en çok 300 karakter, adres ve dosya yolu çıkarılmış; `durum` = `new` / `reviewed` / `false_alarm`) |
+| `mudahale` | `{acik, isler, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}`; `isler` ⊆ (`anons`, `ses_dene`, `olay_incele`) |
+| `yonetim` | `{acik, isler, kurulum, yeniden_baslatma: {mumkun, sebep}, guncelleme: {mumkun, sebep}}`; `isler` ⊆ (`teshis`, `yeniden_baslat`, `guncelle`), `kurulum` = `paket` / `git` / `diger` |
 | `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
 | `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
 | `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
-| `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis}` ve **`ip`** (yerel ağdaki adresleri, en çok 4) |
+| `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis, ip[]}` (`ip` yerel ağdaki adresler, en çok 4) |
 
 `bilgisayar.ad`, kurulumun okunur adıdır ("Gebze fabrikası"); fabrika
-programında elle yazılan bir ayardır. `olay.foto` fabrikadan okunmaz: sitede
-fotoğrafı olup olmadığını site kendisi yazar.
+programında elle yazılan bir ayardır. `son_olaylar[].foto` fabrikadan okunmaz:
+sitede fotoğrafı olup olmadığını site kendisi yazar.
 
-Komut yoklaması (`/api/komut`): istek `{surum: 1, sonuclar: [{id, durum:
-"yapildi"|"hata", mesaj}]}`, cevap `{komutlar: [{id, tur: "anons"|"ses_dene",
-mesaj_id, kanal_id, son_gecerlilik, kalan_sn}], hizli}`. İkisi de raporla aynı
-anahtarla, aynı başlıklarla imzalanır; program imzası tutmayan cevaptaki komutu
-yürütmez. Raporun cevabı `{komut: {hizli}}` taşır.
+**Eski bir program** `program.yapi`, `son_olaylar[].durum`, `mudahale.isler`,
+`yonetim` ve `kapanis_sebebi` alanlarını göndermez: site o kartları gizler ya da
+Yönetim ve inceleme düğmelerini pasif bırakır ("Fabrika programı bu işi bilmiyor;
+programı güncelleyin."). Anons ve hoparlör denemesi bugünkü gibi çalışır.
+
+### Komut sözleşmesi (`/api/komut`)
+
+Komut sorusu ve cevabı da raporla aynı anahtarla, aynı başlıklarla imzalanır;
+program imzası ya da `nonce`'u tutmayan cevaptaki komutu yürütmez.
+
+- **İstek:** `{surum: 1, nonce: "<32 küçük hex>", sonuclar: [<sonuç>...]}`. Gövde
+  en çok 64 KB; site bir istekte en çok 10 sonucu işler.
+- **Cevap:** `{tamam: true, nonce: "<istekteki>", alinan: ["<id>", ...],
+  komutlar: [<komut>...], hizli}`. `alinan` = sitenin yazdığı ya da zaten bitmiş
+  bulduğu sonuç kimlikleri (program kalıcı sonuç dosyasını ancak kimlik burada
+  görününce siler). `hizli`, fabrikaya "sık sor" demektir.
+- **Komut** alan alan kurulur; başka alan gitmez: `{id, tur, son_gecerlilik,
+  kalan_sn, kim: {ad, rol}}` ve türe özgü alanlar (`anons` → `mesaj_id`,
+  `kanal_id`; `ses_dene` → `kanal_id`; `olay_incele` → `olay_id`, `olay_zaman`,
+  `karar`; `teshis` / `yeniden_baslat` / `guncelle` → yok).
+- **Sonuç:** `{id: "<16 hex>", durum: "yapildi" | "hata" | "suruyor", mesaj:
+  "<tek satır, en çok 300>", ek: "<yalnız teshis; çok satır, en çok 8192 bayt>"}`.
+  Site `mesaj`'ı tek satıra indirir; `ek`'teki denetim karakterlerini atar, kalan
+  `xxx://` adreslerini "(adres)" yapar ve 8192 bayta keser.
+
+Eski bir program `nonce` ve `kim` göndermez; site boş `nonce` ile cevap verir ve
+program yalnız `anons` ile `ses_dene`'yi kabul eder.
 
 ## Vercel'e kurulum (bir kez)
 
@@ -152,21 +248,27 @@ yürütmez. Raporun cevabı `{komut: {hizli}}` taşır.
    **Deploy**'a basın (Framework Preset "Other" kalır, derleme adımı yoktur).
 2. **Veri deposunu bağlayın.** Projede **Storage** sekmesi → **Create Database** →
    **Upstash** (Redis). Bölge olarak Avrupa'yı (Frankfurt) seçin ve bu projeye
-   bağlayın. Bağlantı ayarlarını Vercel projeye kendisi ekler.
-3. **İki ayarı yazın.** **Settings → Environment Variables**:
+   bağlayın. Bağlarken ortam **yalnız Production** olsun (Preview ve Development
+   işaretli kalmasın); Vercel bağlantı ayarlarını projeye kendisi ekler.
+3. **İki ayarı yazın.** **Settings → Environment Variables** - her ikisini de
+   **yalnız Production** ortamına ekleyin:
 
    | Ad | Değer |
    |---|---|
-   | `PANO_SIFRESI` | Panoya giriş şifresi, en az 10 karakter (öneri: 16) |
+   | `PANO_SIFRESI` | **Kurucu hesabının şifresi**, en az 10 karakter (öneri: 16). Geçiş sırasından sonra yalnız kurucu girişinde kullanılır |
    | `RAPOR_ANAHTARI` | En az 32 karakterlik rastgele anahtar. Pano sayfası, site kurulmamışken bir tane önerir |
    | `FABRIKA_ADRESI` | *(isteğe bağlı)* Fabrika ekranının VPN/Tailscale adresi, ör. `http://100.64.0.7:8080` |
 
+   Dört ortam değişkeni de (`PANO_SIFRESI`, `RAPOR_ANAHTARI` ve Upstash'in iki
+   değeri) yalnız Production'a bağlı kalmalı: önizleme (Preview) yayınından
+   fabrikaya komut ve hesap değişikliği gönderilmez (aşağıda önizleme kilidi).
 4. **Yeniden yayınlayın.** **Deployments** → son yayının menüsü → **Redeploy**.
    Ayarlar ancak yeniden yayından sonra geçerli olur.
 5. **Bölgeyi seçin (önerilir).** **Settings → Functions → Region**: Frankfurt
    (`fra1`). İşlevler veri deposuna yakın çalışır.
 6. **Panoyu açın:** `https://<projeniz>.vercel.app/pano`. Giriş ekranı gelmeli. Ayar
-   eksikse sayfa neyin eksik olduğunu yazar.
+   eksikse sayfa neyin eksik olduğunu yazar. İlk girişte kullanıcı adı `kurucu`,
+   şifresi `PANO_SIFRESI`'dir; sonra yukarıdaki **Geçiş sırası**'nı uygulayın.
 7. **Fabrika programını bağlayın.** Programda **Ayarlar → Uzak izleme panosu**:
    - **Site adresi:** `https://<projeniz>.vercel.app` (Vercel'in verdiği ana adres)
    - **Uzak pano anahtarı:** `RAPOR_ANAHTARI`'nın aynısı
@@ -182,36 +284,43 @@ yürütmez. Raporun cevabı `{komut: {hizli}}` taşır.
 - **Upstash:** her rapor 1 istekte 3 komuttur: 30 sn aralıkla ayda yaklaşık
   260 bin. Pano açıkken saatte yaklaşık 240 komut okur. Kanıt fotoğrafı başına
   3-4 komut. Kameralar ekranı açıkken 4 kamerada saatte yaklaşık 8 bin komut ve
-  dakikada 3 MB kadar veri akar; ekrana 10 dakika dokunulmazsa durur. Ücretsiz
-  plan (ayda 500 bin komut) günde birkaç kez bakmaya yeter. Pano bir ekranda
-  sürekli açık kalacaksa ya da Kameralar sık açılacaksa kullandıkça öde planına
-  geçip harcama sınırı koyun. Depoda en çok 60 fotoğraf durur (24 MB'tan az).
-  Güncel sınırları Upstash'in fiyat sayfasında kontrol edin.
+  dakikada 3 MB kadar veri akar; ekrana 10 dakika dokunulmazsa durur.
+- **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
+  doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. Müdahale ya da
+  Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
+  saniyede bir uğrar (ekran kapanınca durur).
+- Ücretsiz plan (ayda 500 bin komut) günde birkaç kez bakmaya yeter. Pano bir
+  ekranda sürekli açık kalacaksa ya da Kameralar sık açılacaksa kullandıkça öde
+  planına geçip harcama sınırı koyun. Depoda en çok 60 fotoğraf durur (24 MB'tan
+  az). Güncel sınırları Upstash'in fiyat sayfasında kontrol edin.
 
 ## Nasıl çalışır
 
 ```
 fabrika programı ──(HTTPS POST, imzalı JSON)──> /api/rapor, /api/foto, /api/kare ──> Upstash Redis
-tarayıcı ──(şifreyle giriş, oturum çerezi)──> /api/durum, /api/foto, /api/kare <── Upstash Redis
+fabrika programı ──(imzalı komut sorusu + nonce)──> /api/komut <──(imzalı cevap)── Upstash Redis
+tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /api/hesap, /api/mudahale, /api/foto, /api/kare <── Upstash Redis
 ```
 
 | Dosya | İşi |
 |---|---|
 | `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
-| `api/giris.py`, `api/cikis.py` | Panoya giriş ve çıkış (oturum çerezi) |
-| `api/durum.py` | Panonun verisi; oturum ister (`?mudahale=1`: son komutlar da gelir; `?kare=1`: kameraların son görüntüsünün zamanı da gelir ve fabrikaya "anlık görüntü gönder" denir) |
+| `api/giris.py`, `api/cikis.py` | Panoya kişisel hesapla giriş ve çıkış (oturum çerezi, kilitler) |
+| `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir) |
+| `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir, herkes kendi şifresini değiştirir (onay şifresiyle) |
 | `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
-| `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi); oturum ister |
-| `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek ve cevap) |
-| `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, kilit, rapor biçimi |
-| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css` |
+| `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
+| `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
+| `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
+| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css`, `404.html` |
 | `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması |
 | `yerel_sunucu.py` | Siteyi Vercel'siz, bu bilgisayarda denemek için |
 
 Yalnız Python'un standart kütüphanesi ve sade HTML/CSS/JS kullanılır: kurulacak
-paket, npm, derleme adımı yoktur. Yazı tipi (Inter) ve logo fabrika ekranındakiyle
-aynıdır ve siteyle birlikte gelir (CDN yok).
+paket, npm, derleme adımı yoktur. Her Vercel işlevi (`api/` altındaki adresler)
+ayrı bir dosyadır; `_pano.py` adres değil, ortak parçadır. Yazı tipi (Inter) ve
+logo fabrika ekranındakiyle aynıdır ve siteyle birlikte gelir (CDN yok).
 
 Görünüm: bilgisayarda laffogato yönetim panelinin Innex düzeni (kenar çubuğu ve
 sayfa kartı, sayı şeridi, tablo, rozetler), telefonda lafmobil'in mobil dili
@@ -220,23 +329,61 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 
 ## Güvenlik
 
-- **İmza:** her rapor `RAPOR_ANAHTARI` ile HMAC-SHA256 imzalanır (başlıklar
-  `X-Dalsan-Zaman`, `X-Dalsan-Imza`). İmza tutmayan ya da saati 5 dakikadan fazla
-  kaymış rapor reddedilir; gövde imzadan önce okunmaz.
-- **Alan süzme:** rapordaki alanlar tek tek tip ve uzunluk denetiminden geçer;
+- **Hesaplar ve roller:** Panoya ortak şifreyle değil kişiye özel hesapla
+  girilir; rol (İzleyici, Operatör, Yönetici) her istekte kayıttan okunur.
+  Yetkisi olmayan düğme gizlenir, istek yine rolle denetlenir. İzleyici
+  bilgisayarın IP adreslerini ve bilgisayar adını görmez.
+- **Şifre saklama:** Hesap şifreleri açık değil, hesap başına rastgele tuzla
+  `scrypt` (yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma sabit sürede
+  yapılır. Kurucunun şifresi (`PANO_SIFRESI`) yalnız Vercel'dedir.
+- **Onay şifresi:** Yeniden başlatma, güncelleme ve her hesap işi (ekleme, rol,
+  yeni şifre, kapatma, silme) işi yapanın kendi şifresini ister; yanlış ya da
+  eksikse iş yapılmaz ve kilit sayaçlarına girer.
+- **Yalnız kurucu yöneticileri yönetir:** Bir yöneticiyi yönetici yapmak ya da
+  düşürmek, yönetici hesabına yeni şifre vermek, kapatmak ya da silmek yalnız
+  kurucuya açıktır. Çalınan bir yönetici hesabı kendine kalıcı yetki açamaz.
+- **İmza ve nonce:** Her rapor ve her komut cevabı `RAPOR_ANAHTARI` ile
+  HMAC-SHA256 imzalanır (başlıklar `X-Dalsan-Zaman`, `X-Dalsan-Imza`). İmza
+  tutmayan ya da saati 5 dakikadan fazla kaymış istek reddedilir; gövde imzadan
+  önce okunmaz. Komut cevabı programın o soruda gönderdiği `nonce`'u taşır: eski
+  bir cevap yeniden oynatılamaz.
+- **Giriş kilitleri:** Üç kilit şifre denetiminden önce okunur - adres başına
+  5 yanlışta 5 dakika (IPv6'da /64 öneki), ad başına 15 dakikada 10 yanlışta
+  15 dakika, bütün adreslerden 15 dakikada 100 yanlışta 15 dakika. Bilinmeyen
+  adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
+  geri çevrilemeyen özeti tutulur.
+- **İşlem kaydı:** Her hesap işi, her komut ve her giriş / çıkış, kim yaptığıyla
+  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Şifre asla kayda
+  girmez.
+- **Önizleme kilidi:** Vercel'in önizleme (Preview) yayınından komut ve hesap
+  değişikliği yapılamaz; sayfada kalıcı önizleme bandı çıkar. Dört ortam
+  değişkenini de yalnız Production'a bağlı tutun.
+- **Güncelleme güven zinciri:** Siteyi ele geçiren biri fabrikaya kod
+  GÖNDEREMEZ; yalnız GitHub'daki resmi DALSAN yayınının son sürümünü
+  kurdurabilir. Güncelleme sabit adres ve etiketten, yalnız CI'ın yüklediği
+  varlıktan, SHA-256 doğrulamasıyla iner; paket listesi değişen git güncellemesi
+  uzaktan yapılmaz. Asıl kapı sitede değil programdadır (ayar, rol, diskteki
+  ağır sınır, `nonce`).
+- **Alan süzme:** Rapordaki alanlar tek tek tip ve uzunluk denetiminden geçer;
   bilinmeyen alan depoya yazılmaz. Görüntü yalnız kendi imzalı adresinden gelir:
   base64 sıkı çözülür, boyut sınırı aşılmaz, JPEG olmayan içerik reddedilir.
   Panoya `image/jpeg` ve `nosniff` ile, yalnız oturumla verilir.
-- **Giriş:** şifre sabit sürede karşılaştırılır. Aynı adresten 5 yanlış denemede
-  5 dakika, bütün adreslerden 15 dakikada 100 yanlış denemede 15 dakika kilit.
-  Kilit sayacında IP adresinin kendisi değil, geri çevrilemeyen özeti tutulur.
-- **Oturum:** çerez `HttpOnly`, `Secure`, `SameSite=Strict`, 12 saat. İmzası
-  şifreden ve rapor anahtarından türer: şifre değişince bütün oturumlar düşer.
-- **Sayfa:** sıkı Content-Security-Policy (yalnız sitenin kendi dosyaları), çerçeve
-  içine alınamaz, arama motorlarına kapalı (`noindex`, `robots.txt`). Veri sayfaya
-  yalnız `textContent` ile yazılır.
+- **Oturum:** Çerez (v2) `HttpOnly`, `Secure`, `SameSite=Strict`, 12 saat;
+  imzası `PANO_SIFRESI` ve `RAPOR_ANAHTARI`'ndan türer, bu yüzden kurucu şifresi
+  değişince bütün oturumlar düşer. Rol, hesap kimliği ve oturum sürümü her
+  istekte kayıtla karşılaştırılır: rolü düşürülen, kapatılan ya da silinen
+  hesabın oturumu anında biter.
+- **Sayfa:** sıkı Content-Security-Policy (yalnız sitenin kendi dosyaları),
+  çerçeve içine alınamaz, arama motorlarına kapalı (`noindex`, `robots.txt`).
+  Veri sayfaya yalnız `textContent` ile yazılır (CSRF için `SameSite=Strict`,
+  köken denetimi ve JSON zorunluluğu).
 - **Saklama:** son durum ve kanıt fotoğrafları 7 gün (en çok 60 fotoğraf),
   anlık görüntü 2 dakika tutulur; rapor kesilirse hiçbiri süresiz kalmaz.
+
+**Bir hesap ya da kurucu şifresi çalınırsa:** Vercel'de `PANO_SIFRESI`'ni
+değiştirip Redeploy edin (bütün oturumlar düşer); fabrikada Uzaktan yönetim ve
+Uzaktan müdahale'yi kapatın; gerekiyorsa `RAPOR_ANAHTARI`'nı iki tarafta
+yenileyin.
 
 ## Sorun giderme
 
@@ -244,6 +391,10 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 |---|---|
 | Pano: "Site henüz kurulmadı" | Listedeki ayarları yazın, sonra Redeploy |
 | Pano: "Fabrikadan henüz rapor gelmedi" | Fabrika programında Ayarlar → Uzak izleme panosu doldurulmadı ya da sistem yeniden başlatılmadı |
+| Pano: "Kullanıcı adı ya da şifre yanlış" | İlk girişte ad `kurucu`, şifre `PANO_SIFRESI`; kendi hesabınızı yöneticiniz açar |
+| Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı ya da kurucu şifresi değişti; yeniden giriş yapın |
+| Pano: "ÖNİZLEME - fabrikaya komut ve hesap değişikliği gönderilmez" | Önizleme (Preview) adresindesiniz; Vercel'in ana (Production) adresini açın |
+| Yönetim: düğme pasif, "Fabrika programı bu işi bilmiyor" | Fabrika programı eski; güncellendiğinde Yönetim işleri açılır (ilk güncelleme fabrikada elle yapılır) |
 | Program: "İmza tutmadı" | Programdaki anahtar ile `RAPOR_ANAHTARI` aynı değil |
 | Program: "saati yaklaşık ... saniye geri" | Fabrika bilgisayarının tarih ve saatinde "otomatik ayarla"yı açın |
 | Program: "beklenmeyen bir cevap verdi (HTTP 401)" | Önizleme adresi yazılmış; Vercel'in ana (Production) adresini yazın |
@@ -251,7 +402,6 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 | Pano: "Veri deposuna ulaşılamadı" | Storage sekmesinde Upstash bağlantısını kontrol edin; Vercel → Logs |
 | Kameralar: "Fabrika programı anlık görüntü göndermiyor" | Programın uzak pano bağlantısı eski; güncellenince kameralar görüntüsüyle çıkar |
 | Kameralar: "Görüntü beklemede" | Ekrana 10 dakikadır dokunulmadı; Sürdür'e basın |
-| Kameralar: "Fabrika bir sonraki raporunda göndermeye başlar" uzun sürüyor | Program rapor aralığı kadar (varsayılan 30 sn) bekler; sürüyorsa programın Ayarlar → Uzak izleme panosu bölümündeki durum satırına bakın |
 | Olaylar: "Fotoğraf alınamadı" | Fotoğraf sitede silinmiş (7 gün, en çok 60) ya da henüz gelmedi; asılları fabrikadaki bilgisayardadır |
 
 ### İnternet kesilirse
@@ -270,12 +420,13 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
 ## Bu bilgisayarda denemek
 
 ```bash
-python3 yerel_sunucu.py          # http://127.0.0.1:3000 - şifre ve anahtar ekrana yazılır
+python3 yerel_sunucu.py          # http://127.0.0.1:3000 - kurucu şifresi ve anahtar ekrana yazılır
 ```
 
 Fabrika programında site adresi olarak `http://127.0.0.1:3000` yazılabilir (düz
 http yalnız bu bilgisayar için kabul edilir). Yerel sunucu Upstash yerine bellek
-kullanır; kapatınca her şey silinir.
+kullanır; kapatınca her şey silinir. Yerel sunucuda `VERCEL_ENV` yoktur, bu
+yüzden önizleme kilidi çalışmaz: komut ve hesap işleri açıktır.
 
 Testler ve biçim denetimi:
 
@@ -285,6 +436,8 @@ python3 -m pytest
 ruff check . && ruff format --check .
 ```
 
-Rapor biçimi iki depoda birlikte değişir: sitede `api/_pano.py` (`RAPOR_SURUMU`,
-`rapor_temizle`), programda `backend/app/uzak_pano.py`. İmzanın ortak deneme değeri
-iki deponun testlerinde de vardır.
+Rapor ve komut biçimi iki depoda birlikte değişir: sitede `api/_pano.py`
+(`RAPOR_SURUMU`, `rapor_temizle`), programda `backend/app/uzak_pano.py` ve
+`uzak_mudahale.py`. İmzanın ve biçimin ortak örnekleri iki deponun
+`tests/sozlesme/` klasöründe birebir aynıdır (sözleşme DALSAN
+`docs/19-SITEDEN-YONETIM.md`).
