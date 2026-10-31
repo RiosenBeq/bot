@@ -1420,6 +1420,226 @@ time,
   cursor: not-allowed;
 }
 
+/* ------------------------------------------------- siteden yönetim (docs/19)
+   Hesaplar, roller, kurucu/önizleme/şifre bantları, yönetim ekranı, kullanıcı
+   işlemleri ve işlem kaydı. Masaüstünde Innex, telefonda lafmobil diliyle. */
+
+/* Her ekranda görünen bantlar: önizleme (turuncu), kurucu (mor), şifre (mavi) */
+.pano-bandi {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+}
+.onizleme-bandi {
+  background: var(--uyari-acik);
+  color: var(--uyari);
+  border-color: #fbd9b6;
+}
+.kurucu-bandi {
+  background: var(--mor-acik);
+  color: var(--mor);
+  border-color: #e3d4fb;
+}
+.sifre-bandi {
+  background: var(--bilgi-acik);
+  color: var(--bilgi);
+  border-color: #c4e9f3;
+}
+
+/* Tehlike düğmesi (hesap silme): beyazda kırmızı, onaylayınca dolu kırmızı */
+.dugme.tehlike {
+  background: var(--yuzey);
+  color: var(--tehlike-metin);
+  border-color: #f9cfd4;
+}
+.dugme.tehlike:hover {
+  background: var(--tehlike-acik);
+}
+.dugme.tehlike.onayla {
+  background: var(--tehlike-metin);
+  color: var(--dolu-metin);
+  border-color: var(--tehlike-metin);
+}
+
+/* Açılır seçici (rol seçimi): forma ve satır içine uyar, telefonda zoom olmaz */
+.secici,
+.form select {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--alan-kenari);
+  border-radius: 8px;
+  background: var(--yuzey);
+  color: var(--metin);
+  font: inherit;
+  font-size: 16px;
+}
+
+/* Onay kutusuna şifre alanı (ağır işler) */
+.onay-kutusu label {
+  display: block;
+  margin: 10px 0 6px;
+  color: var(--metin-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.onay-kutusu input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--alan-kenari);
+  border-radius: 8px;
+  background: var(--yuzey);
+  color: var(--metin);
+  font: inherit;
+  font-size: 16px;
+}
+
+/* Olay inceleme düğmeleri (Operatör ve Yönetici) */
+.incele-dugmeler {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.incele-satiri {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.incele-satiri .dugme {
+  flex: 1 1 auto;
+  min-height: var(--dugme-boyu);
+}
+.incele-durum {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--basari);
+  font-size: 13px;
+  font-weight: 500;
+}
+.incele-not {
+  color: var(--uyari);
+  font-size: 12px;
+}
+.incele-hatasi {
+  min-height: 0;
+}
+
+/* Yönetim ekranı: işlem satırları ve teşhis metni */
+.yonetim-islemleri {
+  display: grid;
+  gap: 10px;
+}
+.yonetim-islem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.yonetim-islem .satir-govde {
+  min-width: 0;
+}
+.yonetim-islem .dugme {
+  flex: none;
+}
+.yonetim-islemleri .hata {
+  min-height: 0;
+}
+.teshis-ek {
+  margin-top: 6px;
+}
+.teshis-ek summary {
+  cursor: pointer;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  color: var(--birincil);
+  font-size: 13px;
+  font-weight: 500;
+}
+.teshis-metni {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--kare-zemin);
+  color: var(--kare-yazi);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Kullanıcı listesi: satır dikey açılır, işlemler katlanır panelde */
+.satirlar > li.kullanici-satiri {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.kullanici-ust {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kullanici-islemleri > summary {
+  cursor: pointer;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  color: var(--birincil);
+  font-size: 13px;
+  font-weight: 500;
+}
+.islem-paneli {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--cizgi);
+  border-radius: 10px;
+  background: var(--kuyu);
+}
+.islem-paneli label {
+  color: var(--metin-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.islem-paneli > input,
+.islem-satiri input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--alan-kenari);
+  border-radius: 8px;
+  background: var(--yuzey);
+  color: var(--metin);
+  font: inherit;
+  font-size: 16px;
+}
+.islem-paneli .hata {
+  min-height: 0;
+}
+.islem-satiri {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.islem-satiri input,
+.islem-satiri .secici {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.islem-satiri .dugme {
+  flex: none;
+}
+
 /* ----------------------------------------- tek kartlık ekranlar (giriş vb.)
    Innex'in kayıt kartı: gri zeminde ortada beyaz kart. */
 .tek-ekran {

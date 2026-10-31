@@ -45,17 +45,75 @@
     kameralar: ["Kameralar", "Anlık görüntü, bağlantı durumu ve kare hızı"],
     olaylar: ["Olaylar", "Son 20 olay, en yenisi üstte"],
     mudahale: ["Müdahale", "Fabrikada uzaktan anons ve hoparlör denemesi"],
+    yonetim: ["Yönetim", "Teşhis, yeniden başlatma ve güncelleme"],
+    kullanicilar: ["Kullanıcılar", "Hesaplar, roller ve işlem kaydı"],
     sistem: ["Sistem", "Program, bağlantı ve canlı görüntü"],
   };
-  // [rozet, rozet sınıfı, sonuç yokken açıklama]
-  const KOMUT_DURUMLARI = {
-    bekliyor: ["Sırada", "uyari", "Fabrikanın almasını bekliyor"],
-    iletildi: ["Fabrikada", "bilgi", "Çalınıyor"],
-    yapildi: ["Yapıldı", "basari", ""],
-    hata: ["Yapılamadı", "tehlike", ""],
-    suresi_doldu: ["Süresi doldu", "", ""],
-    sonuc_yok: ["Sonuç gelmedi", "uyari", ""],
+  // Hangi görünüm hangi rolü ister (docs/19 §1). İzleyici yalnız izler.
+  const GORUNUM_ROLU = { mudahale: "operator", yonetim: "yonetici", kullanicilar: "yonetici" };
+  const MUDAHALE_TURLERI = ["anons", "ses_dene", "olay_incele"];
+  const YONETIM_TURLERI = ["teshis", "yeniden_baslat", "guncelle"];
+  const INCELE_BEKLEME_MS = 3 * 60 * 1000; // sonuç bu süre gelmezse düğmeler geri gelir
+
+  // Komutun türe göre durum etiketi ve rozet sınıfı (docs/19 §3.6, O10).
+  const KOMUT_IKONU = {
+    anons: "i-anons",
+    ses_dene: "i-sistem",
+    olay_incele: "i-inceleme",
+    teshis: "i-teshis",
+    yeniden_baslat: "i-guc",
+    guncelle: "i-indir",
   };
+  const ILETILDI_ETIKETI = { anons: "Çalınıyor", ses_dene: "Deneniyor", teshis: "Hazırlanıyor" };
+  const SURUYOR_ETIKETI = { yeniden_baslat: "Yeniden başlatılıyor", guncelle: "Güncelleniyor" };
+  const SINIF_TONU = { basari: "yesil", tehlike: "gul", uyari: "bal", bilgi: "" };
+
+  // Ekleme ve rol formundaki rol açıklamaları (docs/19 §1, O10).
+  const ROL_ACIKLAMALARI = {
+    izleyici: "İzleyici - durumu, olayları ve kamera görüntülerini görür; hiçbir şey değiştiremez.",
+    operator:
+      "Operatör - izleyiciye ek olarak hazır anons çaldırır, hoparlörü dener, olayları " +
+      "İncelendi ya da Yanlış alarm diye işaretler.",
+    yonetici:
+      "Yönetici - operatöre ek olarak programı yeniden başlatır, günceller, teşhis alır, " +
+      "hesapları ve işlem kaydını yönetir.",
+  };
+  const ROL_ADLARI = { izleyici: "İzleyici", operator: "Operatör", yonetici: "Yönetici" };
+  // İşlem kaydındaki iş kodlarının ekrandaki adı (docs/19 §3.3).
+  const IS_ADLARI = {
+    hesap_ekle: "Hesap eklendi",
+    rol_degistir: "Rol değişti",
+    sifre_sifirla: "Yeni şifre verildi",
+    hesap_kapat: "Giriş kapatıldı",
+    hesap_ac: "Giriş açıldı",
+    hesap_sil: "Hesap silindi",
+    sifre_degistir: "Şifre değiştirildi",
+    komut: "Komut gönderildi",
+    komut_sonuc: "Komut sonucu",
+    komut_dustu: "Komut düştü",
+    giris: "Giriş",
+    cikis: "Çıkış",
+    komut_red: "Yetki reddi",
+    giris_hatali: "Hatalı giriş",
+  };
+  const SONUC_ROZETI = {
+    tamam: ["Tamam", "basari"],
+    hata: ["Hata", "tehlike"],
+    red: ["Reddedildi", "uyari"],
+  };
+
+  // Her ekranda görünen bantların metinleri (docs/19 §3.1, O10).
+  const KURUCU_BANT =
+    "Kurucu hesabıyla girdiniz. Bu hesap sitenin ortak şifresiyle açılır ve tam yetki verir; " +
+    "işlem kaydında kim olduğunuz görünmez. Kullanıcılar ekranından herkese kendi hesabını " +
+    "açın, sonra Vercel'de PANO_SIFRESI'ni değiştirin.";
+  const KURUCU_HESABIM =
+    "Kurucu hesabının şifresi burada değişmez: Vercel'de Settings > Environment Variables > " +
+    "PANO_SIFRESI'ni değiştirip Redeploy edin. Bütün oturumlar kapanır.";
+  const ONIZLEME_BANT = "ÖNİZLEME - fabrikaya komut ve hesap değişikliği gönderilmez.";
+  const SIFRE_BANT =
+    "Şifreniz yöneticiniz tarafından verildi. Sistem → Hesabım'dan kendi şifrenizi " +
+    "belirleyene kadar komut ve hesap işlemi yapamazsınız.";
   const KAMERA_DURUMLARI = {
     online: ["Canlı", "basari"],
     connecting: ["Yeniden bağlanıyor", "uyari"],
@@ -83,6 +141,13 @@
   const fotoHatalari = new Map(); // olay kimliği -> fotoğrafın gelmediği an
   const fotoKucukleri = new Map(); // "genel:123" -> küçük fotoğraf (tazelemede yeniden inmesin)
   let acikKare = null; // büyütülmüş anlık görüntünün kamerası (canlı yenilenir)
+  let oturum = null; // {ad, rol, rol_adi, kurucu, sifre_degismeli} - /api/durum'dan
+  let onizleme = false; // önizleme yayını mı
+  let hesapVerisi = null; // GET /api/hesap (kullanıcılar + işlem kaydı)
+  let hesapIstekSuruyor = false;
+  const inceleKutulari = new Map(); // olay kimliği -> inceleme denetimi (tazelemede korunur)
+  const inceleDurum = new Map(); // olay kimliği -> gönderildiği an (ms)
+  const inceleGecti = new Set(); // sonucu 3 dakikada gelmeyen olay kimlikleri
 
   // ----------------------------------------------------------- yardımcılar
 
@@ -207,6 +272,87 @@
     kutu.hidden = !metin;
   }
 
+  // ------------------------------------------------------- rol ve bantlar
+
+  function rolu() {
+    return oturum ? oturum.rol : "izleyici";
+  }
+
+  /* Menüdeki ve sekme çubuğundaki FABRİKA bağlantılarını role göre gösterir;
+     yetkisi olmayan görünümden çıkar (docs/19 §1). */
+  function rolUygula() {
+    const rol = rolu();
+    const mudahale = rol === "operator" || rol === "yonetici";
+    const yonetici = rol === "yonetici";
+    // Yalnız gezinme öğelerini (menü + sekme) gizle; görünüm kutularını
+    // gorunumuUygula yönetir (data-gorunum görünüm div'inde de var).
+    // Müdahale: hem kenar menüsü hem telefon sekmesi (izleyicide yok)
+    for (const oge of document.querySelectorAll(
+      '.menu-ogesi[data-gorunum="mudahale"], .sekme[data-gorunum="mudahale"]'
+    )) {
+      oge.hidden = !mudahale;
+    }
+    // Yönetim ve Kullanıcılar: yalnız kenar menüsünde (telefonda Sistem'den açılır)
+    for (const oge of document.querySelectorAll(
+      '.menu-ogesi[data-gorunum="yonetim"], .menu-ogesi[data-gorunum="kullanicilar"]'
+    )) {
+      oge.hidden = !yonetici;
+    }
+    $("fabrika-yonetim-karti").hidden = !yonetici;
+    // Yetkisiz görünümdeysek (ör. rol düşürüldü) genel bakışa dön
+    if (!gorunumYetkili(aktifGorunum) && location.hash.replace("#", "") !== "genel") {
+      location.hash = "genel";
+    }
+  }
+
+  function bantlariCiz() {
+    const onizlemeBant = $("onizleme-bandi");
+    onizlemeBant.hidden = !onizleme;
+    if (onizleme) onizlemeBant.textContent = ONIZLEME_BANT;
+    const kurucu = !!(oturum && oturum.kurucu);
+    $("kurucu-bandi").hidden = !kurucu;
+    if (kurucu) $("kurucu-bandi").textContent = KURUCU_BANT;
+    const degismeli = !!(oturum && oturum.sifre_degismeli);
+    $("sifre-bandi").hidden = !degismeli;
+    if (degismeli) $("sifre-bandi").textContent = SIFRE_BANT;
+  }
+
+  // -------------------------------------------------------------- hesabım
+
+  function hesabimCiz() {
+    if (!oturum) return;
+    $("hesabim-ad").textContent = oturum.ad;
+    $("hesabim-rol").textContent = oturum.rol_adi || ROL_ADLARI[oturum.rol] || "";
+    const kurucu = oturum.kurucu;
+    $("hesabim-formu").hidden = kurucu;
+    $("hesabim-kurucu").hidden = !kurucu;
+    if (kurucu) $("hesabim-kurucu").textContent = KURUCU_HESABIM;
+  }
+
+  $("hesabim-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("hesabim-hatasi").textContent = "";
+    const eski = $("eski-sifre").value;
+    const yeni = $("yeni-sifre").value;
+    if (!eski || !yeni) {
+      $("hesabim-hatasi").textContent = "Şu anki ve yeni şifrenizi yazın.";
+      return;
+    }
+    const dugme = $("hesabim-dugmesi");
+    dugme.disabled = true;
+    try {
+      await hesapIslem({ eylem: "sifre_degistir", eski_sifre: eski, yeni_sifre: yeni });
+      $("eski-sifre").value = "";
+      $("yeni-sifre").value = "";
+      duyur("Şifreniz değiştirildi.");
+      await yukle();
+    } catch (hata) {
+      $("hesabim-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
+
   // ------------------------------------------------------------ görünüm
 
   /* Adresteki görünüm; görünüm olmayan bir çapa (ör. "İçeriğe geç" -> #icerik)
@@ -216,8 +362,18 @@
     return Object.prototype.hasOwnProperty.call(GORUNUMLER, ad) ? ad : null;
   }
 
+  /* Rolü bu görünüme yetiyor mu (docs/19 §1). Rol daha bilinmiyorsa (ilk
+     yükleme) izin verilir; /api/durum gelince yetkisiz görünümden çıkılır. */
+  function gorunumYetkili(ad) {
+    const gereken = GORUNUM_ROLU[ad];
+    if (!gereken || !oturum) return true;
+    if (gereken === "yonetici") return oturum.rol === "yonetici";
+    return oturum.rol === "operator" || oturum.rol === "yonetici";
+  }
+
   function gorunumuUygula() {
-    const ad = gorunumAdi() || aktifGorunum;
+    let ad = gorunumAdi() || aktifGorunum;
+    if (!gorunumYetkili(ad)) ad = "genel";
     aktifGorunum = ad;
     for (const kutu of document.querySelectorAll(".gorunum")) {
       kutu.hidden = kutu.dataset.gorunum !== ad;
@@ -229,8 +385,8 @@
     const [baslik, aciklama] = GORUNUMLER[ad];
     $("gorunum-basligi").textContent = baslik;
     $("gorunum-aciklamasi").textContent = ad === "genel" && kurulumMetni ? kurulumMetni : aciklama;
-    // Müdahale ekranı bağlantıyı kendi bandında söyler; iki bant üst üste binmesin
-    $("durum-bandi").hidden = ad === "mudahale";
+    // Müdahale ve Yönetim bağlantıyı kendi bandında söyler; iki bant üst üste binmesin
+    $("durum-bandi").hidden = ad === "mudahale" || ad === "yonetim" || ad === "kullanicilar";
     $("yol-adi").textContent = baslik;
     document.title = baslik + " · Uzak izleme panosu";
   }
@@ -239,12 +395,15 @@
     if (!gorunumAdi()) return;
     gorunumuUygula();
     window.scrollTo(0, 0);
-    if ((aktifGorunum === "mudahale" || aktifGorunum === "kameralar") && sonVeri) {
+    const g = aktifGorunum;
+    if ((g === "mudahale" || g === "kameralar" || g === "yonetim") && sonVeri) {
       sonEtkilesim = Date.now();
-      if (aktifGorunum === "mudahale") mudahaleyiCiz(sonVeri);
+      if (g === "mudahale") mudahaleyiCiz(sonVeri);
+      else if (g === "yonetim") yonetimiCiz(sonVeri);
       else kareleriCiz(sonVeri);
       yukle();
     }
+    if (g === "kullanicilar" && gorunumYetkili("kullanicilar")) hesaplariYukle();
   });
 
   // ------------------------------------------------------------- kurulum
@@ -736,6 +895,7 @@
     if (o.durum_adi) rozetler.appendChild(rozet(o.durum_adi, ""));
     if (rozetler.childNodes.length) govde.appendChild(rozetler);
     if (o.foto && o.id) govde.appendChild(fotoKucuk(o, liste));
+    if (liste === "olaylar" && inceleGosterilsin(o)) govde.appendChild(inceleKontrolu(o));
     satir.appendChild(govde);
 
     const zaman = el("time", "cizelge-zaman");
@@ -785,6 +945,102 @@
     return dugme;
   }
 
+  /* İnceleme düğmeleri yalnız son raporda durumu "new" olan ihlal satırında ve
+     yalnız operatör/yönetici hesaplarında çıkar (docs/19 §3.5, §3.9). */
+  function inceleGosterilsin(o) {
+    const rol = rolu();
+    return (
+      o.tur === "ihlal" &&
+      o.id &&
+      o.durum === "new" &&
+      (rol === "operator" || rol === "yonetici")
+    );
+  }
+
+  /* Gönderilen işaretin durumu ve çift dokunuş hali tazelemede silinmesin diye
+     denetim öğesi fotoKucukleri gibi önbelleğe alınır (olaylariCiz yeniden kurar). */
+  function inceleKontrolu(o) {
+    const anahtar = String(o.id);
+    const gonderim = inceleDurum.get(anahtar);
+    if (gonderim !== undefined && simdiMs() - gonderim > INCELE_BEKLEME_MS) {
+      inceleDurum.delete(anahtar);
+      inceleGecti.add(anahtar); // sonuç gelmedi: düğmeler geri gelir
+      inceleKutulari.delete(anahtar);
+    }
+    let kutu = inceleKutulari.get(anahtar);
+    if (kutu) return kutu;
+    kutu = inceleKutusuKur(o);
+    inceleKutulari.set(anahtar, kutu);
+    return kutu;
+  }
+
+  function inceleKutusuKur(o) {
+    const anahtar = String(o.id);
+    if (inceleDurum.has(anahtar)) {
+      const kutu = el("div", "incele-durum");
+      kutu.appendChild(simge("i-tamam"));
+      kutu.appendChild(el("span", "", "Fabrikaya gönderildi"));
+      return kutu;
+    }
+    const kutu = el("div", "incele-dugmeler");
+    if (inceleGecti.has(anahtar)) {
+      kutu.appendChild(el("p", "incele-not", "Sonuç gelmedi; Müdahale → Son müdahaleler'e bakın."));
+    }
+    const satir = el("div", "incele-satiri");
+    satir.appendChild(inceleDugmesi(o, "reviewed", "İncelendi"));
+    satir.appendChild(inceleDugmesi(o, "false_alarm", "Yanlış alarm"));
+    kutu.appendChild(satir);
+    const hata = el("p", "hata incele-hatasi");
+    kutu.appendChild(hata);
+    return kutu;
+  }
+
+  /* Çift dokunuş: ilk dokunuş sorar, ikincisi gönderir (cepte yanlış işaret
+     olmasın). Soru 4 saniye sonra kendiliğinden kalkar. */
+  function inceleDugmesi(o, karar, etiket) {
+    const dugme = el("button", "dugme ikincil" + (karar === "false_alarm" ? " incele-yanlis" : ""));
+    dugme.type = "button";
+    dugme.textContent = etiket;
+    dugme.dataset.etiket = etiket;
+    dugme.addEventListener("click", function () {
+      if (!dugme.classList.contains("onayla")) {
+        for (const diger of dugme.parentNode.querySelectorAll(".onayla")) {
+          diger.classList.remove("onayla");
+          diger.textContent = diger.dataset.etiket;
+        }
+        dugme.classList.add("onayla");
+        dugme.textContent = "Emin misiniz?";
+        setTimeout(function () {
+          if (dugme.classList.contains("onayla")) {
+            dugme.classList.remove("onayla");
+            dugme.textContent = etiket;
+          }
+        }, 4000);
+        return;
+      }
+      inceleGonder(o, karar, dugme);
+    });
+    return dugme;
+  }
+
+  async function inceleGonder(o, karar, dugme) {
+    const kutu = dugme.closest(".incele-dugmeler");
+    const hata = kutu.querySelector(".incele-hatasi");
+    if (hata) hata.textContent = "";
+    for (const d of kutu.querySelectorAll("button")) d.disabled = true;
+    try {
+      await mudahaleGonder({ tur: "olay_incele", olay_id: o.id, karar: karar });
+      inceleDurum.set(String(o.id), simdiMs());
+      inceleGecti.delete(String(o.id));
+      inceleKutulari.delete(String(o.id));
+      if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
+      setTimeout(yukle, 1500);
+    } catch (e) {
+      for (const d of kutu.querySelectorAll("button")) d.disabled = false;
+      if (hata) hata.textContent = e.message;
+    }
+  }
+
   function olaylariCiz(rapor) {
     const genel = $("genel-olaylar");
     temizle(genel);
@@ -796,9 +1052,12 @@
     const gorunen = rapor.son_olaylar.filter((o) => olayTuru === "hepsi" || o.tur === olayTuru);
     if (!gorunen.length) liste.appendChild(bosDurum("Bu türde olay yok", "Son 20 olayın içinde"));
     for (const o of gorunen) liste.appendChild(olaySatiri(o, "olaylar"));
-    // Listeden düşen olayın küçük fotoğrafı unutulur
+    // Listeden düşen ya da artık "new" olmayan olayın önbelleği unutulur
     for (const [anahtar, dugme] of fotoKucukleri) {
       if (!dugme.isConnected) fotoKucukleri.delete(anahtar);
+    }
+    for (const [anahtar, kutu] of inceleKutulari) {
+      if (!kutu.isConnected) inceleKutulari.delete(anahtar);
     }
   }
 
@@ -1185,19 +1444,31 @@
     }
   }
 
+  /* Komutun ekranda görünen durum etiketi ve rozet sınıfı (docs/19 §3.6, O10):
+     iletildi ve suruyor türe göre adlandırılır. */
+  function komutDurumBilgisi(k) {
+    const d = k.durum;
+    if (d === "bekliyor") return ["Sırada", "uyari"];
+    if (d === "iletildi") return [ILETILDI_ETIKETI[k.tur] || "Fabrikada", "bilgi"];
+    if (d === "suruyor") return [SURUYOR_ETIKETI[k.tur] || "Sürüyor", "bilgi"];
+    if (d === "yapildi") return ["Yapıldı", "basari"];
+    if (d === "suresi_doldu") return ["Süresi doldu", ""];
+    if (d === "sonuc_yok") return ["Sonuç gelmedi", "uyari"];
+    return ["Yapılamadı", "tehlike"];
+  }
+
   function komutSatiri(k) {
     const satir = el("li");
-    const [ad, sinif, varsayilan] = KOMUT_DURUMLARI[k.durum] || KOMUT_DURUMLARI.hata;
-    const kutu = el("span", "ikon-kutu " + ({ basari: "yesil", tehlike: "gul", uyari: "bal" }[sinif] || "gri"));
-    kutu.appendChild(simge(k.tur === "ses_dene" ? "i-sistem" : "i-anons"));
+    const [etiket, sinif] = komutDurumBilgisi(k);
+    const kutu = el("span", "ikon-kutu " + (SINIF_TONU[sinif] || "gri"));
+    kutu.appendChild(simge(KOMUT_IKONU[k.tur] || "i-anons"));
     satir.appendChild(kutu);
     const govde = el("div", "cizelge-govde");
     govde.appendChild(el("b", "", k.ozet));
-    const aciklama = k.mesaj || varsayilan;
-    if (aciklama) govde.appendChild(el("span", "", aciklama));
+    if (k.mesaj) govde.appendChild(el("span", "", k.mesaj));
     const rozetler = el("div", "rozetler");
-    const suruyor = k.durum === "bekliyor" || k.durum === "iletildi";
-    rozetler.appendChild(rozet(ad, sinif, true, suruyor));
+    const suruyor = k.durum === "bekliyor" || k.durum === "iletildi" || k.durum === "suruyor";
+    rozetler.appendChild(rozet(etiket, sinif, true, suruyor));
     govde.appendChild(rozetler);
     satir.appendChild(govde);
     const zaman = el("time", "cizelge-zaman");
@@ -1209,12 +1480,17 @@
     return satir;
   }
 
-  function komutlariCiz(veri) {
+  /* Gönderilip henüz sunucudan okunmayan komutları da gösterir ve bekleyen
+     listesini sunucu kimliği görünce temizler (iki ekran da buradan okur). */
+  function birlesikKomutlar(veri, turler) {
     const sunucudan = (veri.mudahale && veri.mudahale.komutlar) || [];
-    // Gönderilip henüz sunucudan okunmayan komut da görünür
     const bilinen = new Set(sunucudan.map((k) => k.id));
     bekleyenKomutlar = bekleyenKomutlar.filter((k) => !bilinen.has(k.id));
-    const komutlar = [...bekleyenKomutlar, ...sunucudan];
+    return [...bekleyenKomutlar, ...sunucudan].filter((k) => turler.includes(k.tur));
+  }
+
+  function komutlariCiz(veri) {
+    const komutlar = birlesikKomutlar(veri, MUDAHALE_TURLERI);
     const liste = $("komut-listesi");
     temizle(liste);
     if (!komutlar.length) liste.appendChild(bosDurum("Henüz müdahale yok", "Gönderdiğiniz anons burada görünür"));
@@ -1259,7 +1535,10 @@
     }
     if (!yanit.ok) throw new Error(veri.mesaj || "Gönderilemedi (HTTP " + yanit.status + ").");
     bekleyenKomutlar.unshift(veri.komut);
-    if (sonVeri) komutlariCiz(sonVeri);
+    if (sonVeri) {
+      komutlariCiz(sonVeri);
+      yonetimKomutlariCiz(sonVeri);
+    }
     duyur("Komut gönderildi: " + veri.komut.ozet);
     return veri.komut;
   }
@@ -1344,12 +1623,538 @@
 
   for (const tur of ["pointerdown", "keydown"]) {
     document.addEventListener(tur, function () {
-      const bekliyordu = !dinleniyor() && !kareIzleniyor();
+      const bekliyordu = !dinleniyor() && !yonetimDinliyor() && !kareIzleniyor();
       sonEtkilesim = Date.now();
-      // Bekleyen Müdahale ya da Kameralar ekranı dokununca hemen canlanır
-      if (bekliyordu && (dinleniyor() || kareIzleniyor()) && $("giris").hidden) yukle();
+      // Bekleyen Müdahale, Yönetim ya da Kameralar ekranı dokununca hemen canlanır
+      if (bekliyordu && (dinleniyor() || yonetimDinliyor() || kareIzleniyor()) && $("giris").hidden) {
+        yukle();
+      }
     });
   }
+
+  // ---------------------------------------------------------------- yönetim
+
+  function yonetimDinliyor() {
+    return aktifGorunum === "yonetim" && Date.now() - sonEtkilesim < DINLEME_SURESI_MS;
+  }
+
+  /* Açık (bitmemiş) bir ağır komut (yeniden başlatma / güncelleme) var mı. */
+  function acikAgirKomut(veri) {
+    const komutlar = (veri.mudahale && veri.mudahale.komutlar) || [];
+    return (
+      komutlar.find(
+        (k) =>
+          (k.tur === "yeniden_baslat" || k.tur === "guncelle") &&
+          (k.durum === "bekliyor" || k.durum === "iletildi" || k.durum === "suruyor")
+      ) || null
+    );
+  }
+
+  /* Yönetim bandı: yönetim açık mı, fabrika dinliyor mu, açık ağır komut var mı
+     (docs/19 §3.8, O10). Ağır iş sürerken "haber yok" yerine "sürüyor" der. */
+  function yonetimHali(veri) {
+    const rapor = veri.rapor;
+    const y = rapor && rapor.yonetim;
+    const durum = baglantiDurumu(veri);
+    const agir = acikAgirKomut(veri);
+    if (durum !== "canli") {
+      let sebep = durum === "kapandi" && rapor ? rapor.kapanis_sebebi : "";
+      if (!sebep && agir) sebep = agir.tur === "guncelle" ? "guncelleme" : "yeniden_baslatma";
+      if (sebep === "guncelleme" || sebep === "yeniden_baslatma") {
+        const ad = sebep === "guncelleme" ? "Güncelleme" : "Yeniden başlatma";
+        const sinir = sebep === "guncelleme" ? 600 : 300;
+        const gecikme = gecikmeSn(veri);
+        if (durum === "kapandi" && gecikme !== null && gecikme > sinir) {
+          return {
+            acik: false,
+            sinif: "tehlike",
+            ikon: "i-uyari",
+            baslik: ad + "den sonra program açılmadı",
+            alt: "Program kendiliğinden açılmadı; fabrikadaki bilgisayara bakılmalı.",
+          };
+        }
+        return {
+          acik: false,
+          sinif: "uyari",
+          ikon: "i-saat",
+          baslik: sebep === "guncelleme" ? "Güncelleme sürüyor" : "Yeniden başlatılıyor",
+          alt: "Program birkaç dakika kapalı kalabilir.",
+        };
+      }
+      return {
+        acik: false,
+        sinif: "tehlike",
+        ikon: "i-kopuk",
+        baslik: "Fabrika programından haber yok",
+        alt:
+          "Kapalı bir program siteden açılamaz; fabrikada bilgisayarı ve Kontrol Paneli'ni " +
+          "kontrol edin.",
+      };
+    }
+    if (!y || !y.acik) {
+      return {
+        acik: false,
+        sinif: "",
+        ikon: "i-kilit",
+        baslik: "Uzaktan yönetim kapalı",
+        alt:
+          "Fabrikadaki bilgisayarda Ayarlar → Uzak izleme panosu → Uzaktan yönetim'i " +
+          '"Açık" yapıp sistemi yeniden başlatın.',
+      };
+    }
+    if (agir) {
+      return {
+        acik: true,
+        sinif: "uyari",
+        ikon: "i-saat",
+        baslik: agir.tur === "guncelle" ? "Güncelleme sürüyor" : "Yeniden başlatılıyor",
+        alt: "Program birkaç dakika kapalı kalabilir.",
+      };
+    }
+    if (!yonetimDinliyor()) {
+      return {
+        acik: true,
+        bekliyor: true,
+        sinif: "",
+        ikon: "i-saat",
+        baslik: "Dinleme beklemede",
+        alt: "Ekrana 10 dakikadır dokunulmadı. Fabrikanın komutları sık sorması için sürdürün.",
+      };
+    }
+    const yas = veri.mudahale ? veri.mudahale.yoklama_yasi_sn : null;
+    if (yas !== null && yas !== undefined && yas <= DINLIYOR_SN) {
+      return {
+        acik: true,
+        sinif: "basari",
+        ikon: "i-tamam",
+        baslik: "Fabrika komutları dinliyor",
+        alt: "Son soru " + sureMetni(yas) + " önce. Gönderdiğiniz işlem birkaç saniyede başlar.",
+      };
+    }
+    return {
+      acik: true,
+      sinif: "uyari",
+      ikon: "i-saat",
+      baslik: "Fabrika birazdan dinlemeye başlar",
+      alt:
+        "Bu ekran açıkken fabrika bir sonraki raporunda sık sormaya başlar. İşlemi şimdi " +
+        "gönderebilirsiniz; sırada bekler.",
+    };
+  }
+
+  const KURULUM_ADLARI = { paket: "Paket (Windows)", git: "Kaynak (git)", diger: "Diğer" };
+
+  function yonetimProgramCiz(rapor) {
+    const liste = $("yonetim-program");
+    temizle(liste);
+    $("yonetim-program-yok").hidden = !!rapor;
+    if (!rapor) return;
+    const p = rapor.program || {};
+    const yapi = p.yapi || {};
+    const y = rapor.yonetim;
+    const satirlar = [["Program", (p.ad || "-") + (p.surum ? " " + p.surum : "")]];
+    if (yapi.commit) {
+      satirlar.push(["Yapı", yapi.commit.slice(0, 7) + (yapi.tarih ? " · " + gunMetni(yapi.tarih) : "")]);
+    }
+    if (y && y.kurulum) satirlar.push(["Kurulum", KURULUM_ADLARI[y.kurulum] || y.kurulum]);
+    for (const [ad, deger] of satirlar) {
+      if (!deger) continue;
+      const satir = el("div");
+      satir.appendChild(el("dt", "", ad));
+      satir.appendChild(el("dd", "", deger));
+      liste.appendChild(satir);
+    }
+  }
+
+  function yonetimSebep(acik, y, tur, kapi) {
+    if (!acik || !y) return "";
+    if (!(y.isler || []).includes(tur)) return "Fabrika programı bu işi bilmiyor; programı güncelleyin.";
+    if (kapi && !kapi.mumkun) return kapi.sebep || "Şu an yapılamıyor.";
+    return "";
+  }
+
+  function sebepGoster(kimlik, metin) {
+    $(kimlik).textContent = metin;
+    $(kimlik).hidden = !metin;
+  }
+
+  function yonetimKomutSatiri(k) {
+    const satir = el("li");
+    const [etiket, sinif] = komutDurumBilgisi(k);
+    const kutu = el("span", "ikon-kutu " + (SINIF_TONU[sinif] || "gri"));
+    kutu.appendChild(simge(KOMUT_IKONU[k.tur] || "i-sistem"));
+    satir.appendChild(kutu);
+    const govde = el("div", "cizelge-govde");
+    govde.appendChild(el("b", "", k.ozet));
+    const kim = k.kim && k.kim.ad;
+    if (kim) {
+      const kimMetni = kim === "fabrika" ? "fabrika" : kim + (k.kim.rol_adi ? " · " + k.kim.rol_adi : "");
+      govde.appendChild(el("span", "", kimMetni));
+    }
+    if (k.mesaj) govde.appendChild(el("span", "", k.mesaj));
+    const rozetler = el("div", "rozetler");
+    const suruyor = k.durum === "bekliyor" || k.durum === "iletildi" || k.durum === "suruyor";
+    rozetler.appendChild(rozet(etiket, sinif, true, suruyor));
+    govde.appendChild(rozetler);
+    if (k.ek) {
+      const det = el("details", "teshis-ek");
+      det.appendChild(el("summary", "", "Teşhis metni"));
+      const pre = el("pre", "teshis-metni");
+      pre.textContent = k.ek; // fabrikadan gelen metin: yalnız textContent
+      det.appendChild(pre);
+      govde.appendChild(det);
+    }
+    satir.appendChild(govde);
+    const zaman = el("time", "cizelge-zaman");
+    zaman.dateTime = k.olusturuldu;
+    zaman.appendChild(el("b", "", saatMetni(k.olusturuldu)));
+    const gun = gunEtiketi(k.olusturuldu);
+    if (gun) zaman.appendChild(el("span", "", gun));
+    satir.appendChild(zaman);
+    return satir;
+  }
+
+  function yonetimKomutlariCiz(veri) {
+    const komutlar = birlesikKomutlar(veri, YONETIM_TURLERI);
+    const liste = $("yonetim-komutlar");
+    temizle(liste);
+    if (!komutlar.length) {
+      liste.appendChild(bosDurum("Henüz işlem yok", "Teşhis, yeniden başlatma ve güncelleme burada"));
+    }
+    for (const k of komutlar) liste.appendChild(yonetimKomutSatiri(k));
+  }
+
+  function yonetimiCiz(veri) {
+    const hal = yonetimHali(veri);
+    $("yonetim-durumu").className = "durum-bandi" + (hal.sinif ? " " + hal.sinif : "");
+    $("yonetim-simgesi").setAttribute("href", "#" + hal.ikon);
+    $("yonetim-baslik").textContent = hal.baslik;
+    $("yonetim-alt").textContent = hal.alt;
+    $("yonetim-surdur").hidden = !hal.bekliyor;
+    yonetimProgramCiz(veri.rapor);
+    const y = veri.rapor && veri.rapor.yonetim;
+    const acik = !!(hal.acik && y && y.acik);
+    const teshisVar = acik && (y.isler || []).includes("teshis");
+    const yrb = y && y.yeniden_baslatma;
+    const gnc = y && y.guncelleme;
+    const yenidenVar = acik && (y.isler || []).includes("yeniden_baslat") && yrb && yrb.mumkun;
+    const guncelleVar = acik && (y.isler || []).includes("guncelle") && gnc && gnc.mumkun;
+    $("teshis-dugmesi").disabled = !teshisVar;
+    $("yeniden-dugmesi").disabled = !yenidenVar;
+    $("guncelle-dugmesi").disabled = !guncelleVar;
+    sebepGoster("yeniden-sebep", yonetimSebep(acik, y, "yeniden_baslat", yrb));
+    sebepGoster("guncelle-sebep", yonetimSebep(acik, y, "guncelle", gnc));
+    if (!yenidenVar) yenidenOnayiniKapat();
+    if (!guncelleVar) guncelleOnayiniKapat();
+    yonetimKomutlariCiz(veri);
+  }
+
+  function yenidenOnayiniKapat() {
+    $("yeniden-onayi").hidden = true;
+    $("yeniden-sifre").value = "";
+  }
+  function guncelleOnayiniKapat() {
+    $("guncelle-onayi").hidden = true;
+    $("guncelle-sifre").value = "";
+  }
+
+  $("yonetim-surdur").addEventListener("click", function () {
+    sonEtkilesim = Date.now();
+    if (sonVeri) yonetimiCiz(sonVeri);
+    yukle();
+  });
+
+  $("teshis-dugmesi").addEventListener("click", async function () {
+    $("teshis-hatasi").textContent = "";
+    this.disabled = true;
+    try {
+      await mudahaleGonder({ tur: "teshis" });
+      setTimeout(yukle, 1500);
+    } catch (hata) {
+      $("teshis-hatasi").textContent = hata.message;
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  /* Ağır işler: düğme onay kutusunu açar, kutuda şifre istenir (docs/19 §3.9). */
+  function agirOnay(ac, kapat, sifreKimlik, hataKimlik, tur) {
+    ac.addEventListener("click", function () {
+      guncelleOnayiniKapat();
+      yenidenOnayiniKapat();
+      $(hataKimlik).textContent = "";
+      kapat.onayi.hidden = false;
+      $(sifreKimlik).focus();
+    });
+    kapat.vazgec.addEventListener("click", function () {
+      kapat.onayi.hidden = true;
+      $(sifreKimlik).value = "";
+      ac.focus();
+    });
+    kapat.gonder.addEventListener("click", async function () {
+      $(hataKimlik).textContent = "";
+      const sifre = $(sifreKimlik).value;
+      if (!sifre) {
+        $(hataKimlik).textContent = "Onaylamak için şifrenizi yazın.";
+        return;
+      }
+      this.disabled = true;
+      try {
+        await mudahaleGonder({ tur: tur, sifre: sifre });
+        kapat.onayi.hidden = true;
+        $(sifreKimlik).value = "";
+        setTimeout(yukle, 1500);
+      } catch (hata) {
+        $(hataKimlik).textContent = hata.message;
+      } finally {
+        this.disabled = false;
+      }
+    });
+  }
+  agirOnay(
+    $("yeniden-dugmesi"),
+    { onayi: $("yeniden-onayi"), vazgec: $("yeniden-vazgec"), gonder: $("yeniden-gonder") },
+    "yeniden-sifre",
+    "yeniden-hatasi",
+    "yeniden_baslat"
+  );
+  agirOnay(
+    $("guncelle-dugmesi"),
+    { onayi: $("guncelle-onayi"), vazgec: $("guncelle-vazgec"), gonder: $("guncelle-gonder") },
+    "guncelle-sifre",
+    "guncelle-hatasi",
+    "guncelle"
+  );
+
+  // -------------------------------------------------------------- kullanıcılar
+
+  async function hesapIslem(govde) {
+    const yanit = await fetch("/api/hesap", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(govde),
+    });
+    const veri = await yanit.json().catch(() => ({}));
+    if (yanit.status === 401) {
+      sonVeri = null;
+      tekEkranGoster("giris");
+      throw new Error("Oturumun süresi doldu; yeniden giriş yapın.");
+    }
+    if (!yanit.ok) throw new Error(veri.mesaj || "İşlem yapılamadı (HTTP " + yanit.status + ").");
+    return veri;
+  }
+
+  async function hesaplariYukle() {
+    if (hesapIstekSuruyor) return;
+    hesapIstekSuruyor = true;
+    try {
+      const yanit = await fetch("/api/hesap", { credentials: "same-origin", cache: "no-store" });
+      const veri = await yanit.json().catch(() => ({}));
+      if (yanit.status === 401) {
+        sonVeri = null;
+        tekEkranGoster("giris");
+        return;
+      }
+      if (!yanit.ok) {
+        $("kullanicilar-hatasi").textContent = veri.mesaj || "Yüklenemedi (HTTP " + yanit.status + ").";
+        return;
+      }
+      hesapVerisi = veri;
+      $("kullanicilar-hatasi").textContent = "";
+      kullanicilariCiz(veri);
+    } catch (hata) {
+      $("kullanicilar-hatasi").textContent = "Siteye ulaşılamıyor.";
+    } finally {
+      hesapIstekSuruyor = false;
+    }
+  }
+
+  function yonetilebilir(k) {
+    return !k.kurucu && rolu() === "yonetici" && oturum && k.ad !== oturum.ad;
+  }
+
+  function kullaniciIslemleri(k) {
+    const det = el("details", "kullanici-islemleri");
+    det.appendChild(el("summary", "", "İşlemler"));
+    const panel = el("div", "islem-paneli");
+    const hata = el("p", "hata");
+
+    const sifreLabel = el("label", "", "Onaylamak için kendi şifreniz");
+    const onaySifre = el("input");
+    onaySifre.type = "password";
+    onaySifre.autocomplete = "current-password";
+    onaySifre.maxLength = 200;
+
+    function calistir(govde) {
+      hata.textContent = "";
+      hesapIslem(govde)
+        .then(function () {
+          hesaplariYukle();
+        })
+        .catch(function (e) {
+          hata.textContent = e.message;
+        });
+    }
+
+    // Rol değiştir
+    const rolSatiri = el("div", "islem-satiri");
+    const rolSecici = el("select", "secici");
+    for (const deger of ["izleyici", "operator", "yonetici"]) {
+      const o = el("option", "", ROL_ADLARI[deger]);
+      o.value = deger;
+      if (deger === k.rol) o.selected = true;
+      rolSecici.appendChild(o);
+    }
+    const rolDugme = el("button", "dugme ikincil", "Rol değiştir");
+    rolDugme.type = "button";
+    rolDugme.addEventListener("click", function () {
+      calistir({ eylem: "rol", ad: k.ad, rol: rolSecici.value, sifre: onaySifre.value });
+    });
+    rolSatiri.append(rolSecici, rolDugme);
+
+    // Yeni şifre ver
+    const sifreSatiri = el("div", "islem-satiri");
+    const yeniSifre = el("input");
+    yeniSifre.type = "text";
+    yeniSifre.placeholder = "Yeni şifre (en az 10)";
+    yeniSifre.maxLength = 200;
+    yeniSifre.autocapitalize = "none";
+    yeniSifre.spellcheck = false;
+    const yeniSifreDugme = el("button", "dugme ikincil", "Yeni şifre ver");
+    yeniSifreDugme.type = "button";
+    yeniSifreDugme.addEventListener("click", function () {
+      calistir({ eylem: "sifre_sifirla", ad: k.ad, yeni_sifre: yeniSifre.value, sifre: onaySifre.value });
+    });
+    sifreSatiri.append(yeniSifre, yeniSifreDugme);
+
+    // Girişi kapat / aç ve Sil
+    const altSatir = el("div", "islem-satiri");
+    const durumDugme = el("button", "dugme ikincil", k.acik ? "Girişi kapat" : "Girişi aç");
+    durumDugme.type = "button";
+    durumDugme.addEventListener("click", function () {
+      calistir({ eylem: k.acik ? "kapat" : "ac", ad: k.ad, sifre: onaySifre.value });
+    });
+    const silDugme = el("button", "dugme tehlike", "Sil");
+    silDugme.type = "button";
+    silDugme.addEventListener("click", function () {
+      if (!silDugme.classList.contains("onayla")) {
+        silDugme.classList.add("onayla");
+        silDugme.textContent = "Emin misiniz?";
+        setTimeout(function () {
+          if (silDugme.classList.contains("onayla")) {
+            silDugme.classList.remove("onayla");
+            silDugme.textContent = "Sil";
+          }
+        }, 4000);
+        return;
+      }
+      silDugme.classList.remove("onayla");
+      silDugme.textContent = "Sil";
+      calistir({ eylem: "sil", ad: k.ad, sifre: onaySifre.value });
+    });
+    altSatir.append(durumDugme, silDugme);
+
+    panel.append(sifreLabel, onaySifre, rolSatiri, sifreSatiri, altSatir, hata);
+    det.appendChild(panel);
+    return det;
+  }
+
+  function kullaniciSatiri(k) {
+    const satir = el("li", "kullanici-satiri");
+    const ust = el("div", "kullanici-ust");
+    const govde = el("div", "satir-govde");
+    govde.appendChild(el("b", "", k.ad));
+    const alt = [];
+    if (k.son_giris) alt.push("son giriş " + tarihSaatMetni(k.son_giris));
+    else if (!k.kurucu) alt.push("hiç giriş yapmadı");
+    if (k.olusturuldu) alt.push("açıldı " + gunMetni(k.olusturuldu));
+    if (alt.length) govde.appendChild(el("span", "", alt.join(" · ")));
+    ust.appendChild(govde);
+    const rozetler = el("div", "rozetler");
+    if (k.kurucu) rozetler.appendChild(rozet("Kurucu", "mor"));
+    rozetler.appendChild(rozet(k.rol_adi || ROL_ADLARI[k.rol] || "", k.rol === "yonetici" ? "bilgi" : ""));
+    if (!k.acik && !k.kurucu) rozetler.appendChild(rozet("Girişi kapalı", "tehlike"));
+    if (k.sifre_degismeli) rozetler.appendChild(rozet("Şifre bekliyor", "uyari"));
+    ust.appendChild(rozetler);
+    satir.appendChild(ust);
+    if (yonetilebilir(k)) satir.appendChild(kullaniciIslemleri(k));
+    return satir;
+  }
+
+  function kayitTablosu(kayit) {
+    const govde = $("kayit-tablosu");
+    temizle(govde);
+    if (!kayit.length) {
+      const satir = el("tr");
+      const hucre = el("td", "", "Henüz işlem kaydı yok.");
+      hucre.colSpan = 4;
+      satir.appendChild(hucre);
+      govde.appendChild(satir);
+      return;
+    }
+    for (const r of kayit) {
+      const satir = el("tr");
+      satir.appendChild(el("td", "", tarihSaatMetni(r.zaman) || "-"));
+      const kim = el("td");
+      kim.appendChild(el("b", "", r.kim || "-"));
+      if (r.rol_adi) kim.appendChild(el("span", "alt", r.rol_adi));
+      satir.appendChild(kim);
+      const is = el("td");
+      is.appendChild(el("b", "", IS_ADLARI[r.is] || r.is || "-"));
+      if (r.ozet) is.appendChild(el("span", "alt", r.ozet));
+      satir.appendChild(is);
+      const sonuc = el("td", "sag");
+      const [sad, ssinif] = SONUC_ROZETI[r.sonuc] || ["", ""];
+      if (sad) {
+        const rz = el("div", "rozetler");
+        rz.appendChild(rozet(sad, ssinif));
+        sonuc.appendChild(rz);
+      }
+      satir.appendChild(sonuc);
+      govde.appendChild(satir);
+    }
+  }
+
+  function kullanicilariCiz(veri) {
+    const kullanicilar = veri.kullanicilar || [];
+    $("kullanicilar-ozet").textContent = kullanicilar.length + " hesap (kurucu dahil)";
+    const liste = $("kullanici-listesi");
+    temizle(liste);
+    if (!kullanicilar.length) liste.appendChild(bosDurum("Henüz hesap yok", ""));
+    for (const k of kullanicilar) liste.appendChild(kullaniciSatiri(k));
+    kayitTablosu(veri.kayit || []);
+  }
+
+  function yeniRolAciklama() {
+    $("yeni-rol-aciklama").textContent = ROL_ACIKLAMALARI[$("yeni-rol").value] || "";
+  }
+  $("yeni-rol").addEventListener("change", yeniRolAciklama);
+
+  $("kullanici-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("kullanici-ekle-hatasi").textContent = "";
+    const dugme = $("kullanici-ekle-dugmesi");
+    dugme.disabled = true;
+    try {
+      await hesapIslem({
+        eylem: "ekle",
+        ad: $("yeni-ad").value,
+        rol: $("yeni-rol").value,
+        ilk_sifre: $("yeni-ilk-sifre").value,
+        sifre: $("yeni-onay-sifresi").value,
+      });
+      $("yeni-ad").value = "";
+      $("yeni-ilk-sifre").value = "";
+      $("yeni-onay-sifresi").value = "";
+      duyur("Kullanıcı eklendi.");
+      await hesaplariYukle();
+    } catch (hata) {
+      $("kullanici-ekle-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
 
   // ---------------------------------------------------------------- sistem
 
@@ -1402,6 +2207,9 @@
   // ------------------------------------------------------------ hepsi
 
   function panoyuCiz(veri) {
+    rolUygula();
+    bantlariCiz();
+    hesabimCiz();
     durumBandiniCiz(veri);
     const rapor = veri.rapor;
     sorunlariCiz(rapor);
@@ -1426,6 +2234,7 @@
     }
     sistemiCiz(veri);
     mudahaleyiCiz(veri);
+    if (rolu() === "yonetici") yonetimiCiz(veri);
     if (aktifGorunum === "genel") {
       $("gorunum-aciklamasi").textContent = kurulumMetni || GORUNUMLER.genel[1];
     }
@@ -1439,15 +2248,18 @@
     try {
       const adres = dinleniyor()
         ? "/api/durum?mudahale=1"
-        : kareIzleniyor()
-          ? "/api/durum?kare=1"
-          : "/api/durum";
+        : yonetimDinliyor()
+          ? "/api/durum?yonetim=1"
+          : kareIzleniyor()
+            ? "/api/durum?kare=1"
+            : "/api/durum";
       const yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store" });
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
         sonVeri = null;
+        oturum = null;
         tekEkranGoster("giris");
-        $("sifre").focus();
+        $("ad").focus();
         return;
       }
       if (yanit.status === 503 && veri.hata === "kurulum_eksik") {
@@ -1460,9 +2272,15 @@
       }
       saatFarkiMs = Date.parse(veri.sunucu_zamani) - Date.now();
       sonVeri = veri;
+      oturum = veri.oturum || null;
+      onizleme = !!veri.onizleme;
       siteUyarisi("");
       panoyuCiz(veri);
       panoyuGoster();
+      // Kullanıcılar ekranı açık ve henüz yüklenmediyse hesapları getir
+      if (aktifGorunum === "kullanicilar" && gorunumYetkili("kullanicilar") && !hesapVerisi) {
+        hesaplariYukle();
+      }
     } catch (hata) {
       hataGoster(
         "Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin; pano son bilinen durumu gösteriyor."
@@ -1484,21 +2302,26 @@
     }
   }
 
-  // Hata iletisi ve şifre kutusunun kırmızı kenarı birlikte yazılır, birlikte silinir.
+  // Hata iletisi ve kutuların kırmızı kenarı birlikte yazılır, birlikte silinir.
   function girisHatasi(metin) {
     $("giris-hatasi").textContent = metin;
-    if (metin) $("sifre").setAttribute("aria-invalid", "true");
-    else $("sifre").removeAttribute("aria-invalid");
+    for (const kimlik of ["ad", "sifre"]) {
+      if (metin) $(kimlik).setAttribute("aria-invalid", "true");
+      else $(kimlik).removeAttribute("aria-invalid");
+    }
   }
-  $("sifre").addEventListener("input", function () {
-    if ($("sifre").hasAttribute("aria-invalid")) girisHatasi("");
-  });
+  for (const kimlik of ["ad", "sifre"]) {
+    $(kimlik).addEventListener("input", function () {
+      if ($(kimlik).hasAttribute("aria-invalid")) girisHatasi("");
+    });
+  }
 
   $("giris-formu").addEventListener("submit", async function (olay) {
     olay.preventDefault();
+    const ad = $("ad").value.trim();
     const sifre = $("sifre").value;
-    if (!sifre) {
-      girisHatasi("Şifreyi yazın.");
+    if (!ad || !sifre) {
+      girisHatasi("Kullanıcı adı ve şifre gerekir.");
       return;
     }
     const dugme = $("giris-dugmesi");
@@ -1509,7 +2332,7 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sifre: sifre }),
+        body: JSON.stringify({ ad: ad, sifre: sifre }),
       });
       const veri = await yanit.json().catch(() => ({}));
       if (!yanit.ok) {
@@ -1538,6 +2361,8 @@
         });
       } finally {
         sonVeri = null;
+        oturum = null;
+        hesapVerisi = null;
         tekEkranGoster("giris");
       }
     });
@@ -1545,6 +2370,7 @@
 
   $("yenile").addEventListener("click", function () {
     yukle();
+    if (aktifGorunum === "kullanicilar" && gorunumYetkili("kullanicilar")) hesaplariYukle();
   });
 
   // Görünmeyen sekme sunucuyu yormaz; sekmeye dönünce hemen tazelenir.
@@ -1558,7 +2384,7 @@
   let sonTazeleme = 0;
   setInterval(function () {
     if (document.visibilityState !== "visible" || !$("giris").hidden) return;
-    const aralik = dinleniyor() || kareIzleniyor() ? HIZLI_TAZELEME_MS : TAZELEME_MS;
+    const aralik = dinleniyor() || yonetimDinliyor() || kareIzleniyor() ? HIZLI_TAZELEME_MS : TAZELEME_MS;
     if (Date.now() - sonTazeleme >= aralik - 250) {
       sonTazeleme = Date.now();
       yukle();
@@ -1569,6 +2395,7 @@
     if (sonVeri && !$("kabuk").hidden) durumBandiniCiz(sonVeri);
   }, GORECELI_MS);
 
+  yeniRolAciklama();
   gorunumuUygula();
   yukle();
 })();
