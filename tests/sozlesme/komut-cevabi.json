@@ -1,0 +1,29 @@
+{
+  "aciklama": "Sitenin /api/komut cevabı (imzalı). alinan: bu istekteki sonuçlardan yazılan ya da zaten bitmiş olanlar.",
+  "cevap": {
+    "tamam": true,
+    "nonce": "00112233445566778899aabbccddeeff",
+    "alinan": [
+      "0a1b2c3d4e5f6071",
+      "2a1b2c3d4e5f6071",
+      "5a1b2c3d4e5f6071",
+      "3a1b2c3d4e5f6071"
+    ],
+    "komutlar": [
+      {
+        "id": "2a1b2c3d4e5f6071",
+        "tur": "olay_incele",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "ahmet.yilmaz",
+          "rol": "operator"
+        },
+        "olay_id": 1234,
+        "olay_zaman": "2026-10-31T09:15:02+00:00",
+        "karar": "false_alarm"
+      }
+    ],
+    "hizli": true
+  }
+}

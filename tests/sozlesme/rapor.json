@@ -1,0 +1,214 @@
+{
+  "aciklama": "Yeni programın raporu (docs/19 §4.1).",
+  "rapor": {
+    "surum": 1,
+    "uretildi": "2026-10-31T12:00:00+00:00",
+    "aralik_sn": 30,
+    "kapanis": false,
+    "program": {
+      "ad": "NextGen Detector",
+      "surum": "v2.2 Keskin Göz",
+      "yapi": {
+        "commit": "0123456789abcdef0123456789abcdef01234567",
+        "tarih": "2026-10-31T08:00:00+00:00",
+        "calistirma": 123
+      }
+    },
+    "sistem": {
+      "analiz": true,
+      "hazir": true,
+      "model": "hazir",
+      "uyari_garantisi": true,
+      "sorunlar": [],
+      "bos_disk_gb": 182.4,
+      "calisma_suresi_sn": 11520
+    },
+    "kameralar": [
+      {
+        "id": 1,
+        "ad": "Sevkiyat Rampası",
+        "bolum": "Sevkiyat",
+        "durum": "online",
+        "okunan_fps": 12.0,
+        "islenen_fps": 10.0,
+        "hedef_fps": 10,
+        "yavas": false,
+        "son_kare_yasi_sn": 0
+      }
+    ],
+    "sayilar": {
+      "bugun_ihlal": 4,
+      "dun_ihlal": 7,
+      "bekleyen": 2,
+      "aktif_kural": 3,
+      "kamera_toplam": 1,
+      "kamera_canli": 1
+    },
+    "saatlik": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "ogeler": [
+      {
+        "ad": "Baret yok",
+        "sayi": 3
+      },
+      {
+        "ad": "Yasak bölge",
+        "sayi": 1
+      }
+    ],
+    "son_olaylar": [
+      {
+        "id": 1234,
+        "zaman": "2026-10-31T09:15:02+00:00",
+        "tur": "ihlal",
+        "baslik": "Baret yok",
+        "yer": "Sevkiyat Rampası · Sevkiyat",
+        "onem": "high",
+        "onem_adi": "Yüksek",
+        "durum_adi": "yeni",
+        "suruyor": false,
+        "sure": "8 sn",
+        "durum": "new"
+      },
+      {
+        "id": 1233,
+        "zaman": "2026-10-31T08:40:11+00:00",
+        "tur": "ihlal",
+        "baslik": "Yasak bölge",
+        "yer": "Sevkiyat Rampası · Sevkiyat",
+        "onem": "critical",
+        "onem_adi": "Kritik",
+        "durum_adi": "incelendi",
+        "suruyor": false,
+        "sure": "21 sn",
+        "durum": "reviewed"
+      },
+      {
+        "id": 1232,
+        "zaman": "2026-10-31T08:00:00+00:00",
+        "tur": "sistem",
+        "baslik": "Uzaktan anons",
+        "yer": "Tüm fabrika",
+        "onem": "",
+        "onem_adi": "",
+        "durum_adi": "",
+        "suruyor": false,
+        "sure": "",
+        "ayrinti": "Uzak izleme panosundan anons: “Lütfen baret takınız” - Tüm fabrika. Hoparlör: çalındı."
+      }
+    ],
+    "gunluk": [
+      3,
+      5,
+      2,
+      0,
+      4,
+      6,
+      1,
+      2,
+      3,
+      5,
+      4,
+      2,
+      7,
+      4
+    ],
+    "yedi_gun": {
+      "ihlal": 25,
+      "incelenen": 18,
+      "yanlis_alarm": 3
+    },
+    "yerler": [
+      {
+        "ad": "Sevkiyat Rampası",
+        "bolum": "Sevkiyat",
+        "sayi": 25
+      }
+    ],
+    "mudahale": {
+      "acik": true,
+      "mesajlar": [
+        {
+          "id": 3,
+          "metin": "Lütfen baret takınız"
+        }
+      ],
+      "kanallar": [
+        {
+          "id": 1,
+          "ad": "Tüm fabrika hoparlörü",
+          "bolum": ""
+        },
+        {
+          "id": 2,
+          "ad": "Sevkiyat hoparlörü",
+          "bolum": "Sevkiyat"
+        }
+      ],
+      "isler": [
+        "anons",
+        "ses_dene",
+        "olay_incele"
+      ]
+    },
+    "bilgisayar": {
+      "ad": "Gebze fabrikası",
+      "bilgisayar_adi": "DALSAN-PC",
+      "ip": [
+        "192.168.1.20"
+      ],
+      "isletim_sistemi": "Windows 11 Pro",
+      "islemci": "Intel Core i7-12700",
+      "cekirdek": 12,
+      "bellek_gb": 32.0,
+      "ekran_karti": "NVIDIA GeForce RTX 3060",
+      "cikarim": "Ekran kartı (DirectML)",
+      "disk_toplam_gb": 476.9,
+      "kurulum_turu": "Windows uygulaması",
+      "kurulum_tarihi": "2026-10-20T07:00:00+00:00",
+      "acilis": "2026-10-31T05:30:00+00:00"
+    },
+    "yonetim": {
+      "acik": true,
+      "isler": [
+        "teshis",
+        "yeniden_baslat",
+        "guncelle"
+      ],
+      "kurulum": "paket",
+      "yeniden_baslatma": {
+        "mumkun": true,
+        "sebep": ""
+      },
+      "guncelleme": {
+        "mumkun": false,
+        "sebep": "Ayarlar'da GitHub indirme anahtarı yazılı değil."
+      }
+    },
+    "kapanis_sebebi": ""
+  }
+}

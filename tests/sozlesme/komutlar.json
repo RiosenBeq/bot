@@ -1,0 +1,169 @@
+{
+  "aciklama": "Sitenin /api/komut cevabındaki komutlar (docs/19 §3.7). Program hepsini tanır. 'eski_site' bugünkü sitenin komutudur: kim yok; program yalnız anons ve ses_dene'yi böyle kabul eder.",
+  "komutlar": [
+    {
+      "id": "0a1b2c3d4e5f6071",
+      "tur": "anons",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "ahmet.yilmaz",
+        "rol": "operator"
+      },
+      "mesaj_id": 3,
+      "kanal_id": null
+    },
+    {
+      "id": "1a1b2c3d4e5f6071",
+      "tur": "ses_dene",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "ahmet.yilmaz",
+        "rol": "operator"
+      },
+      "kanal_id": 2
+    },
+    {
+      "id": "2a1b2c3d4e5f6071",
+      "tur": "olay_incele",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "ahmet.yilmaz",
+        "rol": "operator"
+      },
+      "olay_id": 1234,
+      "olay_zaman": "2026-10-31T09:15:02+00:00",
+      "karar": "false_alarm"
+    },
+    {
+      "id": "3a1b2c3d4e5f6071",
+      "tur": "teshis",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "mehmet",
+        "rol": "yonetici"
+      }
+    },
+    {
+      "id": "4a1b2c3d4e5f6071",
+      "tur": "yeniden_baslat",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "mehmet",
+        "rol": "yonetici"
+      }
+    },
+    {
+      "id": "5a1b2c3d4e5f6071",
+      "tur": "guncelle",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kim": {
+        "ad": "kurucu",
+        "rol": "yonetici"
+      }
+    }
+  ],
+  "eski_site": [
+    {
+      "id": "6a1b2c3d4e5f6071",
+      "tur": "anons",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "mesaj_id": 3,
+      "kanal_id": null
+    },
+    {
+      "id": "7a1b2c3d4e5f6071",
+      "tur": "ses_dene",
+      "son_gecerlilik": 1793450120,
+      "kalan_sn": 117,
+      "kanal_id": 2
+    }
+  ],
+  "reddedilenler": [
+    {
+      "neden": "kim yok ve yönetim işi",
+      "komut": {
+        "id": "8a1b2c3d4e5f6071",
+        "tur": "guncelle",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117
+      }
+    },
+    {
+      "neden": "bozuk kim",
+      "komut": {
+        "id": "9a1b2c3d4e5f6071",
+        "tur": "teshis",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "Ahmet Yılmaz",
+          "rol": "yonetici"
+        }
+      }
+    },
+    {
+      "neden": "bilinmeyen rol",
+      "komut": {
+        "id": "aa1b2c3d4e5f6071",
+        "tur": "teshis",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "mehmet",
+          "rol": "patron"
+        }
+      }
+    },
+    {
+      "neden": "karar yok",
+      "komut": {
+        "id": "ba1b2c3d4e5f6071",
+        "tur": "olay_incele",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "ahmet.yilmaz",
+          "rol": "operator"
+        },
+        "olay_id": 1234,
+        "olay_zaman": "2026-10-31T09:15:02+00:00"
+      }
+    },
+    {
+      "neden": "saat dilimsiz olay_zaman",
+      "komut": {
+        "id": "ca1b2c3d4e5f6071",
+        "tur": "olay_incele",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "ahmet.yilmaz",
+          "rol": "operator"
+        },
+        "olay_id": 1234,
+        "olay_zaman": "2026-10-31T09:15:02",
+        "karar": "reviewed"
+      }
+    },
+    {
+      "neden": "bilinmeyen tür",
+      "komut": {
+        "id": "da1b2c3d4e5f6071",
+        "tur": "kapat",
+        "son_gecerlilik": 1793450120,
+        "kalan_sn": 117,
+        "kim": {
+          "ad": "mehmet",
+          "rol": "yonetici"
+        }
+      }
+    }
+  ]
+}
