@@ -13,18 +13,24 @@ from test_uctan_uca import ANAHTAR, RAPOR, _cerez, _giris, _istek, _rapor_gonder
 
 MUDAHALE = {
     "acik": True,
+    "isler": ["anons", "ses_dene", "olay_incele"],
     "mesajlar": [{"id": 3, "metin": "Lütfen baret takınız"}, {"id": 5, "metin": "Sahayı boşaltın"}],
     "kanallar": [
         {"id": 1, "ad": "Genel anons", "bolum": ""},
         {"id": 2, "ad": "Sevkiyat hoparlörü", "bolum": "Sevkiyat"},
     ],
 }
+# Komutu isteyen (docs/19 §3.5 kim). Çekirdek akış testleri kurucuyu kullanır:
+# kurucu teslimde her zaman yetkilidir (hesap kaydı aranmaz). Teslim anındaki
+# yetki yeniden denetimi ayrı dosyada (test_komut.py) gerçek hesapla sınanır.
+KIM = {"ad": "kurucu", "rol": "yonetici"}
 
 
-def _veri(acik=True, baglanti="canli", kanallar=None):
+def _veri(acik=True, baglanti="canli", kanallar=None, isler=None):
     mudahale = {**MUDAHALE, "acik": acik}
     if kanallar is not None:
         mudahale["kanallar"] = kanallar
+    mudahale["isler"] = isler if isler is not None else ["anons", "ses_dene", "olay_incele"]
     return {"baglanti": baglanti, "rapor": {"mudahale": mudahale}}
 
 
@@ -83,11 +89,17 @@ def test_mudahale_alani_suzulur_ve_adres_tasimaz():
     temiz = _pano.rapor_temizle(ham)["mudahale"]
     assert temiz == {
         "acik": False,
+        "isler": [],  # kapalıyken ve isler gelmeyince hiçbir iş açık değildir
         "mesajlar": [{"id": 1, "metin": "Baret takınız"}],
         "kanallar": [{"id": 4, "ad": "Kapı", "bolum": "Giriş"}],
     }
     # Eski fabrika programı alanı hiç göndermez: kapalı sayılır
-    assert _pano.rapor_temizle(RAPOR)["mudahale"] == {"acik": False, "mesajlar": [], "kanallar": []}
+    assert _pano.rapor_temizle(RAPOR)["mudahale"] == {
+        "acik": False,
+        "isler": [],
+        "mesajlar": [],
+        "kanallar": [],
+    }
 
 
 # ------------------------------------------------------------ çekirdek akış
@@ -95,9 +107,10 @@ def test_mudahale_alani_suzulur_ve_adres_tasimaz():
 
 def test_komut_kuyruga_girer_bir_kez_teslim_edilir_sonucu_yazilir():
     depo = _pano.BellekDepo()
-    komut = _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000)
+    komut = _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000, KIM)
     assert komut["durum"] == "bekliyor"
     assert komut["ozet"] == "Anons: “Lütfen baret takınız” · Tüm fabrika"
+    assert komut["kim"] == {"ad": "kurucu", "rol": "yonetici", "rol_adi": "Yönetici"}
 
     teslim, hizli = _pano.komutlari_teslim_et(depo, 1010)
     assert hizli is True  # komut işareti ve izleyen işareti
@@ -105,50 +118,58 @@ def test_komut_kuyruga_girer_bir_kez_teslim_edilir_sonucu_yazilir():
         {
             "id": komut["id"],
             "tur": "anons",
+            "son_gecerlilik": 1000 + _pano.KOMUT_GECERLILIK_SN,
+            "kim": {"ad": "kurucu", "rol": "yonetici"},
             "kanal_id": None,
             "mesaj_id": 3,
-            "son_gecerlilik": 1000 + _pano.KOMUT_GECERLILIK_SN,
             "kalan_sn": _pano.KOMUT_GECERLILIK_SN - 10,
         }
     ]
     # İkinci yoklamada aynı komut gelmez (fabrika yeniden başlasa da anons tekrarlanmaz)
     assert _pano.komutlari_teslim_et(depo, 1012)[0] == []
-    gorunum = _pano.mudahale_verisi(depo, 1015, izliyor=False)
+    gorunum = _pano.mudahale_verisi(depo, 1015, "operator", izliyor=False)
     assert gorunum["komutlar"][0]["durum"] == "iletildi"
     assert gorunum["yoklama_yasi_sn"] == 3
 
-    _pano.sonuclari_yaz(
+    alinan = _pano.sonuclari_yaz(
         depo, [{"id": komut["id"], "durum": "yapildi", "mesaj": "Genel anons: çalındı"}], 1020
     )
-    son = _pano.mudahale_verisi(depo, 1021, izliyor=False)["komutlar"][0]
+    assert alinan == [komut["id"]]
+    son = _pano.mudahale_verisi(depo, 1021, "operator", izliyor=False)["komutlar"][0]
     assert (son["durum"], son["mesaj"]) == ("yapildi", "Genel anons: çalındı")
-    # Bitmiş komut yeniden açılmaz
-    _pano.sonuclari_yaz(depo, [{"id": komut["id"], "durum": "hata", "mesaj": "x"}], 1030)
-    assert _pano.mudahale_verisi(depo, 1031, izliyor=False)["komutlar"][0]["durum"] == "yapildi"
+    # Bitmiş komut yeniden açılmaz; ama kimliği yine onaylanır (program dosyayı silsin)
+    assert _pano.sonuclari_yaz(
+        depo, [{"id": komut["id"], "durum": "hata", "mesaj": "x"}], 1030
+    ) == [komut["id"]]
+    assert _pano.mudahale_verisi(depo, 1031, "operator", izliyor=False)["komutlar"][0]["durum"] == (
+        "yapildi"
+    )
 
 
 def test_suresi_dolan_komut_fabrikaya_gitmez():
     depo = _pano.BellekDepo(lambda: 1000.0)
-    komut = _pano.komut_olustur(depo, _veri(), {"tur": "ses_dene", "kanal_id": 2}, 1000)
+    komut = _pano.komut_olustur(depo, _veri(), {"tur": "ses_dene", "kanal_id": 2}, 1000, KIM)
     assert komut["ozet"] == "Hoparlör denemesi · Sevkiyat hoparlörü (Sevkiyat)"
     gec = 1000 + _pano.KOMUT_GECERLILIK_SN
     # Fabrika sormadan önce de panoda "süresi doldu" görünür
-    assert _pano.mudahale_verisi(depo, gec, izliyor=False)["komutlar"][0]["durum"] == (
+    assert _pano.mudahale_verisi(depo, gec, "operator", izliyor=False)["komutlar"][0]["durum"] == (
         "suresi_doldu"
     )
     teslim, _ = _pano.komutlari_teslim_et(depo, gec)
     assert teslim == []
-    gorunum = _pano.mudahale_verisi(depo, gec + 1, izliyor=False)["komutlar"][0]
+    gorunum = _pano.mudahale_verisi(depo, gec + 1, "operator", izliyor=False)["komutlar"][0]
     assert gorunum["durum"] == "suresi_doldu"
     assert gorunum["mesaj"] == _pano.SURESI_DOLDU_METNI
 
 
 def test_iletilip_sonucu_gelmeyen_komut_adlandirilir():
     depo = _pano.BellekDepo(lambda: 1000.0)
-    _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 5, "kanal_id": 2}, 1000)
+    _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 5, "kanal_id": 2}, 1000, KIM)
     _pano.komutlari_teslim_et(depo, 1001)
     gec = 1001 + _pano.SONUC_BEKLEME_SN + 1
-    assert _pano.mudahale_verisi(depo, gec, izliyor=False)["komutlar"][0]["durum"] == "sonuc_yok"
+    assert _pano.mudahale_verisi(depo, gec, "operator", izliyor=False)["komutlar"][0]["durum"] == (
+        "sonuc_yok"
+    )
 
 
 @pytest.mark.parametrize(
@@ -172,7 +193,7 @@ def test_iletilip_sonucu_gelmeyen_komut_adlandirilir():
 def test_gecersiz_komut_reddedilir_ve_kuyruga_girmez(veri, istek, kod, hata):
     depo = _pano.BellekDepo()
     with pytest.raises(_pano.PanoHatasi) as bilgi:
-        _pano.komut_olustur(depo, veri, istek, 1000)
+        _pano.komut_olustur(depo, veri, istek, 1000, KIM)
     assert (bilgi.value.kod, bilgi.value.hata) == (kod, hata)
     assert depo.komut("LLEN", _pano.KOMUT_SIRA_ANAHTARI) == 0
 
@@ -180,9 +201,9 @@ def test_gecersiz_komut_reddedilir_ve_kuyruga_girmez(veri, istek, kod, hata):
 def test_komut_siniri():
     depo = _pano.BellekDepo(lambda: 1000.0)
     for _ in range(_pano.KOMUT_SINIRI):
-        _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000)
+        _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000, KIM)
     with pytest.raises(_pano.PanoHatasi) as bilgi:
-        _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000)
+        _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 3}, 1000, KIM)
     assert bilgi.value.kod == 429
     assert depo.komut("LLEN", _pano.KOMUT_SIRA_ANAHTARI) == _pano.KOMUT_SINIRI
 

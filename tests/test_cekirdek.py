@@ -235,22 +235,33 @@ def test_eski_durum_silinir_son_rapor_zamani_kalir():
 # ---------------------------------------------------------------- oturum
 
 
-def test_cerez_dogrulanir_suresi_dolunca_gecersiz():
+def test_kurucu_cerezi_dogrulanir_suresi_dolunca_kapanir():
     ayar = _ayar()
-    cerez = _pano.cerez_uret(ayar, 1_800_000_000)
-    assert _pano.cerez_gecerli_mi(ayar, cerez, 1_800_000_000)
-    assert not _pano.cerez_gecerli_mi(ayar, cerez, 1_800_000_000 + _pano.OTURUM_SURESI_SN)
+    depo = _pano.BellekDepo()
+    deger = _pano.cerez_uret(ayar, "kurucu", "kurucu", 0, 1_800_000_000)
+    oturum = _pano.oturum_coz(depo, ayar, deger, 1_800_000_000)
+    assert oturum.ad == "kurucu" and oturum.rol == "yonetici" and oturum.kurucu
+    with pytest.raises(_pano.PanoHatasi) as hata:
+        _pano.oturum_coz(depo, ayar, deger, 1_800_000_000 + _pano.OTURUM_SURESI_SN)
+    assert hata.value.hata == "oturum_kapandi"
 
 
-def test_sahte_ya_da_eski_sifreli_cerez_gecersiz():
+def test_sahte_bozuk_ve_eski_bicimli_cerez_gecersiz():
     ayar = _ayar()
-    cerez = _pano.cerez_uret(ayar, 1_800_000_000)
-    bitis, _, imza = cerez.partition(".")
-    assert not _pano.cerez_gecerli_mi(ayar, f"{int(bitis) + 9999}.{imza}", 1_800_000_000)
-    assert not _pano.cerez_gecerli_mi(ayar, "", 1_800_000_000)
-    assert not _pano.cerez_gecerli_mi(ayar, "²²²²²²²²²²", 1_800_000_000)
-    # Şifre değişince açık oturumlar düşer
-    assert not _pano.cerez_gecerli_mi(_ayar(pano_sifresi="yeni-sifre-456"), cerez, 1_800_000_000)
+    depo = _pano.BellekDepo()
+    deger = _pano.cerez_uret(ayar, "kurucu", "kurucu", 0, 1_800_000_000)
+    _, _, _, bitis, imza = _pano._cerez_coz(deger)
+    # Bitiş değiştirilince imza tutmaz: giriş gerekli
+    with pytest.raises(_pano.PanoHatasi) as h1:
+        _pano.oturum_coz(depo, ayar, f"v2.kurucu.kurucu.0.{bitis + 9999}.{imza}", 1_800_000_000)
+    assert h1.value.hata == "giris_gerekli"
+    # Eski (v2 olmayan) biçim, boş ve bozuk çerez
+    for bozuk in (f"{bitis}.{imza}", "", "²²²²²²²²²²", "v2.kurucu.kurucu.0.x.y"):
+        with pytest.raises(_pano.PanoHatasi):
+            _pano.oturum_coz(depo, ayar, bozuk, 1_800_000_000)
+    # Kurucu şifresi değişince açık oturumlar düşer (imza anahtarı değişir)
+    with pytest.raises(_pano.PanoHatasi):
+        _pano.oturum_coz(depo, _ayar(pano_sifresi="yeni-sifre-456"), deger, 1_800_000_000)
 
 
 # ----------------------------------------------------------------- kilit
@@ -262,34 +273,66 @@ def test_bes_yanlis_denemede_adres_kilitlenir_dogru_sifre_de_reddedilir():
     ayar = _ayar()
     for _ in range(_pano.KILIT_DENEME):
         with pytest.raises(_pano.PanoHatasi) as hata:
-            _pano.giris_dene(depo, ayar, "1.2.3.4", "yanlis", saat.simdi)
+            _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", "yanlis", saat.simdi)
         assert hata.value.kod == 401
     with pytest.raises(_pano.PanoHatasi) as hata:
-        _pano.giris_dene(depo, ayar, "1.2.3.4", SIFRE, saat.simdi)
+        _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", SIFRE, saat.simdi)
     assert hata.value.kod == 429
     # Başka adres etkilenmez
-    _pano.giris_dene(depo, ayar, "5.6.7.8", SIFRE, saat.simdi)
-    # Süre dolunca kilit açılır
+    _pano.giris_dene(depo, ayar, "5.6.7.8", "kurucu", SIFRE, saat.simdi)
+    # Süre dolunca kilit açılır (ad sayacı 5<10 olduğundan engel değil)
     saat.simdi += _pano.KILIT_SURESI_SN + 1
-    _pano.giris_dene(depo, ayar, "1.2.3.4", SIFRE, saat.simdi)
+    _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", SIFRE, saat.simdi)
 
 
 def test_genel_kilit_cok_adresten_gelen_denemeyi_durdurur():
     saat = Saat()
     depo = _pano.BellekDepo(saat)
     ayar = _ayar()
+    # Her deneme ayrı ad ve ayrı adres: yalnız genel sayaç dolsun (ad kilidi değil)
     for i in range(_pano.GENEL_KILIT_DENEME):
         with pytest.raises(_pano.PanoHatasi):
-            _pano.giris_dene(depo, ayar, f"10.0.{i // 250}.{i % 250}", "yanlis", saat.simdi)
+            _pano.giris_dene(
+                depo, ayar, f"10.0.{i // 250}.{i % 250}", f"kisi{i}", "yanlis", saat.simdi
+            )
     with pytest.raises(_pano.PanoHatasi) as hata:
-        _pano.giris_dene(depo, ayar, "9.9.9.9", SIFRE, saat.simdi)
+        _pano.giris_dene(depo, ayar, "9.9.9.9", "kurucu", SIFRE, saat.simdi)
     assert hata.value.hata == "genel_kilit"
+
+
+def test_ad_kilidi_ayni_adla_cok_denemeyi_durdurur():
+    saat = Saat()
+    depo = _pano.BellekDepo(saat)
+    ayar = _ayar()
+    # Aynı ad, hep farklı adres: adres kilidi değil, ad kilidi devreye girer
+    for i in range(_pano.AD_KILIT_DENEME):
+        with pytest.raises(_pano.PanoHatasi):
+            _pano.giris_dene(depo, ayar, f"10.1.{i}.{i}", "ahmet.yilmaz", "yanlis", saat.simdi)
+    with pytest.raises(_pano.PanoHatasi) as hata:
+        _pano.giris_dene(depo, ayar, "7.7.7.7", "ahmet.yilmaz", SIFRE, saat.simdi)
+    assert hata.value.hata == "ad_kilitli"
+
+
+def test_ipv6_ayni_64_tek_sayacta_sayilir():
+    saat = Saat()
+    depo = _pano.BellekDepo(saat)
+    ayar = _ayar()
+    # Aynı /64'ten dört farklı adres: beşinci yanlış denemede kilit
+    for son in range(_pano.KILIT_DENEME):
+        with pytest.raises(_pano.PanoHatasi) as hata:
+            _pano.giris_dene(
+                depo, ayar, f"2a02:e0:1234:5678::{son + 1}", "kurucu", "yanlis", saat.simdi
+            )
+        assert hata.value.kod == 401
+    with pytest.raises(_pano.PanoHatasi) as hata:
+        _pano.giris_dene(depo, ayar, "2a02:e0:1234:5678::ff", "kurucu", SIFRE, saat.simdi)
+    assert hata.value.hata == "kilitli"
 
 
 def test_kilit_sayaci_ip_adresini_acik_yazmaz():
     depo = _pano.BellekDepo(Saat())
     with pytest.raises(_pano.PanoHatasi):
-        _pano.giris_dene(depo, _ayar(), "192.168.77.88", "yanlis", 1_800_000_000)
+        _pano.giris_dene(depo, _ayar(), "192.168.77.88", "kurucu", "yanlis", 1_800_000_000)
     assert not any("192.168.77.88" in anahtar for anahtar in depo._veri)
 
 

@@ -92,15 +92,30 @@ KAMERA_DURUMLARI = ("online", "connecting", "offline", "pasif")
 ONEMLER = ("critical", "high", "medium", "low")
 OLAY_TURLERI = ("ihlal", "sistem")
 OLAY_EN_COK = 50  # rapordaki son olaylar (pano 20'sini gösterir)
-# ---- uzaktan müdahale
+# ---- roller (docs/19 §1)
+# Hesap rolü her istekte kayıttan okunur; ekranda Türkçe adıyla gösterilir.
+ROLLER = ("izleyici", "operator", "yonetici")
+ROL_ADLARI = {"izleyici": "İzleyici", "operator": "Operatör", "yonetici": "Yönetici"}
+
+# ---- uzaktan müdahale ve yönetim (docs/19 §3.5-§3.7)
 # Pano yalnız bu işleri isteyebilir; fabrika programı da yalnız bunları tanır.
-KOMUT_TURLERI = ("anons", "ses_dene")
-KOMUT_DURUMLARI = ("bekliyor", "iletildi", "yapildi", "hata", "suresi_doldu")
+KOMUT_TURLERI = ("anons", "ses_dene", "olay_incele", "teshis", "yeniden_baslat", "guncelle")
+# Rol kapısı: yönetim işleri yalnız yöneticide; ötekiler operatör ve üstünde.
+YONETIM_TURLERI = ("teshis", "yeniden_baslat", "guncelle")
+AGIR_TURLERI = ("yeniden_baslat", "guncelle")
+# Raporda bildirilen açık işler ve olay durumları (docs/19 §3.8).
+MUDAHALE_ISLERI = ("anons", "ses_dene", "olay_incele")
+OLAY_DURUMLARI = ("new", "reviewed", "false_alarm")
+KURULUM_TURLERI = ("paket", "git", "diger")
+# Komutun durumu; "sonuc_yok" yalnız görünümde türetilir (kayda yazılmaz).
+KOMUT_DURUMLARI = ("bekliyor", "iletildi", "suruyor", "yapildi", "hata", "suresi_doldu")
+KOMUT_BITMIS = ("yapildi", "hata", "suresi_doldu")
 KOMUT_SIRA_ANAHTARI = "dalsan:komut:sira"  # fabrikanın henüz almadığı komutlar
 KOMUT_SON_ANAHTARI = "dalsan:komut:son"  # panoda görünen son komutların kimliği
 KOMUT_KAYIT_ONEKI = "dalsan:komut:kayit:"  # komutun durumu ve sonucu
-KOMUT_SAYAC_ANAHTARI = "dalsan:komut:sayac"
-# İki işaret fabrikaya "sık sor" der: Müdahale ekranı açık ya da yeni bir komut var.
+# Sıklık sayaçları (grup başına; docs/19 §3.5). Ağır iş ayrı kilitle sayılır.
+KOMUT_SAYAC_ONEKI = "dalsan:komut:sayac:"
+# İki işaret fabrikaya "sık sor" der: Müdahale/Yönetim ekranı açık ya da yeni komut var.
 IZLEYEN_ANAHTARI = "dalsan:mudahale:izleyen"
 KOMUT_ISARET_ANAHTARI = "dalsan:komut:isaret"
 YOKLAMA_ANAHTARI = "dalsan:komut:yoklama"  # fabrikanın son sorduğu an
@@ -108,18 +123,73 @@ YOKLAMA_ANAHTARI = "dalsan:komut:yoklama"  # fabrikanın son sorduğu an
 # bir fabrikada eski bir anons çalmasın.
 KOMUT_GECERLILIK_SN = 120
 KOMUT_SAKLAMA_SN = 2 * 24 * 3600
-KOMUT_SON_SAYISI = 20
-KOMUT_GOSTERILEN = 10
+KOMUT_SON_SAYISI = 50  # kayıtta tutulan; ekran 20 gösterir
+KOMUT_GOSTERILEN = 20
 # Çalınan bir şifreyle hoparlörler susturulamaz ama yağmur gibi anons da
-# yaptırılamasın: 5 dakikada en çok 10 komut.
-KOMUT_SINIRI = 10
+# yaptırılamasın. Grup başına kayan pencere (docs/19 §3.5 tablosu).
 KOMUT_SINIR_PENCERESI_SN = 300
+KOMUT_GRUP_SINIRLARI = {"ses": 10, "inceleme": 60, "teshis": 3}
+KOMUT_GRUPLARI = {
+    "anons": "ses",
+    "ses_dene": "ses",
+    "olay_incele": "inceleme",
+    "teshis": "teshis",
+}
+# Eski ad (dış kodda kullanılmaz): ses grubunun sınırı.
+KOMUT_SINIRI = KOMUT_GRUP_SINIRLARI["ses"]
 IZLEYEN_SURESI_SN = 30
 YOKLAMA_TOPLU = 5
 # Fabrikaya iletilip bu süre sonuç gelmezse panoda "sonuç gelmedi" yazar.
+# Ağır işler uzun sürer: güncelleme yarım saat, yeniden başlatma on dakika.
 SONUC_BEKLEME_SN = 180
-KOMUT_EN_BUYUK_BAYT = 16 * 1024
+SONUC_BEKLEME = {"guncelle": 1800, "yeniden_baslat": 600}
+KOMUT_EN_BUYUK_BAYT = 64 * 1024  # komut sorusu gövdesi en çok 64 KB (docs/19 §3.7)
+KOMUT_SONUC_EN_COK = 10  # bir istekte işlenen sonuç sayısı
+EK_EN_BUYUK_BAYT = 8192  # teshis ek metni (docs/19 §3.7)
 SURESI_DOLDU_METNI = "Fabrika komutu 2 dakika içinde almadı; yapılmadı."
+
+# ---- tek ağır iş kilidi ve kayan ağır pencere (docs/19 §3.5)
+# Aynı anda tek yeniden başlatma/güncelleme; site kilidi yalnız ekran
+# kolaylığıdır, gerçek garanti programdadır.
+AGIR_KILIT_ANAHTARI = "dalsan:komut:agir"
+AGIR_ZAMANLAR_ANAHTARI = "dalsan:komut:agir:zamanlar"
+AGIR_PENCERE_SN = 3600
+AGIR_SINIR = 3
+AGIR_ZAMAN_TUT = 10  # pencerede saklanan damga sayısı
+
+# ---- hesaplar, oturum, kilit, işlem kaydı (docs/19 §3.1-§3.3)
+AYRILMIS_ADLAR = frozenset({"kurucu", "fabrika", "sistem", "site"})
+KURUCU_AD = "kurucu"
+AD_DESENI = re.compile(r"[a-z0-9][a-z0-9._-]{2,31}")
+SIFRE_EN_UZUN = 200
+HESAP_EN_COK = 50  # kurucu hariç
+HESAP_SURUMU = 1
+KULLANICI_ONEKI = "dalsan:kullanici:"
+KULLANICILAR_ANAHTARI = "dalsan:kullanicilar"
+SON_GIRIS_ONEKI = "dalsan:son_giris:"
+OTURUM_IPTAL_ONEKI = "dalsan:oturum:iptal:"
+# Giriş kilitleri (docs/19 §3.2): adres, ad, genel; hepsi şifreden önce okunur.
+GIRIS_AD_ONEKI = "dalsan:giris:ad:"
+AD_KILIT_DENEME = 10
+AD_KILIT_SURESI_SN = 900
+# Yanlış onay/eski şifre bu sayaca da girer; 5'te oturum sürümü artar (§3.1).
+ONAY_HATA_ONEKI = "dalsan:onay_hata:"
+ONAY_HATA_SINIR = 5
+ONAY_HATA_SURESI_SN = 900
+# İşlem kaydı (docs/19 §3.3): üç ayrı liste, ayrı uzunluklarla.
+KAYIT_ANAHTARI = "dalsan:kayit"
+KAYIT_OTURUM_ANAHTARI = "dalsan:kayit:oturum"
+KAYIT_GIRIS_ANAHTARI = "dalsan:kayit:giris"
+KAYIT_EN_COK = 1000
+KAYIT_GIRIS_EN_COK = 200
+KAYIT_BIRLESIK_EN_COK = 300  # GET /api/hesap üç listeyi birleşik verir
+# Hesap kaydını kimse sel gibi dolduramasın (docs/19 §3.3).
+SIFRE_DEGISTIR_SINIRI = 5
+SIFRE_DEGISTIR_PENCERESI_SN = 3600
+SIFRE_DEGISTIR_SAYAC_ONEKI = "dalsan:kayit:sinir:sifre:"
+HESAP_ISLEM_SINIRI = 30
+HESAP_ISLEM_PENCERESI_SN = 900
+HESAP_ISLEM_SAYAC_ONEKI = "dalsan:kayit:sinir:hesap:"
 
 # ---- görüntü (fabrika içi kullanım kararı, 24.10.2026)
 # Kanıt fotoğrafı: ihlal başına bir kez gelir, 7 gün durur (durumla aynı).
@@ -462,6 +532,20 @@ class BellekDepo(_OrtakDepo):
             return "OK"
         if ad == "LLEN":
             return len(self._liste(arg[0]))
+        if ad == "LREM":
+            # LREM key count value: count>0 baştan, <0 sondan, 0 hepsi (Redis).
+            # Site yalnız count=0'ı (dizinden bir adı tümüyle çıkarmak) kullanır.
+            liste = list(self._liste(arg[0]))
+            sayi, deger = int(arg[1]), arg[2]
+            hedef = [i for i, oge in enumerate(liste) if oge == deger]
+            if sayi > 0:
+                hedef = hedef[:sayi]
+            elif sayi < 0:
+                hedef = hedef[sayi:]
+            for i in reversed(hedef):
+                del liste[i]
+            self._liste_yaz(arg[0], liste)
+            return len(hedef)
         raise DepoHatasi(f"ERR unknown command '{ad}'")
 
 
@@ -606,6 +690,8 @@ def _olay(ham: dict) -> dict:
         "onem": _secim(ham.get("onem"), ONEMLER),
         "onem_adi": _metin(ham.get("onem_adi"), 40),
         "durum_adi": _metin(ham.get("durum_adi"), 40),
+        # Ham durum: inceleme düğmesi yalnız "new" ihlalde çıkar (docs/19 §3.8)
+        "durum": _secim(ham.get("durum"), OLAY_DURUMLARI),
         "suruyor": ham.get("suruyor") is True,
         "sure": _metin(ham.get("sure"), 40),
     }
@@ -694,7 +780,54 @@ def _mudahale(ham: object) -> dict:
                     "bolum": _metin(oge.get("bolum"), 80),
                 }
             )
-    return {"acik": ham.get("acik") is True, "mesajlar": mesajlar, "kanallar": kanallar}
+    acik = ham.get("acik") is True
+    # Açık işler yeni alandır; eski program göndermez: açıksa anons ve ses_dene
+    # varsayılır (bugünkü davranış), yoksa hiçbiri (docs/19 §3.8).
+    if isinstance(ham.get("isler"), list):
+        isler = [is_ for is_ in MUDAHALE_ISLERI if is_ in ham["isler"]]
+    else:
+        isler = ["anons", "ses_dene"] if acik else []
+    return {"acik": acik, "isler": isler, "mesajlar": mesajlar, "kanallar": kanallar}
+
+
+def _yapi(ham: object) -> dict:
+    """Programın yapı bilgisi: commit, tarih, kaçıncı çalıştırma (docs/19 §3.8).
+    Eski program göndermez; boş değerlere düşer."""
+    ham = _sozluk(ham)
+    commit = ham.get("commit")
+    if not (isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{7,40}", commit)):
+        commit = ""
+    return {
+        "commit": commit,
+        "tarih": _zaman(ham.get("tarih")),
+        "calistirma": _tam(ham.get("calistirma"), 0, 10**9),
+    }
+
+
+def _yonetim(ham: object) -> dict:
+    """Uzaktan yönetimin durumu: açık mı, hangi işler, kurulum türü ve yeniden
+    başlatma / güncelleme yapılabilir mi (docs/19 §3.8). Eski program göndermez:
+    her şey kapalı döner, düğmeler pasif kalır."""
+    ham = _sozluk(ham)
+
+    def _is_kapisi(deger: object) -> dict:
+        deger = _sozluk(deger)
+        return {
+            "mumkun": deger.get("mumkun") is True,
+            "sebep": _metin(deger.get("sebep"), 200),
+        }
+
+    isler_ham = ham.get("isler")
+    isler = (
+        [is_ for is_ in YONETIM_TURLERI if is_ in isler_ham] if isinstance(isler_ham, list) else []
+    )
+    return {
+        "acik": ham.get("acik") is True,
+        "isler": isler,
+        "kurulum": _secim(ham.get("kurulum"), KURULUM_TURLERI),
+        "yeniden_baslatma": _is_kapisi(ham.get("yeniden_baslatma")),
+        "guncelleme": _is_kapisi(ham.get("guncelleme")),
+    }
 
 
 def rapor_temizle(ham: object) -> dict:
@@ -722,9 +855,16 @@ def rapor_temizle(ham: object) -> dict:
         "uretildi": _zaman(ham.get("uretildi")),
         "aralik_sn": _tam(ham.get("aralik_sn"), 5, 3600, varsayilan=30),
         "kapanis": ham.get("kapanis") is True,
+        # Yalnız kapanış raporunda dolu: güncelleme / yeniden başlatma (docs/19 §3.8)
+        "kapanis_sebebi": (
+            _secim(ham.get("kapanis_sebebi"), ("guncelleme", "yeniden_baslatma"))
+            if ham.get("kapanis") is True
+            else ""
+        ),
         "program": {
             "ad": _metin(program.get("ad"), 60),
             "surum": _metin(program.get("surum"), 40),
+            "yapi": _yapi(program.get("yapi")),
         },
         "sistem": {
             "analiz": _mantik(sistem.get("analiz")),
@@ -768,6 +908,8 @@ def rapor_temizle(ham: object) -> dict:
             if isinstance(oge, dict)
         ],
         "bilgisayar": _bilgisayar(ham.get("bilgisayar")),
+        # Yönetici görünümü (eskiden gönderilmez; yoksa her şey kapalı döner)
+        "yonetim": _yonetim(ham.get("yonetim")),
     }
 
 
@@ -794,8 +936,10 @@ def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> d
         isaretler = [None] * 4
     izleyen, komut_var, kare, ham_fotolar = isaretler
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
+    # Sık sor: müdahale ya da yönetim açık VE ekran açık ya da komut var (docs/19 §3.8)
+    komut_acik = rapor["mudahale"]["acik"] or rapor["yonetim"]["acik"]
     return {
-        "komut": {"hizli": bool(rapor["mudahale"]["acik"] and (izleyen or komut_var))},
+        "komut": {"hizli": bool(komut_acik and (izleyen or komut_var))},
         "kare": {"iste": bool(kare)},
         "foto": {"var": [o["id"] for o in rapor["son_olaylar"] if o["id"] in fotolar]},
     }
@@ -867,61 +1011,112 @@ def _kayit_metni(kayit: dict) -> str:
     return json.dumps(kayit, ensure_ascii=False, separators=(",", ":"))
 
 
-def komut_gorunumu(kayit: dict, simdi: float) -> dict:
+def _islem_satiri(simdi: float, kim: str, rol: str, is_: str, ozet: str, sonuc: str) -> dict:
+    """İşlem kaydının bir satırı (docs/19 §3.3). Şifre asla özete girmez."""
+    return {
+        "z": int(simdi),
+        "kim": _metin(kim, 40),
+        "rol": _secim(rol, ROLLER),
+        "is": is_,
+        "ozet": _metin(ozet, 200),
+        "sonuc": sonuc,
+    }
+
+
+def kayit_yaz(depo: UpstashDepo | BellekDepo, liste: str, satir: dict, kesme: int) -> None:
+    """Bir işlem kaydı satırını yazar ve listeyi kısaltır (LPUSH + LTRIM)."""
+    depo.boru_hatti([["LPUSH", liste, _kayit_metni(satir)], ["LTRIM", liste, "0", str(kesme - 1)]])
+
+
+def _kim_gorunumu(ham: object) -> dict:
+    """Komutu kimin istediği: ad ve rol (docs/19 §3.6). Bozuksa boş döner."""
+    ham = _sozluk(ham)
+    ad = ham.get("ad")
+    rol = _secim(ham.get("rol"), ROLLER)
+    temiz_ad = ad if isinstance(ad, str) and (ad == KURUCU_AD or _ad_gecerli_mi(ad)) else ""
+    return {"ad": temiz_ad, "rol": rol, "rol_adi": ROL_ADLARI.get(rol, "")}
+
+
+def _rol_yeterli(rol: str, tur: str) -> bool:
+    """Bu rol bu komut türünü isteyebilir mi (docs/19 §1)."""
+    if tur in YONETIM_TURLERI:
+        return rol == "yonetici"
+    return rol in ("operator", "yonetici")
+
+
+def _ek_temizle(ham: object) -> str:
+    """Teşhis ek metni (docs/19 §3.7): satır sonu ve sekme dışındaki denetim
+    karakterleri atılır, kalan adresler maskelenir, 8192 bayta kesilir."""
+    if not isinstance(ham, str) or not ham:
+        return ""
+    temiz = "".join(h if (h in "\n\t" or h.isprintable()) else " " for h in ham)
+    temiz = ADRES_DESENI.sub("(adres)", temiz)
+    kodlu = temiz.encode("utf-8")
+    if len(kodlu) > EK_EN_BUYUK_BAYT:
+        temiz = kodlu[:EK_EN_BUYUK_BAYT].decode("utf-8", "ignore")
+    return temiz
+
+
+def komut_gorunumu(kayit: dict, simdi: float, ek_goster: bool = False) -> dict:
     """Panonun gösterdiği hal. Süresi dolan ya da sonucu gelmeyen komut
     burada adlandırılır: kuyruktaki kayıt kimse sormadan değişmez."""
+    tur = _secim(kayit.get("tur"), KOMUT_TURLERI)
     durum = _secim(kayit.get("durum"), KOMUT_DURUMLARI) or "hata"
     mesaj = _metin(kayit.get("mesaj"), 300)
     guncellendi = _tam(kayit.get("guncellendi"), 0, 10**12)
+    iletildi_an = _tam(kayit.get("iletildi"), 0, 10**12) or guncellendi
+    bekleme = SONUC_BEKLEME.get(tur, SONUC_BEKLEME_SN)
     if durum == "bekliyor" and simdi >= _tam(kayit.get("son_gecerlilik"), 0, 10**12):
         durum, mesaj = "suresi_doldu", SURESI_DOLDU_METNI
-    elif durum == "iletildi" and simdi - guncellendi > SONUC_BEKLEME_SN:
+    elif durum in ("iletildi", "suruyor") and simdi - iletildi_an > bekleme:
         durum, mesaj = "sonuc_yok", "Fabrikaya iletildi ama sonucu gelmedi."
-    return {
+    gorunum = {
         "id": kayit.get("id") if _komut_kimligi_mi(kayit.get("id")) else "",
-        "tur": _secim(kayit.get("tur"), KOMUT_TURLERI),
+        "tur": tur,
         "ozet": _metin(kayit.get("ozet"), 300),
+        "kim": _kim_gorunumu(kayit.get("kim")),
         "olusturuldu": _iso(_tam(kayit.get("olusturuldu"), 0, 10**12)),
         "durum": durum,
         "mesaj": mesaj,
     }
+    if ek_goster and isinstance(kayit.get("ek"), str) and kayit["ek"]:
+        gorunum["ek"] = kayit["ek"]  # yazarken süzülmüştü (docs/19 §3.7)
+    return gorunum
 
 
-def mudahale_verisi(depo: UpstashDepo | BellekDepo, simdi: float, izliyor: bool) -> dict:
-    """Müdahale ekranının verisi: son komutlar ve fabrikanın son sorduğu an.
-    `izliyor`: ekran açık; fabrika bir sonraki raporda sık sormaya başlar."""
-    komutlar = [
+def mudahale_verisi(depo: UpstashDepo | BellekDepo, simdi: float, rol: str, izliyor: bool) -> dict:
+    """Müdahale / Yönetim ekranının verisi: son komutlar ve fabrikanın son
+    sorduğu an. Operatör anons, ses ve inceleme komutlarını görür; yönetici
+    hepsini, teşhis ek metni dahil (docs/19 §3.6). `izliyor`: ekran açık;
+    fabrika bir sonraki raporda sık sormaya başlar."""
+    istek = [
         ["LRANGE", KOMUT_SON_ANAHTARI, "0", str(KOMUT_GOSTERILEN - 1)],
         ["GET", YOKLAMA_ANAHTARI],
     ]
     if izliyor:
-        komutlar.append(_set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN))
-    sonuc = depo.boru_hatti(komutlar)
+        istek.append(_set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN))
+    sonuc = depo.boru_hatti(istek)
     son = sonuc[0] if isinstance(sonuc[0], list) else []
     kimlikler = [kimlik for kimlik in son if _komut_kimligi_mi(kimlik)]
     kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + k for k in kimlikler]) if kimlikler else []
     yoklama = sonuc[1] if isinstance(sonuc[1], str) and _rakam_mi(sonuc[1]) else None
+    ek_goster = rol == "yonetici"
+    gorunur = KOMUT_TURLERI if rol == "yonetici" else MUDAHALE_ISLERI
+    komutlar = []
+    for kayit in map(_json_sozluk, kayitlar):
+        if kayit is None or _secim(kayit.get("tur"), KOMUT_TURLERI) not in gorunur:
+            continue
+        komutlar.append(komut_gorunumu(kayit, simdi, ek_goster=ek_goster))
     return {
-        "komutlar": [
-            komut_gorunumu(kayit, simdi)
-            for kayit in map(_json_sozluk, kayitlar)
-            if kayit is not None
-        ],
+        "komutlar": komutlar,
         "son_yoklama": _iso(int(yoklama)) if yoklama else None,
         "yoklama_yasi_sn": max(0, round(simdi - int(yoklama))) if yoklama else None,
     }
 
 
-def komut_olustur(depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi: float) -> dict:
-    """Panodan gelen isteği doğrular ve kuyruğa koyar. `veri` pano_verisi'dir:
-    seçilen mesaj ve kanal fabrikanın son raporunda olmalı."""
-    if veri["baglanti"] != "canli":
-        raise PanoHatasi(
-            409,
-            "fabrika_bagli_degil",
-            "Fabrika programından şu an haber gelmiyor; komut gönderilemez.",
-        )
-    mudahale = _sozluk(_sozluk(veri.get("rapor")).get("mudahale"))
+def _ses_komutu(rapor: dict, tur: str, istek: dict) -> tuple[dict, str]:
+    """anons / ses_dene: kanal (ve anonsta mesaj) fabrikanın son raporunda olmalı."""
+    mudahale = _sozluk(rapor.get("mudahale"))
     if mudahale.get("acik") is not True:
         raise PanoHatasi(
             409,
@@ -929,9 +1124,10 @@ def komut_olustur(depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi
             "Fabrika programında uzaktan müdahale kapalı. Açmak için fabrikadaki "
             "bilgisayarda Ayarlar, Uzak izleme panosu, Uzaktan müdahale'yi seçin.",
         )
-    tur = _secim(istek.get("tur"), KOMUT_TURLERI)
-    if not tur:
-        raise PanoHatasi(400, "tur", "Bilinmeyen müdahale.")
+    if tur not in mudahale.get("isler", []):
+        raise PanoHatasi(
+            409, "is_desteklenmiyor", "Fabrika programı bu işi bilmiyor; programı güncelleyin."
+        )
     kanallar = {k["id"]: k for k in mudahale.get("kanallar", []) if isinstance(k, dict)}
     kanal_id = istek.get("kanal_id")
     if kanal_id is None and tur == "anons":
@@ -947,28 +1143,193 @@ def komut_olustur(depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi
         yer = kanal["ad"] + (f" ({kanal['bolum']})" if kanal["bolum"] else "")
     else:
         raise PanoHatasi(400, "kanal", "Bu ses kanalı fabrikada yok; sayfayı yenileyin.")
-    yuk: dict = {"id": secrets.token_hex(8), "tur": tur, "kanal_id": kanal_id}
+    yuk: dict = {"kanal_id": kanal_id}
     if tur == "anons":
         mesajlar = {m["id"]: m for m in mudahale.get("mesajlar", []) if isinstance(m, dict)}
         mesaj_id = _kimlik(istek.get("mesaj_id"))
         if mesaj_id not in mesajlar:
             raise PanoHatasi(400, "mesaj", "Bu anons mesajı fabrikada yok; sayfayı yenileyin.")
         yuk["mesaj_id"] = mesaj_id
-        ozet = f"Anons: “{mesajlar[mesaj_id]['metin']}” · {yer}"
-    else:
-        ozet = f"Hoparlör denemesi · {yer}"
-    if depo.say(KOMUT_SAYAC_ANAHTARI, KOMUT_SINIR_PENCERESI_SN) > KOMUT_SINIRI:
+        return yuk, f"Anons: “{mesajlar[mesaj_id]['metin']}” · {yer}"
+    return yuk, f"Hoparlör denemesi · {yer}"
+
+
+def _incele_komutu(rapor: dict, istek: dict) -> tuple[dict, str]:
+    """olay_incele: olay son raporda, ihlal ve durumu 'new' olmalı (docs/19 §3.5)."""
+    mudahale = _sozluk(rapor.get("mudahale"))
+    if mudahale.get("acik") is not True:
+        raise PanoHatasi(
+            409,
+            "mudahale_kapali",
+            "Fabrika programında uzaktan müdahale kapalı. Açmak için fabrikadaki "
+            "bilgisayarda Ayarlar, Uzak izleme panosu, Uzaktan müdahale'yi seçin.",
+        )
+    if "olay_incele" not in mudahale.get("isler", []):
+        raise PanoHatasi(
+            409, "is_desteklenmiyor", "Fabrika programı bu işi bilmiyor; programı güncelleyin."
+        )
+    olay_id = _kimlik(istek.get("olay_id"))
+    olaylar = {
+        o["id"]: o
+        for o in _liste(rapor.get("son_olaylar"), OLAY_EN_COK)
+        if isinstance(o, dict) and o.get("id")
+    }
+    olay = olaylar.get(olay_id)
+    if olay is None or olay.get("tur") != "ihlal":
+        raise PanoHatasi(
+            400,
+            "olay",
+            "Bu olay fabrikanın son raporunda yok ya da ihlal değil; sayfayı yenileyin.",
+        )
+    if olay.get("durum") != "new":
+        raise PanoHatasi(
+            409, "olay_incelenmis", "Bu olay fabrikada zaten incelenmiş; sayfayı yenileyin."
+        )
+    karar = _secim(istek.get("karar"), ("reviewed", "false_alarm"))
+    if not karar:
+        raise PanoHatasi(400, "karar", "Karar (İncelendi / Yanlış alarm) seçilmedi.")
+    karar_adi = "İncelendi" if karar == "reviewed" else "Yanlış alarm"
+    yer = olay.get("yer") or ""
+    ozet = f"İnceleme: “{olay.get('baslik') or 'Olay'}” · {yer} → {karar_adi}"
+    return {"olay_id": olay_id, "olay_zaman": olay.get("zaman") or "", "karar": karar}, ozet
+
+
+def _yonetim_komutu(rapor: dict, tur: str) -> tuple[dict, str]:
+    """teshis / yeniden_baslat / guncelle: yönetim açık, iş destekli ve (ağır
+    işlerde) fabrika yapılabilir demiş olmalı (docs/19 §3.5)."""
+    yonetim = _sozluk(rapor.get("yonetim"))
+    if yonetim.get("acik") is not True:
+        raise PanoHatasi(
+            409,
+            "yonetim_kapali",
+            "Fabrika programında uzaktan yönetim kapalı. Açmak için fabrikadaki "
+            "bilgisayarda Ayarlar, Uzak izleme panosu, Uzaktan yönetim'i seçin.",
+        )
+    if tur not in yonetim.get("isler", []):
+        raise PanoHatasi(
+            409, "is_desteklenmiyor", "Fabrika programı bu işi bilmiyor; programı güncelleyin."
+        )
+    if tur == "teshis":
+        return {}, "Teşhis"
+    kapi = _sozluk(yonetim.get("yeniden_baslatma" if tur == "yeniden_baslat" else "guncelleme"))
+    if kapi.get("mumkun") is not True:
+        raise PanoHatasi(409, "yapilamaz", kapi.get("sebep") or "Bu iş şu an yapılamıyor.")
+    return {}, ("Yeniden başlatma" if tur == "yeniden_baslat" else "Güncelleme")
+
+
+def _zaman_listesi(ham: object) -> list[int]:
+    try:
+        liste = json.loads(ham) if isinstance(ham, str) else []
+    except ValueError:
+        return []
+    return [z for z in liste if isinstance(z, int) and not isinstance(z, bool)][:AGIR_ZAMAN_TUT]
+
+
+def _agir_kilit_bayat_mi(depo: UpstashDepo | BellekDepo, simdi: float) -> bool:
+    """Ağır kilidi tutan komut gerçekten sürüyor mu, yoksa kilit bayat mı
+    (docs/19 §3.5)? Bitmiş, süresi geçmiş ya da uzun süredir sessiz komutun
+    kilidi bayattır ve bir kez daha denenebilir."""
+    (tutan,) = depo.al_coklu([AGIR_KILIT_ANAHTARI])
+    if not _komut_kimligi_mi(tutan):
+        return True
+    (ham_kayit,) = depo.al_coklu([KOMUT_KAYIT_ONEKI + tutan])
+    kayit = _json_sozluk(ham_kayit)
+    if kayit is None:
+        return True
+    durum = _secim(kayit.get("durum"), KOMUT_DURUMLARI)
+    if durum in KOMUT_BITMIS:
+        return True
+    guncellendi = _tam(kayit.get("guncellendi"), 0, 10**12)
+    bekleme = SONUC_BEKLEME.get(_secim(kayit.get("tur"), KOMUT_TURLERI), SONUC_BEKLEME_SN)
+    if durum == "bekliyor":
+        return simdi >= _tam(kayit.get("son_gecerlilik"), 0, 10**12)
+    if durum == "iletildi":
+        return simdi - guncellendi > 90
+    if durum == "suruyor":
+        return simdi - guncellendi > bekleme
+    return True
+
+
+def _agir_kilit_al(depo: UpstashDepo | BellekDepo, kimlik: str, tur: str, simdi: float) -> None:
+    """Tek ağır iş kilidi + kayan ağır pencere (docs/19 §3.5). Kilit yalnız
+    ekran kolaylığıdır; aynı anda tek ağır işi program garanti eder."""
+    bekleme = SONUC_BEKLEME.get(tur, SONUC_BEKLEME_SN)
+    sure = KOMUT_GECERLILIK_SN + bekleme + KOMUT_GECERLILIK_SN
+    agir_dolu = "Önceki güncelleme ya da yeniden başlatma henüz bitmedi."
+    (alindi,) = depo.boru_hatti([["SET", AGIR_KILIT_ANAHTARI, kimlik, "EX", str(sure), "NX"]])
+    if alindi != "OK":
+        if not _agir_kilit_bayat_mi(depo, simdi):
+            raise PanoHatasi(409, "agir_suruyor", agir_dolu)
+        depo.sil(AGIR_KILIT_ANAHTARI)
+        (alindi,) = depo.boru_hatti([["SET", AGIR_KILIT_ANAHTARI, kimlik, "EX", str(sure), "NX"]])
+        if alindi != "OK":
+            raise PanoHatasi(409, "agir_suruyor", agir_dolu)
+    # Kilit alındı: kayan pencere sayılır (sayaç ancak kilitten sonra artar).
+    now = int(simdi)
+    (ham,) = depo.al_coklu([AGIR_ZAMANLAR_ANAHTARI])
+    taze = [z for z in _zaman_listesi(ham) if now - z < AGIR_PENCERE_SN]
+    if len(taze) >= AGIR_SINIR:
+        depo.sil(AGIR_KILIT_ANAHTARI)
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            f"Son bir saatte {AGIR_SINIR} güncelleme ya da yeniden başlatma yapıldı; "
+            "bir süre sonra yeniden deneyin.",
+        )
+    taze = [*taze, now][-AGIR_ZAMAN_TUT:]
+    depo.boru_hatti([_set_komutu(AGIR_ZAMANLAR_ANAHTARI, json.dumps(taze), AGIR_PENCERE_SN)])
+
+
+def _grup_siniri(depo: UpstashDepo | BellekDepo, tur: str) -> None:
+    """Grup başına sıklık sınırı (ses, inceleme, teşhis; docs/19 §3.5)."""
+    grup = KOMUT_GRUPLARI.get(tur)
+    if grup is None:
+        return
+    if depo.say(KOMUT_SAYAC_ONEKI + grup, KOMUT_SINIR_PENCERESI_SN) > KOMUT_GRUP_SINIRLARI[grup]:
         raise PanoHatasi(
             429,
             "cok_sik",
             f"Kısa sürede çok fazla komut gönderildi. {KOMUT_SINIR_PENCERESI_SN // 60} dakika "
             "sonra yeniden deneyin.",
         )
+
+
+def komut_olustur(
+    depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi: float, kim: dict
+) -> dict:
+    """Panodan gelen isteği doğrular ve kuyruğa koyar. `veri` pano_verisi'dir:
+    seçilen mesaj, kanal ve olay fabrikanın son raporunda olmalı. Rolün bu işe
+    yettiği ve (ağır işlerde) onay şifresi uç noktada denetlenmiştir."""
+    if veri["baglanti"] != "canli":
+        raise PanoHatasi(
+            409,
+            "fabrika_bagli_degil",
+            "Fabrika programından şu an haber gelmiyor; komut gönderilemez.",
+        )
+    tur = _secim(istek.get("tur"), KOMUT_TURLERI)
+    if not tur:
+        raise PanoHatasi(400, "tur", "Bilinmeyen müdahale.")
+    rapor = _sozluk(veri.get("rapor"))
+    if tur in ("anons", "ses_dene"):
+        yuk, ozet = _ses_komutu(rapor, tur, istek)
+    elif tur == "olay_incele":
+        yuk, ozet = _incele_komutu(rapor, istek)
+    else:
+        yuk, ozet = _yonetim_komutu(rapor, tur)
+    kimlik = secrets.token_hex(8)
+    yuk["id"] = kimlik
+    yuk["tur"] = tur
+    yuk["kim"] = {"ad": kim["ad"], "rol": kim["rol"]}
     yuk["son_gecerlilik"] = int(simdi) + KOMUT_GECERLILIK_SN
+    if tur in AGIR_TURLERI:
+        _agir_kilit_al(depo, kimlik, tur, simdi)
+    else:
+        _grup_siniri(depo, tur)
     kayit = {
-        "id": yuk["id"],
+        "id": kimlik,
         "tur": tur,
         "ozet": ozet,
+        "kim": yuk["kim"],
         "olusturuldu": int(simdi),
         "son_gecerlilik": yuk["son_gecerlilik"],
         "durum": "bekliyor",
@@ -977,46 +1338,84 @@ def komut_olustur(depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi
     }
     depo.boru_hatti(
         [
-            _set_komutu(KOMUT_KAYIT_ONEKI + yuk["id"], _kayit_metni(kayit), KOMUT_SAKLAMA_SN),
+            _set_komutu(KOMUT_KAYIT_ONEKI + kimlik, _kayit_metni(kayit), KOMUT_SAKLAMA_SN),
             ["RPUSH", KOMUT_SIRA_ANAHTARI, _kayit_metni(yuk)],
             ["EXPIRE", KOMUT_SIRA_ANAHTARI, str(KOMUT_SAKLAMA_SN)],
-            ["LPUSH", KOMUT_SON_ANAHTARI, yuk["id"]],
+            ["LPUSH", KOMUT_SON_ANAHTARI, kimlik],
             ["LTRIM", KOMUT_SON_ANAHTARI, "0", str(KOMUT_SON_SAYISI - 1)],
             ["EXPIRE", KOMUT_SON_ANAHTARI, str(KOMUT_SAKLAMA_SN)],
+            [
+                "LPUSH",
+                KAYIT_ANAHTARI,
+                _kayit_metni(_islem_satiri(simdi, kim["ad"], kim["rol"], "komut", ozet, "tamam")),
+            ],
+            ["LTRIM", KAYIT_ANAHTARI, "0", str(KAYIT_EN_COK - 1)],
             _set_komutu(KOMUT_ISARET_ANAHTARI, "1", KOMUT_GECERLILIK_SN),
             _set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
         ]
     )
-    return komut_gorunumu(kayit, simdi)
+    return komut_gorunumu(kayit, simdi, ek_goster=(kim["rol"] == "yonetici"))
 
 
-def sonuclari_yaz(depo: UpstashDepo | BellekDepo, ham: object, simdi: float) -> None:
-    """Fabrikanın bildirdiği sonuçlar. Yalnız bekleyen ya da iletilmiş komutun
-    sonucu yazılır; bitmiş bir komut yeniden açılmaz."""
-    sonuclar: dict[str, tuple[str, str]] = {}
-    for oge in _liste(ham, 10):
+def sonuclari_yaz(depo: UpstashDepo | BellekDepo, ham: object, simdi: float) -> list[str]:
+    """Fabrikanın bildirdiği sonuçlar (en çok 10). Yalnız bekleyen, iletilmiş ya
+    da süren komutun sonucu yazılır; bitmiş bir komut yeniden açılmaz. Döner:
+    `alinan` = yazılan ya da zaten bitmiş bulunan kimlikler (program kalıcı sonuç
+    dosyasını ancak burada görünce siler, docs/19 §3.7)."""
+    sonuclar: list[tuple[str, str, str, str]] = []
+    for oge in _liste(ham, KOMUT_SONUC_EN_COK):
         if not isinstance(oge, dict) or not _komut_kimligi_mi(oge.get("id")):
             continue
-        durum = _secim(oge.get("durum"), ("yapildi", "hata"))
+        durum = _secim(oge.get("durum"), ("yapildi", "hata", "suruyor"))
         if durum:
-            sonuclar[oge["id"]] = (durum, _metin(oge.get("mesaj"), 300))
+            sonuclar.append(
+                (oge["id"], durum, _metin(oge.get("mesaj"), 300), _ek_temizle(oge.get("ek")))
+            )
     if not sonuclar:
-        return
-    kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + kimlik for kimlik in sonuclar])
-    yazilacak = []
-    for (kimlik, (durum, mesaj)), ham_kayit in zip(sonuclar.items(), kayitlar, strict=True):
+        return []
+    kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + s[0] for s in sonuclar])
+    alinan, yazilacak, kayit_satirlari = [], [], []
+    for (kimlik, durum, mesaj, ek), ham_kayit in zip(sonuclar, kayitlar, strict=True):
         kayit = _json_sozluk(ham_kayit)
-        if kayit is None or kayit.get("durum") not in ("bekliyor", "iletildi"):
+        if kayit is None:
+            alinan.append(kimlik)  # kaydı yok (süresi dolmuş): program dosyayı silebilir
+            continue
+        if kayit.get("durum") in KOMUT_BITMIS:
+            alinan.append(kimlik)  # zaten bitmiş: idempotent onay
+            continue
+        if kayit.get("durum") not in ("bekliyor", "iletildi", "suruyor"):
             continue
         kayit.update(durum=durum, mesaj=mesaj, guncellendi=int(simdi))
+        if ek and _secim(kayit.get("tur"), KOMUT_TURLERI) == "teshis":
+            kayit["ek"] = ek  # ek yalnız teşhis sonucunda tutulur (docs/19 §3.7)
         yazilacak.append(
             _set_komutu(KOMUT_KAYIT_ONEKI + kimlik, _kayit_metni(kayit), KOMUT_SAKLAMA_SN)
         )
+        alinan.append(kimlik)
+        if (
+            durum in ("yapildi", "hata")
+            and _secim(kayit.get("tur"), KOMUT_TURLERI) in YONETIM_TURLERI
+        ):
+            kayit_satirlari.append(
+                _islem_satiri(
+                    simdi,
+                    "fabrika",
+                    "",
+                    "komut_sonuc",
+                    kayit.get("ozet", ""),
+                    "tamam" if durum == "yapildi" else "hata",
+                )
+            )
     if yazilacak:
         depo.boru_hatti(yazilacak)
+    for satir in kayit_satirlari:
+        kayit_yaz(depo, KAYIT_ANAHTARI, satir, KAYIT_EN_COK)
+    return alinan
 
 
 def _komut_yuku(ham: object) -> dict | None:
+    """Kuyruktaki ham komutu (ya da bir sözleşme örneğini) alan alan okur:
+    başka alan geçmez (docs/19 §3.7)."""
     yuk = _json_sozluk(ham)
     if yuk is None or not _komut_kimligi_mi(yuk.get("id")):
         return None
@@ -1024,16 +1423,52 @@ def _komut_yuku(ham: object) -> dict | None:
     son = yuk.get("son_gecerlilik")
     if not tur or isinstance(son, bool) or not isinstance(son, int):
         return None
-    temiz = {"id": yuk["id"], "tur": tur, "kanal_id": _kimlik(yuk.get("kanal_id"))}
-    if tur == "anons":
-        temiz["mesaj_id"] = _kimlik(yuk.get("mesaj_id"))
-    return {**temiz, "son_gecerlilik": son}
+    temiz: dict = {
+        "id": yuk["id"],
+        "tur": tur,
+        "son_gecerlilik": son,
+        "kim": _kim_sakla(yuk.get("kim")),
+    }
+    if tur in ("anons", "ses_dene"):
+        temiz["kanal_id"] = _kimlik(yuk.get("kanal_id"))
+        if tur == "anons":
+            temiz["mesaj_id"] = _kimlik(yuk.get("mesaj_id"))
+    elif tur == "olay_incele":
+        temiz["olay_id"] = _kimlik(yuk.get("olay_id"))
+        temiz["olay_zaman"] = (
+            yuk.get("olay_zaman") if isinstance(yuk.get("olay_zaman"), str) else ""
+        )
+        temiz["karar"] = _secim(yuk.get("karar"), ("reviewed", "false_alarm"))
+    return temiz
+
+
+def _kim_sakla(ham: object) -> dict:
+    """Komutun istek sahibi {ad, rol} (yük ve kayıtta saklanan biçim)."""
+    ham = _sozluk(ham)
+    ad = ham.get("ad")
+    return {
+        "ad": ad if isinstance(ad, str) and (ad == KURUCU_AD or _ad_gecerli_mi(ad)) else "",
+        "rol": _secim(ham.get("rol"), ROLLER),
+    }
+
+
+def _teslim_yetkili(kim: dict, tur: str, hesaplar: dict) -> bool:
+    """Teslim anında: istek sahibi hâlâ var, açık ve rolü bu işe yetiyor mu
+    (docs/19 §3.5)."""
+    ad = kim.get("ad")
+    if ad == KURUCU_AD:
+        return _rol_yeterli("yonetici", tur)
+    hesap = hesaplar.get(ad)
+    if hesap is None or hesap.get("acik") is not True:
+        return False
+    return _rol_yeterli(_secim(hesap.get("rol"), ROLLER), tur)
 
 
 def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[list[dict], bool]:
     """Kuyruktan en çok YOKLAMA_TOPLU komutu alır (alınan komut kuyruktan
-    çıkar: fabrika yeniden başlasa bile aynı anons ikinci kez çalmaz).
-    Döner: (fabrikaya gidecek komutlar, sık sormaya devam etsin mi)."""
+    çıkar: fabrika yeniden başlasa bile aynı anons ikinci kez çalmaz). Teslimden
+    önce istek sahibinin yetkisi yeniden okunur; düşmüşse komut gönderilmez
+    (docs/19 §3.5). Döner: (fabrikaya gidecek komutlar, sık sormaya devam et mi)."""
     cikan, isaretler, _ = depo.boru_hatti(
         [
             ["LPOP", KOMUT_SIRA_ANAHTARI, str(YOKLAMA_TOPLU)],
@@ -1046,72 +1481,319 @@ def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[l
     if not yukler:
         return [], hizli
     kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + yuk["id"] for yuk in yukler])
-    teslim, yazilacak = [], []
+    adlar = sorted(
+        {yuk["kim"]["ad"] for yuk in yukler if yuk["kim"]["ad"] and yuk["kim"]["ad"] != KURUCU_AD}
+    )
+    hesap_ham = depo.al_coklu([KULLANICI_ONEKI + ad for ad in adlar]) if adlar else []
+    hesaplar = {ad: _json_sozluk(h) for ad, h in zip(adlar, hesap_ham, strict=True)}
+    teslim, yazilacak, dusen = [], [], []
     for yuk, ham_kayit in zip(yukler, kayitlar, strict=True):
         kayit = _json_sozluk(ham_kayit)
         if kayit is None or kayit.get("durum") != "bekliyor":
-            continue  # kaydı olmayan komut yürütülmez
+            continue  # kaydı olmayan ya da bitmiş komut yürütülmez
         if simdi >= yuk["son_gecerlilik"]:
-            kayit.update(durum="suresi_doldu", mesaj=SURESI_DOLDU_METNI)
+            kayit.update(durum="suresi_doldu", mesaj=SURESI_DOLDU_METNI, guncellendi=int(simdi))
+        elif not _teslim_yetkili(yuk["kim"], yuk["tur"], hesaplar):
+            kayit.update(
+                durum="hata",
+                mesaj="İsteyen hesabın yetkisi kalmadı; gönderilmedi.",
+                guncellendi=int(simdi),
+            )
+            dusen.append(
+                _islem_satiri(
+                    simdi,
+                    yuk["kim"]["ad"],
+                    yuk["kim"]["rol"],
+                    "komut_dustu",
+                    kayit.get("ozet", ""),
+                    "hata",
+                )
+            )
         else:
-            kayit["durum"] = "iletildi"
+            kayit.update(durum="iletildi", iletildi=int(simdi), guncellendi=int(simdi))
             teslim.append({**yuk, "kalan_sn": int(yuk["son_gecerlilik"] - simdi)})
-        kayit["guncellendi"] = int(simdi)
         yazilacak.append(
             _set_komutu(KOMUT_KAYIT_ONEKI + yuk["id"], _kayit_metni(kayit), KOMUT_SAKLAMA_SN)
         )
     if yazilacak:
         depo.boru_hatti(yazilacak)
+    for satir in dusen:
+        kayit_yaz(depo, KAYIT_ANAHTARI, satir, KAYIT_EN_COK)
     return teslim, hizli
 
 
 # -------------------------------------------------------------------- oturum
 
 
+ONIZLEME_METNI = (
+    "Bu bir önizleme yayını; fabrikaya komut ve hesap değişikliği yalnız ana adresten yapılır."
+)
+SIFRE_DEGISMELI_METNI = "Önce Sistem > Hesabım'dan şifrenizi değiştirin; sonra yeniden deneyin."
+OTURUM_KAPANDI_METNI = "Oturumunuz kapandı; yeniden giriş yapın."
+GIRIS_GEREKLI_METNI = "Panoyu görmek için giriş yapın."
+GIRIS_HATALI_METNI = "Kullanıcı adı ya da şifre yanlış."
+
+
+def onizleme_mi() -> bool:
+    """Önizleme (preview) yayını mı? VERCEL_ENV tanımlı ama production değilse
+    komut ve hesap değişikliği yapılmaz (docs/19 §3.1). Yerel sunucuda yoktur."""
+    ortam = os.environ.get("VERCEL_ENV", "")
+    return bool(ortam) and ortam != "production"
+
+
+# ------------------------------------------------------------------- şifre
+
+
+# scrypt'in bellek sınırı açıkça verilir: varsayılan (0) bazı OpenSSL
+# derlemelerinde n=2^14 için ValueError verir ve özet ile doğrulama aynı sınırı
+# kullanmazsa giriş kırılır. 64 MB, n=2^14'ün ~16 MB'ını rahatça karşılar.
+SCRYPT_MAXMEM = 64 * 1024 * 1024
+
+
+def sifre_ozetle(sifre: str) -> dict:
+    """Şifrenin tuzlu özeti (docs/19 §3.1). scrypt yoksa pbkdf2'ye düşer."""
+    tuz = secrets.token_bytes(16)
+    ham = sifre.encode("utf-8")
+    try:
+        ozet = hashlib.scrypt(ham, salt=tuz, n=2**14, r=8, p=1, dklen=32, maxmem=SCRYPT_MAXMEM)
+    except (ValueError, MemoryError):
+        ozet = hashlib.pbkdf2_hmac("sha256", ham, tuz, 600000, dklen=32)
+        return {
+            "alg": "pbkdf2",
+            "iter": 600000,
+            "tuz": base64.b64encode(tuz).decode(),
+            "ozet": base64.b64encode(ozet).decode(),
+        }
+    return {
+        "alg": "scrypt",
+        "n": 2**14,
+        "r": 8,
+        "p": 1,
+        "tuz": base64.b64encode(tuz).decode(),
+        "ozet": base64.b64encode(ozet).decode(),
+    }
+
+
+def sifre_dogrula(kayit_sifre: object, sifre: str) -> bool:
+    """Sabit süreli doğrulama. Kayıttaki parametreler, kullanmadan önce güvenli
+    aralığa sınırlanır (ele geçen bir kayıt büyük n ile belleği doldurmasın)."""
+    kayit_sifre = _sozluk(kayit_sifre)
+    try:
+        tuz = base64.b64decode(kayit_sifre.get("tuz", ""), validate=True)
+        beklenen = base64.b64decode(kayit_sifre.get("ozet", ""), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    if not tuz or not beklenen:
+        return False
+    ham = sifre.encode("utf-8")
+    alg = kayit_sifre.get("alg")
+    if alg == "scrypt":
+        n = _tam(kayit_sifre.get("n"), 2**14, 2**17, varsayilan=2**14)
+        r = _tam(kayit_sifre.get("r"), 8, 8, varsayilan=8)
+        p = _tam(kayit_sifre.get("p"), 1, 1, varsayilan=1)
+        try:
+            hesap = hashlib.scrypt(
+                ham, salt=tuz, n=n, r=r, p=p, dklen=len(beklenen), maxmem=SCRYPT_MAXMEM
+            )
+        except (ValueError, MemoryError):
+            return False
+    elif alg == "pbkdf2":
+        tekrar = _tam(kayit_sifre.get("iter"), 600000, 2_000_000, varsayilan=600000)
+        hesap = hashlib.pbkdf2_hmac("sha256", ham, tuz, tekrar, dklen=len(beklenen))
+    else:
+        return False
+    return hmac.compare_digest(hesap, beklenen)
+
+
+_SAHTE_KAYIT: dict | None = None
+
+
+def _sahte_dogrula(sifre: object) -> None:
+    """Bilinmeyen ad ve kurucuda da gerçek hesapla aynı maliyette çalışır:
+    varlık, zamanlamadan sızmaz (docs/19 §3.2)."""
+    global _SAHTE_KAYIT
+    if _SAHTE_KAYIT is None:
+        _SAHTE_KAYIT = sifre_ozetle("sahte-parola-zaman-esitleme")
+    sifre_dogrula(_SAHTE_KAYIT, sifre if isinstance(sifre, str) else "")
+
+
+# ------------------------------------------------------------------ hesap
+
+
+def _ad_gecerli_mi(ad: object) -> bool:
+    return isinstance(ad, str) and AD_DESENI.fullmatch(ad) is not None
+
+
+def ad_duzelt(ham: object) -> str:
+    """Baştaki/sondaki boşluk atılır, küçük harfe çevrilir (docs/19 §3.1)."""
+    return ham.strip().lower() if isinstance(ham, str) else ""
+
+
+def hesap_oku(depo: UpstashDepo | BellekDepo, ad: str) -> dict | None:
+    (ham,) = depo.al_coklu([KULLANICI_ONEKI + ad])
+    return _json_sozluk(ham)
+
+
+def _oturum_surumu_arttir(depo: UpstashDepo | BellekDepo, ad: str) -> None:
+    """Hesabın bütün oturumlarını düşürür: oturum sürümü bir artar (docs/19 §3.1)."""
+    hesap = hesap_oku(depo, ad)
+    if hesap is None:
+        return
+    hesap["oturum_surumu"] = _tam(hesap.get("oturum_surumu"), 0, 10**12) + 1
+    depo.boru_hatti([_set_komutu(KULLANICI_ONEKI + ad, _kayit_metni(hesap), None)])
+
+
+# ------------------------------------------------------------------ oturum
+
+
 def _oturum_anahtari(ayar: Ayar) -> bytes:
     """Çerez imzasının anahtarı şifreden VE rapor anahtarından türer: ele geçen
-    bir çerezle şifre çevrimdışı denenemez, şifre değişince bütün oturumlar düşer."""
+    bir çerezle şifre çevrimdışı denenemez, kurucu şifresi değişince bütün
+    oturumlar düşer."""
     return hashlib.sha256(
         f"dalsan-pano-oturum|{ayar.pano_sifresi}|{ayar.rapor_anahtari}".encode()
     ).digest()
 
 
-def cerez_uret(ayar: Ayar, simdi: float) -> str:
-    bitis = str(int(simdi) + OTURUM_SURESI_SN)
-    imza = hmac.new(_oturum_anahtari(ayar), bitis.encode(), hashlib.sha256).hexdigest()
-    return f"{bitis}.{imza}"
+def _cerez_imzasi(ayar: Ayar, ad: str, kimlik: str, surum: int, bitis: int) -> str:
+    govde = f"v2|{ad}|{kimlik}|{surum}|{bitis}"
+    return hmac.new(_oturum_anahtari(ayar), govde.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def cerez_gecerli_mi(ayar: Ayar, deger: str, simdi: float) -> bool:
-    bitis, _, imza = deger.partition(".")
-    if not _rakam_mi(bitis) or int(bitis) <= simdi:
-        return False
-    beklenen = hmac.new(_oturum_anahtari(ayar), bitis.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(beklenen.encode(), imza.encode("utf-8", "replace"))
+def cerez_uret(ayar: Ayar, ad: str, kimlik: str, surum: int, simdi: float) -> str:
+    """v2 çerezi: ad nokta içerebilir; çözüm sağdan dört parçayı ayırır."""
+    bitis = int(simdi) + OTURUM_SURESI_SN
+    imza = _cerez_imzasi(ayar, ad, kimlik, surum, bitis)
+    return f"v2.{ad}.{kimlik}.{surum}.{bitis}.{imza}"
 
 
 def cerez_basligi(deger: str, sure_sn: int) -> str:
     return f"{CEREZ_ADI}={deger}; Max-Age={sure_sn}; Path=/; HttpOnly; Secure; SameSite=Strict"
 
 
+def _cerez_coz(deger: str) -> tuple[str, str, int, int, str] | None:
+    """Biçim denetimi (imza değil): (ad, hesap_kimligi, oturum_surumu, bitis, imza)."""
+    if not deger.startswith("v2."):
+        return None
+    parcalar = deger[3:].rsplit(".", 4)  # ad nokta içerebilir
+    if len(parcalar) != 5:
+        return None
+    ad, kimlik, surum, bitis, imza = parcalar
+    if not ad or not _rakam_mi(surum) or not _rakam_mi(bitis):
+        return None
+    return ad, kimlik, int(surum), int(bitis), imza
+
+
+@dataclass(frozen=True)
+class Oturum:
+    ad: str
+    rol: str
+    hesap_kimligi: str
+    oturum_surumu: int
+    kurucu: bool
+    sifre_degismeli: bool
+    imza: str
+    bitis: int
+
+
+def oturum_ozeti(oturum: Oturum) -> dict:
+    return {
+        "ad": oturum.ad,
+        "rol": oturum.rol,
+        "rol_adi": ROL_ADLARI.get(oturum.rol, ""),
+        "kurucu": oturum.kurucu,
+        "sifre_degismeli": oturum.sifre_degismeli,
+    }
+
+
+def _iptal_anahtari(imza: str) -> str:
+    return OTURUM_IPTAL_ONEKI + hashlib.sha256(imza.encode()).hexdigest()[:32]
+
+
+def oturum_coz(depo: UpstashDepo | BellekDepo, ayar: Ayar, deger: str, simdi: float) -> Oturum:
+    """Çerezi doğrular ve geçerli oturumu döndürür; rol her istekte kayıttan
+    okunur (docs/19 §3.2). Geçersiz çerez: 401 giris_gerekli; süresi dolmuş,
+    iptal, hesap yok / kapalı / sürüm tutmuyor: 401 oturum_kapandi."""
+    cozum = _cerez_coz(deger)
+    if cozum is None:
+        raise PanoHatasi(401, "giris_gerekli", GIRIS_GEREKLI_METNI)
+    ad, kimlik, surum, bitis, imza = cozum
+    beklenen = _cerez_imzasi(ayar, ad, kimlik, surum, bitis)
+    if not hmac.compare_digest(beklenen.encode(), imza.encode("utf-8", "replace")):
+        raise PanoHatasi(401, "giris_gerekli", GIRIS_GEREKLI_METNI)
+    if bitis <= simdi:
+        raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+    iptal_anahtari = _iptal_anahtari(imza)
+    if ad == KURUCU_AD:
+        (iptal,) = depo.al_coklu([iptal_anahtari])
+        if iptal or kimlik != "kurucu" or surum != 0:
+            raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+        return Oturum(KURUCU_AD, "yonetici", "kurucu", 0, True, False, imza, bitis)
+    hesap_ham, iptal = depo.al_coklu([KULLANICI_ONEKI + ad, iptal_anahtari])
+    hesap = _json_sozluk(hesap_ham)
+    if (
+        hesap is None
+        or hesap.get("acik") is not True
+        or iptal
+        or hesap.get("hesap_kimligi") != kimlik
+        or _tam(hesap.get("oturum_surumu"), 0, 10**12) != surum
+    ):
+        raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+    rol = _secim(hesap.get("rol"), ROLLER) or "izleyici"
+    return Oturum(ad, rol, kimlik, surum, False, hesap.get("sifre_degismeli") is True, imza, bitis)
+
+
+# ------------------------------------------------------------------ kilit, giriş
+
+
+def _adres_normal(adres: str) -> str:
+    """IPv6 adreste /64 öneki sayılır (docs/19 §3.2): aynı /64'ten denemeler
+    tek sayaçta toplanır."""
+    try:
+        ip = ipaddress.ip_address(adres.strip())
+    except ValueError:
+        return adres.strip()
+    if ip.version == 6:
+        ag = ipaddress.ip_network(f"{ip}/64", strict=False)
+        return f"{ag.network_address}/64"
+    return str(ip)
+
+
 def _adres_anahtari(adres: str) -> str:
     """Kilit sayacının anahtarı. IP adresi kişisel veridir: depoya kendisi
     değil, geri çevrilemeyen özeti yazılır (ve 5 dakika sonra silinir)."""
-    return GIRIS_ADRES_ONEKI + hashlib.sha256(adres.encode()).hexdigest()[:24]
+    return GIRIS_ADRES_ONEKI + hashlib.sha256(_adres_normal(adres).encode()).hexdigest()[:24]
+
+
+def _ad_kilit_anahtari(ad: str) -> str:
+    return GIRIS_AD_ONEKI + hashlib.sha256(ad.encode()).hexdigest()[:24]
 
 
 def giris_dene(
-    depo: UpstashDepo | BellekDepo, ayar: Ayar, adres: str, sifre: str, simdi: float
-) -> None:
-    """Şifre doğruysa döner; yanlışsa ya da kilitliyse PanoHatasi."""
+    depo: UpstashDepo | BellekDepo, ayar: Ayar, adres: str, ad_ham: str, sifre: str, simdi: float
+) -> tuple[str, str, int]:
+    """Giriş: doğruysa (ad, hesap_kimligi, oturum_surumu); değilse PanoHatasi.
+    Üç kilit de şifreden önce okunur; başarılı giriş adres sayacını silmez
+    (süresi dolar). Kurucu ve bilinmeyen adda da aynı maliyette sahte özet
+    çalışır (docs/19 §3.2)."""
+    ad = ad_duzelt(ad_ham)
     adres_anahtari = _adres_anahtari(adres)
-    adres_sayisi, genel_sayisi = depo.al_coklu([adres_anahtari, GIRIS_GENEL_ANAHTARI])
+    ad_anahtari = _ad_kilit_anahtari(ad)
+    adres_sayisi, ad_sayisi, genel_sayisi, hesap_ham = depo.al_coklu(
+        [adres_anahtari, ad_anahtari, GIRIS_GENEL_ANAHTARI, KULLANICI_ONEKI + ad]
+    )
     if int(adres_sayisi or 0) >= KILIT_DENEME:
         raise PanoHatasi(
             429,
             "kilitli",
             f"Bu adresten çok fazla yanlış deneme yapıldı. {KILIT_SURESI_SN // 60} dakika "
             "sonra yeniden deneyin.",
+        )
+    if int(ad_sayisi or 0) >= AD_KILIT_DENEME:
+        raise PanoHatasi(
+            429,
+            "ad_kilitli",
+            "Bu kullanıcı adıyla çok fazla yanlış deneme yapıldı. 15 dakika sonra yeniden deneyin.",
         )
     if int(genel_sayisi or 0) >= GENEL_KILIT_DENEME:
         raise PanoHatasi(
@@ -1120,16 +1802,83 @@ def giris_dene(
             "Kısa sürede çok fazla yanlış deneme geldi; giriş bir süre kapalı. "
             f"{GENEL_KILIT_SURESI_SN // 60} dakika sonra yeniden deneyin.",
         )
-    dogru = hmac.compare_digest(
-        hashlib.sha256(sifre.encode("utf-8")).digest(),
-        hashlib.sha256(ayar.pano_sifresi.encode("utf-8")).digest(),
-    )
-    if not dogru:
+    hesap = _json_sozluk(hesap_ham)
+    oturum_bilgi: tuple[str, str, int] | None = None
+    rol = ""
+    if ad == KURUCU_AD:
+        _sahte_dogrula(sifre)
+        if bool(ayar.pano_sifresi) and hmac.compare_digest(
+            sifre.encode("utf-8"), ayar.pano_sifresi.encode("utf-8")
+        ):
+            oturum_bilgi, rol = (KURUCU_AD, "kurucu", 0), "yonetici"
+    elif hesap is not None and _ad_gecerli_mi(ad) and hesap.get("acik") is True:
+        if sifre_dogrula(hesap.get("sifre"), sifre):
+            oturum_bilgi = (
+                ad,
+                hesap.get("hesap_kimligi", ""),
+                _tam(hesap.get("oturum_surumu"), 0, 10**12),
+            )
+            rol = _secim(hesap.get("rol"), ROLLER)
+    else:
+        _sahte_dogrula(sifre)
+    if oturum_bilgi is None:
         depo.say(adres_anahtari, KILIT_SURESI_SN)
+        depo.say(ad_anahtari, AD_KILIT_SURESI_SN)
         depo.say(GIRIS_GENEL_ANAHTARI, GENEL_KILIT_SURESI_SN)
-        raise PanoHatasi(401, "sifre_yanlis", "Şifre yanlış.")
-    if adres_sayisi:
-        depo.sil(adres_anahtari)
+        # Hatalı giriş kaydı: kim yalnız var olan hesapsa yazılır (bilinmeyen ad yazılmaz)
+        kim = ad if (ad == KURUCU_AD or hesap is not None) else ""
+        kim_rol = (
+            ("yonetici" if ad == KURUCU_AD else _secim(_sozluk(hesap).get("rol"), ROLLER))
+            if kim
+            else ""
+        )
+        kayit_yaz(
+            depo,
+            KAYIT_GIRIS_ANAHTARI,
+            _islem_satiri(simdi, kim, kim_rol, "giris_hatali", "", "hata"),
+            KAYIT_GIRIS_EN_COK,
+        )
+        raise PanoHatasi(401, "giris_hatali", GIRIS_HATALI_METNI)
+    if ad != KURUCU_AD:
+        depo.yaz_coklu([(SON_GIRIS_ONEKI + ad, str(int(simdi)), None)])
+    kayit_yaz(
+        depo,
+        KAYIT_OTURUM_ANAHTARI,
+        _islem_satiri(simdi, ad, rol, "giris", "", "tamam"),
+        KAYIT_EN_COK,
+    )
+    return oturum_bilgi
+
+
+def _onay_hatasi_isle(
+    depo: UpstashDepo | BellekDepo, oturum: Oturum, istek: Isleyici, kurucu: bool
+) -> None:
+    """Yanlış onay / eski şifre: adres ve ad kilit sayaçlarına girer; hesapta 15
+    dakikada 5 kez yanlışta bütün oturumlar düşer (docs/19 §3.1-§3.2)."""
+    depo.say(_adres_anahtari(istek.istemci_adresi()), KILIT_SURESI_SN)
+    depo.say(_ad_kilit_anahtari(oturum.ad), AD_KILIT_SURESI_SN)
+    if not kurucu:
+        if depo.say(ONAY_HATA_ONEKI + oturum.ad, ONAY_HATA_SURESI_SN) >= ONAY_HATA_SINIR:
+            _oturum_surumu_arttir(depo, oturum.ad)
+
+
+def onay_sifresi_dogrula(
+    depo: UpstashDepo | BellekDepo, ayar: Ayar, oturum: Oturum, istek: Isleyici, sifre_ham: object
+) -> None:
+    """Ağır işler ve hesap işleri işi yapanın KENDİ şifresini ister (kurucuda
+    PANO_SIFRESI). Yanlışsa 400 onay_sifresi ve kilit sayaçlarına girer."""
+    sifre = sifre_ham if isinstance(sifre_ham, str) else ""
+    if oturum.kurucu:
+        dogru = bool(ayar.pano_sifresi) and hmac.compare_digest(
+            sifre.encode("utf-8"), ayar.pano_sifresi.encode("utf-8")
+        )
+    else:
+        hesap = hesap_oku(depo, oturum.ad)
+        dogru = hesap is not None and sifre_dogrula(hesap.get("sifre"), sifre)
+    if dogru:
+        return
+    _onay_hatasi_isle(depo, oturum, istek, oturum.kurucu)
+    raise PanoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.")
 
 
 # ------------------------------------------------------------ istek işleyici
@@ -1308,67 +2057,435 @@ def rapor_al(istek: Isleyici) -> tuple[int, dict, str | None]:
 
 def komut_al(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/komut - fabrika programı sonuçları bildirir ve bekleyen
-    komutları alır. İstek de cevap da RAPOR_ANAHTARI ile imzalıdır."""
+    komutları alır. İstek de cevap da RAPOR_ANAHTARI ile imzalıdır. Cevap,
+    istekteki `nonce`'u taşır (yeniden oynatma koruması) ve `alinan` ile hangi
+    sonuçların yazıldığını söyler (docs/19 §3.7)."""
     ayar, ham, simdi = _fabrika_istegi(istek, KOMUT_EN_BUYUK_BAYT)
     if not isinstance(ham, dict) or ham.get("surum") != RAPOR_SURUMU:
         raise PanoHatasi(400, "bicim", "Komut isteğinin biçimi tanınmadı.")
+    nonce = ham.get("nonce")
+    nonce = nonce if isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce) else ""
     istek.yanit_anahtari = ayar.rapor_anahtari
     depo = depo_al(ayar)
-    sonuclari_yaz(depo, ham.get("sonuclar"), simdi)
+    alinan = sonuclari_yaz(depo, ham.get("sonuclar"), simdi)
     komutlar, hizli = komutlari_teslim_et(depo, simdi)
-    return 200, {"tamam": True, "komutlar": komutlar, "hizli": hizli}, None
+    return (
+        200,
+        {"tamam": True, "nonce": nonce, "alinan": alinan, "komutlar": komutlar, "hizli": hizli},
+        None,
+    )
 
 
 def giris(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/giris - {"sifre": "..."} doğruysa oturum çerezi verir."""
+    """POST /api/giris - {"ad", "sifre"} doğruysa oturum çerezi verir."""
     ayar = ayar_oku()
     kurulum_tamam_mi(ayar)
-    sifre = istek.json_govdesi(GIRIS_EN_BUYUK_BAYT).get("sifre")
-    if not isinstance(sifre, str) or not sifre:
-        raise PanoHatasi(400, "sifre_bos", "Şifreyi yazın.")
+    govde = istek.json_govdesi(GIRIS_EN_BUYUK_BAYT)
+    ad, sifre = govde.get("ad"), govde.get("sifre")
+    if not isinstance(ad, str) or not isinstance(sifre, str) or not ad or not sifre:
+        raise PanoHatasi(400, "giris_eksik", "Kullanıcı adı ve şifre gerekir.")
     simdi = time.time()
-    giris_dene(depo_al(ayar), ayar, istek.istemci_adresi(), sifre, simdi)
-    return 200, {"tamam": True}, cerez_basligi(cerez_uret(ayar, simdi), OTURUM_SURESI_SN)
+    ad_son, kimlik, surum = giris_dene(
+        depo_al(ayar), ayar, istek.istemci_adresi(), ad, sifre, simdi
+    )
+    cerez = cerez_uret(ayar, ad_son, kimlik, surum, simdi)
+    return 200, {"tamam": True}, cerez_basligi(cerez, OTURUM_SURESI_SN)
 
 
 def cikis(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/cikis - oturum çerezini siler."""
+    """POST /api/cikis - oturum çerezini siler ve bu cihazın oturumunu iptal
+    eder (docs/19 §3.2). Bozuk çerezde de çerez silinir."""
+    ayar = ayar_oku()
+    simdi = time.time()
+    cozum = _cerez_coz(istek.cerez_al(CEREZ_ADI))
+    if cozum is not None:
+        ad, kimlik, surum, bitis, imza = cozum
+        beklenen = _cerez_imzasi(ayar, ad, kimlik, surum, bitis)
+        if (
+            hmac.compare_digest(beklenen.encode(), imza.encode("utf-8", "replace"))
+            and bitis > simdi
+        ):
+            try:
+                depo = depo_al(ayar)
+                depo.yaz_coklu([(_iptal_anahtari(imza), "1", max(1, int(bitis - simdi)))])
+                kayit_yaz(
+                    depo,
+                    KAYIT_OTURUM_ANAHTARI,
+                    _islem_satiri(simdi, ad, "", "cikis", "", "tamam"),
+                    KAYIT_EN_COK,
+                )
+            except DepoHatasi:
+                pass  # çerez yine silinir; iptal yazımı en iyi çabadır
     return 200, {"tamam": True}, cerez_basligi("", 0)
 
 
-def _oturumlu(istek: Isleyici) -> tuple[Ayar, float]:
+def _oturumlu(istek: Isleyici) -> tuple[Ayar, float, Oturum]:
     ayar = ayar_oku()
     kurulum_tamam_mi(ayar)
     simdi = time.time()
-    if not cerez_gecerli_mi(ayar, istek.cerez_al(CEREZ_ADI), simdi):
-        raise PanoHatasi(401, "giris_gerekli", "Panoyu görmek için giriş yapın.")
-    return ayar, simdi
+    oturum = oturum_coz(depo_al(ayar), ayar, istek.cerez_al(CEREZ_ADI), simdi)
+    return ayar, simdi, oturum
 
 
 def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """GET /api/durum - panonun verisi; oturum ister. `?mudahale=1`: Müdahale
-    ekranı açık; son komutlar da gelir ve fabrika sık sormaya başlar.
-    `?kare=1`: Kameralar ekranı açık; kameraların son görüntüsünün zamanı da
-    gelir ve fabrika anlık görüntü göndermeye başlar."""
-    ayar, simdi = _oturumlu(istek)
+    """GET /api/durum - panonun verisi; oturum ister. Rol süzgeci: izleyici
+    bilgisayarın IP'sini, adını ve fabrika adresini ve yönetim bloğunu görmez;
+    yönetim bloğunu yalnız yönetici görür (docs/19 §1). `?mudahale=1` (operatör+)
+    ve `?yonetim=1` (yönetici): son komutlar gelir ve fabrika sık sorar.
+    `?kare=1`: Kameralar ekranı açık; görüntü zamanları gelir."""
+    ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
     veri = pano_verisi(depo, ayar, simdi)
-    if istek.sorgu("mudahale") == "1":
-        veri["mudahale"] = mudahale_verisi(depo, simdi, izliyor=True)
+    veri["oturum"] = oturum_ozeti(oturum)
+    veri["onizleme"] = onizleme_mi()
+    rapor = veri.get("rapor")
+    if oturum.rol != "yonetici" and isinstance(rapor, dict):
+        rapor.pop("yonetim", None)  # yönetim bloğunu yalnız yönetici görür
+    if oturum.rol == "izleyici":
+        veri["fabrika_adresi"] = ""
+        if isinstance(rapor, dict) and isinstance(rapor.get("bilgisayar"), dict):
+            for alan in ("ip", "bilgisayar_adi"):
+                rapor["bilgisayar"].pop(alan, None)
+    istiyor_mudahale = istek.sorgu("mudahale") == "1" and oturum.rol in ("operator", "yonetici")
+    istiyor_yonetim = istek.sorgu("yonetim") == "1" and oturum.rol == "yonetici"
+    if istiyor_mudahale or istiyor_yonetim:
+        veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.rol, izliyor=True)
     if istek.sorgu("kare") == "1":
         veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"))
     return 200, veri, None
 
 
-def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/mudahale - {"tur": "anons", "mesaj_id": 3, "kanal_id": null}
-    ya da {"tur": "ses_dene", "kanal_id": 2}; oturum ister."""
-    ayar, simdi = _oturumlu(istek)
+def _durum_degistiren(istek: Isleyici, en_az_rol: str) -> tuple[Ayar, float, Oturum, dict]:
+    """Durum değiştiren POST'ların ortak sırası (docs/19 §3.4): oturum (401) ->
+    en az rol (403 yetki) -> köken (403 koken) -> JSON (415). JSON gövdeyi döner;
+    sifre_degismeli, önizleme ve işe özgü denetimler çağırana bırakılır."""
+    ayar, simdi, oturum = _oturumlu(istek)
+    sira = {"izleyici": 0, "operator": 1, "yonetici": 2}
+    if sira.get(oturum.rol, -1) < sira[en_az_rol]:
+        raise PanoHatasi(403, "yetki", "Bu iş için yetkiniz yok.")
     istek.koken_dogrula()
     govde = istek.json_govdesi(KOMUT_EN_BUYUK_BAYT)
+    return ayar, simdi, oturum, govde
+
+
+def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/mudahale - anons, ses_dene, olay_incele (operatör+); teshis,
+    yeniden_baslat, guncelle (yönetici). Ağır işler onay şifresi ister."""
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, "operator")
+    if oturum.sifre_degismeli:
+        raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)
+    if onizleme_mi():
+        raise PanoHatasi(409, "onizleme", ONIZLEME_METNI)
     depo = depo_al(ayar)
-    komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi)
+    tur = _secim(govde.get("tur"), KOMUT_TURLERI)
+    if tur in YONETIM_TURLERI and oturum.rol != "yonetici":
+        raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
+    if tur in AGIR_TURLERI:
+        onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
+    kim = {"ad": oturum.ad, "rol": oturum.rol}
+    komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi, kim)
     return 200, {"tamam": True, "komut": komut}, None
+
+
+# ------------------------------------------------------------------ hesaplar
+
+
+def _kullanici_satiri(kayit: dict, son: object) -> dict:
+    """GET /api/hesap kullanıcı satırı; özet, tuz, hesap_kimligi ASLA dönmez."""
+    rol = _secim(kayit.get("rol"), ROLLER) or "izleyici"
+    olusturuldu = _tam(kayit.get("olusturuldu"), 0, 10**12)
+    return {
+        "ad": _metin(kayit.get("ad"), 40),
+        "rol": rol,
+        "rol_adi": ROL_ADLARI.get(rol, ""),
+        "acik": kayit.get("acik") is True,
+        "kurucu": False,
+        "sifre_degismeli": kayit.get("sifre_degismeli") is True,
+        "olusturuldu": _iso(olusturuldu) if olusturuldu else None,
+        "son_giris": _iso(int(son)) if isinstance(son, str) and _rakam_mi(son) else None,
+    }
+
+
+def _kayit_gorunumu(kayit: dict) -> dict:
+    rol = _secim(kayit.get("rol"), ROLLER)
+    z = _tam(kayit.get("z"), 0, 10**12)
+    return {
+        "z": z,
+        "zaman": _iso(z),
+        "kim": _metin(kayit.get("kim"), 40),
+        "rol": rol,
+        "rol_adi": ROL_ADLARI.get(rol, ""),
+        "is": _metin(kayit.get("is"), 40),
+        "ozet": _metin(kayit.get("ozet"), 200),
+        "sonuc": _secim(kayit.get("sonuc"), ("tamam", "hata", "red")),
+    }
+
+
+def _kayit_birlesik(depo: UpstashDepo | BellekDepo) -> list[dict]:
+    """Üç işlem kaydı listesini zamana göre birleşik, en yeni başta (docs/19 §3.3)."""
+    listeler = depo.boru_hatti(
+        [
+            ["LRANGE", KAYIT_ANAHTARI, "0", str(KAYIT_BIRLESIK_EN_COK - 1)],
+            ["LRANGE", KAYIT_OTURUM_ANAHTARI, "0", str(KAYIT_BIRLESIK_EN_COK - 1)],
+            ["LRANGE", KAYIT_GIRIS_ANAHTARI, "0", str(KAYIT_BIRLESIK_EN_COK - 1)],
+        ]
+    )
+    satirlar = []
+    for ham_liste in listeler:
+        for ham in ham_liste if isinstance(ham_liste, list) else []:
+            kayit = _json_sozluk(ham)
+            if kayit is not None:
+                satirlar.append(_kayit_gorunumu(kayit))
+    satirlar.sort(key=lambda s: s["z"], reverse=True)
+    return satirlar[:KAYIT_BIRLESIK_EN_COK]
+
+
+def hesap_verisi(depo: UpstashDepo | BellekDepo, simdi: float) -> dict:
+    """Kullanıcı listesi (kurucu başta) ve işlem kaydı. Dizinde kaydı olmayan
+    adlar onarılır (yarım oluşturma / yarım silme; docs/19 §3.1)."""
+    ham_adlar = depo.komut("LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2))
+    adlar = [a for a in ham_adlar if isinstance(a, str)] if isinstance(ham_adlar, list) else []
+    kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
+    son_girisler = depo.al_coklu([SON_GIRIS_ONEKI + a for a in adlar]) if adlar else []
+    satirlar, eksik = [], []
+    for ad, ham, son in zip(adlar, kayitlar, son_girisler, strict=True):
+        kayit = _json_sozluk(ham)
+        if kayit is None:
+            eksik.append(ad)
+        else:
+            satirlar.append(_kullanici_satiri(kayit, son))
+    for ad in eksik:
+        depo.komut("LREM", KULLANICILAR_ANAHTARI, "0", ad)
+    kurucu = {
+        "ad": KURUCU_AD,
+        "rol": "yonetici",
+        "rol_adi": ROL_ADLARI["yonetici"],
+        "acik": True,
+        "kurucu": True,
+        "sifre_degismeli": False,
+        "olusturuldu": None,
+        "son_giris": None,
+    }
+    return {"kullanicilar": [kurucu, *satirlar], "kayit": _kayit_birlesik(depo)}
+
+
+def hesap_getir(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """GET /api/hesap - kullanıcılar ve işlem kaydı; yönetici."""
+    ayar, simdi, oturum = _oturumlu(istek)
+    if oturum.rol != "yonetici":
+        raise PanoHatasi(403, "yetki", "Bu sayfa için yönetici yetkisi gerekir.")
+    return 200, hesap_verisi(depo_al(ayar), simdi), None
+
+
+def _yeni_sifre_dogrula(yeni: object, ad: str) -> str:
+    if not isinstance(yeni, str) or len(yeni) < SIFRE_EN_AZ:
+        raise PanoHatasi(400, "sifre_kisa", f"Şifre en az {SIFRE_EN_AZ} karakter olmalı.")
+    if len(yeni) > SIFRE_EN_UZUN:
+        raise PanoHatasi(400, "sifre_uzun", f"Şifre en çok {SIFRE_EN_UZUN} karakter olabilir.")
+    if yeni == ad:
+        raise PanoHatasi(400, "sifre_ad_ayni", "Şifre kullanıcı adıyla aynı olamaz.")
+    return yeni
+
+
+def _hesap_sifre_degistir(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    oturum: Oturum,
+    govde: dict,
+    simdi: float,
+    istek: Isleyici,
+) -> tuple[int, dict, str | None]:
+    if oturum.kurucu:
+        raise PanoHatasi(
+            400,
+            "kurucu",
+            "Kurucu hesabının şifresi burada değişmez: Vercel'de Settings > Environment "
+            "Variables > PANO_SIFRESI'ni değiştirip Redeploy edin. Bütün oturumlar kapanır.",
+        )
+    hesap = hesap_oku(depo, oturum.ad)
+    if hesap is None:
+        raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+    eski = govde.get("eski_sifre")
+    if not sifre_dogrula(hesap.get("sifre"), eski if isinstance(eski, str) else ""):
+        _onay_hatasi_isle(depo, oturum, istek, kurucu=False)
+        raise PanoHatasi(400, "eski_sifre", "Eski şifreniz yanlış; işlem yapılmadı.")
+    yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), oturum.ad)
+    if (
+        depo.say(SIFRE_DEGISTIR_SAYAC_ONEKI + oturum.ad, SIFRE_DEGISTIR_PENCERESI_SN)
+        > SIFRE_DEGISTIR_SINIRI
+    ):
+        raise PanoHatasi(
+            429, "cok_sik", "Şifrenizi çok sık değiştirdiniz; bir saat sonra yeniden deneyin."
+        )
+    hesap["sifre"] = sifre_ozetle(yeni)
+    hesap["sifre_degismeli"] = False
+    hesap["oturum_surumu"] = _tam(hesap.get("oturum_surumu"), 0, 10**12) + 1
+    hesap["guncellendi"] = int(simdi)
+    depo.boru_hatti([_set_komutu(KULLANICI_ONEKI + oturum.ad, _kayit_metni(hesap), None)])
+    kayit_yaz(
+        depo,
+        KAYIT_ANAHTARI,
+        _islem_satiri(simdi, oturum.ad, oturum.rol, "sifre_degistir", "", "tamam"),
+        KAYIT_EN_COK,
+    )
+    yeni_cerez = cerez_uret(ayar, oturum.ad, hesap["hesap_kimligi"], hesap["oturum_surumu"], simdi)
+    return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
+
+
+def _hesap_ekle(
+    depo: UpstashDepo | BellekDepo, oturum: Oturum, ad: str, rol: str, govde: dict, simdi: float
+) -> tuple[int, dict, str | None]:
+    if not _ad_gecerli_mi(ad):
+        raise PanoHatasi(
+            400,
+            "ad_gecersiz",
+            "Kullanıcı adı 3-32 karakter; küçük harf, rakam, nokta, tire ve alt çizgi.",
+        )
+    if ad in AYRILMIS_ADLAR:
+        raise PanoHatasi(400, "ad_ayrilmis", "Bu ad sistemde kullanılıyor; başka bir ad seçin.")
+    if not rol:
+        raise PanoHatasi(400, "rol", "Rol seçilmedi.")
+    ilk_sifre = _yeni_sifre_dogrula(govde.get("ilk_sifre"), ad)
+    if depo.komut("LLEN", KULLANICILAR_ANAHTARI) >= HESAP_EN_COK:
+        raise PanoHatasi(409, "hesap_siniri", f"En çok {HESAP_EN_COK} hesap açılabilir.")
+    kimlik = secrets.token_hex(8)
+    kayit = {
+        "surum": HESAP_SURUMU,
+        "ad": ad,
+        "hesap_kimligi": kimlik,
+        "rol": rol,
+        "acik": True,
+        "sifre": sifre_ozetle(ilk_sifre),
+        "sifre_degismeli": True,
+        "oturum_surumu": 1,
+        "olusturuldu": int(simdi),
+        "olusturan": oturum.ad,
+        "guncellendi": int(simdi),
+    }
+    # Önce dizin (yarım kalsa listeleme onarır), sonra kayıt (NX: ad alınmışsa 409)
+    depo.boru_hatti(
+        [["LREM", KULLANICILAR_ANAHTARI, "0", ad], ["RPUSH", KULLANICILAR_ANAHTARI, ad]]
+    )
+    (alindi,) = depo.boru_hatti([["SET", KULLANICI_ONEKI + ad, _kayit_metni(kayit), "NX"]])
+    if alindi != "OK":
+        raise PanoHatasi(409, "ad_alinmis", "Bu kullanıcı adı zaten var.")
+    kayit_yaz(
+        depo,
+        KAYIT_ANAHTARI,
+        _islem_satiri(
+            simdi,
+            oturum.ad,
+            oturum.rol,
+            "hesap_ekle",
+            f"{ad} ({ROL_ADLARI.get(rol, rol)})",
+            "tamam",
+        ),
+        KAYIT_EN_COK,
+    )
+    return 200, {"tamam": True, "ad": ad}, None
+
+
+def _hesap_kaydet(depo: UpstashDepo | BellekDepo, ad: str, hesap: dict, simdi: float) -> None:
+    hesap["guncellendi"] = int(simdi)
+    depo.boru_hatti([_set_komutu(KULLANICI_ONEKI + ad, _kayit_metni(hesap), None)])
+
+
+def _hesap_yonet(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    oturum: Oturum,
+    eylem: str,
+    govde: dict,
+    simdi: float,
+    istek: Isleyici,
+) -> tuple[int, dict, str | None]:
+    hedef_ad = ad_duzelt(govde.get("ad"))
+    yeni_rol = _secim(govde.get("rol"), ROLLER) if eylem in ("ekle", "rol") else ""
+    hedef = None if eylem == "ekle" else hesap_oku(depo, hedef_ad)
+    hedef_rol = _secim(_sozluk(hedef).get("rol"), ROLLER) if hedef else ""
+    # İşe özgü rol: yönetici hesaplarına dokunan işleri yalnız kurucu yapar (403)
+    yonetici_isi = (
+        (eylem == "ekle" and yeni_rol == "yonetici")
+        or (eylem == "rol" and (yeni_rol == "yonetici" or hedef_rol == "yonetici"))
+        or (eylem in ("sifre_sifirla", "kapat", "ac", "sil") and hedef_rol == "yonetici")
+    )
+    # Kurucuya ve kendine dokunma, yalnız_kurucu'dan önce: kendi yönetici
+    # hesabını değiştirmeye çalışan bir yönetici "yalnız kurucu" değil "kendi
+    # hesabı"nı görür (docs/19 §3.1).
+    if hedef_ad == KURUCU_AD:
+        raise PanoHatasi(400, "kurucu", "Kurucu hesabı buradan değiştirilemez.")
+    if eylem in ("rol", "kapat", "sil") and hedef_ad == oturum.ad:
+        raise PanoHatasi(
+            400, "kendi_hesabi", "Kendi hesabınızın bu ayarını buradan değiştiremezsiniz."
+        )
+    if yonetici_isi and not oturum.kurucu:
+        raise PanoHatasi(
+            403, "yalniz_kurucu", "Yönetici hesaplarını yalnız kurucu hesabı değiştirebilir."
+        )
+    onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
+    if depo.say(HESAP_ISLEM_SAYAC_ONEKI + oturum.ad, HESAP_ISLEM_PENCERESI_SN) > HESAP_ISLEM_SINIRI:
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            "Kısa sürede çok fazla hesap işlemi yaptınız; 15 dakika sonra yeniden deneyin.",
+        )
+    if eylem == "ekle":
+        return _hesap_ekle(depo, oturum, hedef_ad, yeni_rol, govde, simdi)
+    if hedef is None:
+        raise PanoHatasi(404, "hesap_yok", "Böyle bir hesap yok.")
+    if eylem == "rol":
+        if not yeni_rol:
+            raise PanoHatasi(400, "rol", "Rol seçilmedi.")
+        hedef["rol"] = yeni_rol
+        hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
+        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+        ozet, is_ = f"{hedef_ad} -> {ROL_ADLARI.get(yeni_rol, yeni_rol)}", "rol_degistir"
+    elif eylem == "sifre_sifirla":
+        yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), hedef_ad)
+        hedef["sifre"] = sifre_ozetle(yeni)
+        hedef["sifre_degismeli"] = True
+        hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
+        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+        ozet, is_ = hedef_ad, "sifre_sifirla"
+    elif eylem in ("kapat", "ac"):
+        hedef["acik"] = eylem == "ac"
+        if eylem == "kapat":
+            hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
+        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+        ozet, is_ = hedef_ad, "hesap_kapat" if eylem == "kapat" else "hesap_ac"
+    elif eylem == "sil":
+        depo.boru_hatti([["DEL", KULLANICI_ONEKI + hedef_ad], ["DEL", SON_GIRIS_ONEKI + hedef_ad]])
+        depo.komut("LREM", KULLANICILAR_ANAHTARI, "0", hedef_ad)
+        ozet, is_ = hedef_ad, "hesap_sil"
+    else:  # ulaşılmaz (eylem üstte doğrulandı)
+        raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
+    kayit_yaz(
+        depo,
+        KAYIT_ANAHTARI,
+        _islem_satiri(simdi, oturum.ad, oturum.rol, is_, ozet, "tamam"),
+        KAYIT_EN_COK,
+    )
+    return 200, {"tamam": True}, None
+
+
+def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
+    """POST /api/hesap - {"eylem", ...}; sifre_degistir herkese, ötekiler
+    yönetici (docs/19 §3.4). Sıra: oturum -> köken -> JSON -> sifre_degismeli ->
+    önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, "izleyici")
+    eylem = govde.get("eylem")
+    if oturum.sifre_degismeli and eylem != "sifre_degistir":
+        raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)
+    if onizleme_mi():
+        raise PanoHatasi(409, "onizleme", ONIZLEME_METNI)
+    depo = depo_al(ayar)
+    if eylem == "sifre_degistir":
+        return _hesap_sifre_degistir(depo, ayar, oturum, govde, simdi, istek)
+    if oturum.rol != "yonetici":
+        raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
+    if eylem not in ("ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil"):
+        raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
+    return _hesap_yonet(depo, ayar, oturum, eylem, govde, simdi, istek)
 
 
 # ------------------------------------------------------------------ görüntü
@@ -1495,7 +2612,7 @@ def kare_zamanlari(depo: UpstashDepo | BellekDepo, rapor: object) -> dict[str, s
 
 def _resim_ver(istek: Isleyici, parametre: str, onek: str, onbellek: str) -> tuple:
     """Oturumlu GET: depodaki base64 JPEG'i resim olarak döndürür."""
-    ayar, _ = _oturumlu(istek)
+    ayar, _, _ = _oturumlu(istek)
     deger = istek.sorgu(parametre)
     if not _rakam_mi(deger) or _kimlik(int(deger)) is None:
         raise PanoHatasi(400, parametre, "Geçersiz istek.")

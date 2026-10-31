@@ -51,11 +51,12 @@ def _rapor_gonder(site, rapor, anahtar=ANAHTAR, zaman=None):
     )
 
 
-def _giris(site, sifre=SIFRE):
+def _giris(site, sifre=SIFRE, ad="kurucu"):
+    # Varsayılan kurucu hesabı: adı "kurucu", şifresi PANO_SIFRESI (docs/19 §3.1).
     return _istek(
         f"{site}/api/giris",
         "POST",
-        json.dumps({"sifre": sifre}).encode(),
+        json.dumps({"ad": ad, "sifre": sifre}).encode(),
         {"Content-Type": "application/json"},
     )
 
