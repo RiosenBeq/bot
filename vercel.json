@@ -5,6 +5,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "crons": [{ "path": "/api/bekci", "schedule": "0 5 * * *" }],
+  "rewrites": [{ "source": "/demo", "destination": "/pano" }],
   "headers": [
     {
       "source": "/(.*)",

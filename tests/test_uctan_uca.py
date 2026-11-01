@@ -187,3 +187,16 @@ def test_bulunamayan_sayfa_404_sayfasini_gosterir(site):
     assert kod == 404
     assert basliklar["Content-Type"].startswith("text/html")
     assert b"/logo-kucuk.svg" in govde and b"/logo.svg" in govde
+
+
+def test_demo_adresi_pano_sayfasini_sunar(site):
+    """vercel.json'daki /demo yönlendirmesi: adres değişmeden pano sayfası gelir
+    (demo.js örnek veriyle doldurur); güvenlik başlıkları aynıdır."""
+    _, _, pano = _istek(f"{site}/pano")
+    kod, basliklar, govde = _istek(f"{site}/demo")
+    assert kod == 200
+    assert govde == pano
+    assert "script-src 'self'" in basliklar["Content-Security-Policy"]
+    kod, basliklar, _ = _istek(f"{site}/demo.js")
+    assert kod == 200
+    assert "javascript" in basliklar["Content-Type"]

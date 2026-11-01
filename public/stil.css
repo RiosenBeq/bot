@@ -1449,6 +1449,57 @@ time,
   border-color: #c4e9f3;
 }
 
+/* Demo bandı (yalnız /demo, demo.js kurar): örnek veri uyarısı, rol ve
+   bağlantı seçicisi. Telefonda seçiciler alt satıra iner. */
+.demo-bandi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  background: var(--birincil-acik);
+  color: var(--birincil-koyu);
+  border-color: #c9d6ff;
+  border-style: dashed;
+}
+.demo-bandi p {
+  margin: 0;
+  flex: 1 1 260px;
+}
+.demo-secimler {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.demo-secim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.demo-secim .secici {
+  min-height: 36px;
+  font-size: 14px;
+}
+@media (pointer: coarse), (max-width: 1023.98px) {
+  .demo-secim .secici {
+    min-height: var(--dokunma);
+    font-size: 16px; /* telefonda yakınlaştırma olmasın */
+  }
+}
+@media (max-width: 1023.98px) {
+  .demo-secimler {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .demo-secim {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+}
+
 /* Tehlike düğmesi (hesap silme): beyazda kırmızı, onaylayınca dolu kırmızı */
 .dugme.tehlike {
   background: var(--yuzey);

@@ -1,6 +1,7 @@
 """Sayfaların bütünlüğü: güvenlik başlığıyla çalışırlar, simgeleri ve
 betiğin aradığı öğeler gerçekten vardır, telefon kuralları korunur."""
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -93,3 +94,29 @@ def test_logo_ve_simge_basvurulari_var_olan_dosyayi_gosterir(sayfa):
         assert dosya.is_file(), f"{sayfa.name}: {adres} public/ altında yok"
     # Sekme simgesi küçük boydur: 24 px ve altı için çizilen sürüm
     assert re.search(r'<link rel="icon" href="/logo-kucuk.svg"', metin)
+
+
+DEMO_JS = (PUBLIC / "demo.js").read_text(encoding="utf-8")
+
+
+def test_demo_betigi_panodan_once_yuklenir():
+    """demo.js fetch'i ve resim adreslerini pano.js çalışmadan kurmalı; ikisi de
+    defer olduğu için sayfadaki sıra çalışma sırasıdır."""
+    html = (PUBLIC / "pano.html").read_text(encoding="utf-8")
+    betikler = re.findall(r'<script src="([^"]+)" defer></script>', html)
+    assert betikler == ["/demo.js", "/pano.js"]
+
+
+def test_demo_yalniz_demo_adresinde_calisir():
+    """Gerçek panoda (/pano) demo.js hiçbir şey yapmamalı: ilk iş adresi denetler."""
+    govde = DEMO_JS.split('"use strict";', 1)[1]
+    ilk_satirlar = [s.strip() for s in govde.splitlines() if s.strip()][:2]
+    assert ilk_satirlar == [
+        "(function () {",
+        'if (location.pathname.replace(/\\/+$/, "") !== "/demo") return;',
+    ]
+
+
+def test_demo_vercelde_pano_sayfasina_yonlenir():
+    ayar = json.loads((PUBLIC.parent / "vercel.json").read_text(encoding="utf-8"))
+    assert {"source": "/demo", "destination": "/pano"} in ayar["rewrites"]

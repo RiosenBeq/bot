@@ -130,6 +130,8 @@
   const ONEM_KUTUSU = { critical: "gul", high: "gul", medium: "bal", low: "gri" };
 
   const $ = (id) => document.getElementById(id);
+  // Yalnız /demo adresinde dolu (demo.js): resimler sunucudan değil tarayıcıda çizilir
+  const DEMO = window.panoDemo || null;
   let sonVeri = null;
   let saatFarkiMs = 0; // sunucu saati - bu cihazın saati
   let istekSuruyor = false;
@@ -708,6 +710,7 @@
   }
 
   function kareAdresi(kimlik, zaman) {
+    if (DEMO) return DEMO.kareAdresi(kimlik, zaman);
     return "/api/kare?kamera=" + kimlik + "&z=" + encodeURIComponent(zaman);
   }
 
@@ -931,7 +934,7 @@
     if (hazir) return hazir;
     const hata = fotoHatalari.get(o.id);
     if (hata && Date.now() - hata < FOTO_YENIDEN_MS) return el("span", "foto-yok", "Fotoğraf alınamadı");
-    const adres = "/api/foto?olay=" + o.id;
+    const adres = DEMO ? DEMO.fotoAdresi(o.id) : "/api/foto?olay=" + o.id;
     const dugme = el("button", "olay-foto");
     dugme.type = "button";
     dugme.setAttribute("aria-label", "Kanıt fotoğrafını büyüt: " + o.baslik);

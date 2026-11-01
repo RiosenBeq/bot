@@ -5,7 +5,8 @@
 
 Vercel'in yaptığını taklit eder: /api/<ad> isteğini api/<ad>.py'deki
 `handler`'a verir, öbür adresleri public/ klasöründen sunar (".html" yazmadan:
-/pano -> public/pano.html) ve vercel.json'daki güvenlik başlıklarını ekler.
+/pano -> public/pano.html), vercel.json'daki yönlendirmeleri (/demo -> pano)
+uygular ve güvenlik başlıklarını ekler.
 Upstash yerine bellekte bir depo kullanır: kapatınca her şey silinir.
 
 Şifre ve anahtar ortam değişkenlerinden okunur; tanımlı değilse aşağıdaki
@@ -64,8 +65,16 @@ def _ortak_basliklar() -> list[tuple[str, str]]:
     return basliklar
 
 
+def _yonlendirmeler() -> dict[str, str]:
+    """vercel.json'daki "rewrites": adres değişmeden başka sayfa sunulur
+    (/demo -> pano sayfası). Yalnız tam eşleşen kaynaklar."""
+    ayar = json.loads((KOK / "vercel.json").read_text(encoding="utf-8"))
+    return {kural["source"]: kural["destination"] for kural in ayar.get("rewrites", [])}
+
+
 API_MODULLERI = _api_modulleri()
 ORTAK_BASLIKLAR = _ortak_basliklar()
+YONLENDIRMELER = _yonlendirmeler()
 
 
 class YerelIsleyici(_pano.Isleyici):
@@ -90,6 +99,7 @@ class YerelIsleyici(_pano.Isleyici):
         super().end_headers()
 
     def _statik(self, yol: str) -> None:
+        yol = YONLENDIRMELER.get(yol, yol)
         hedef = (PUBLIC / yol.lstrip("/")).resolve()
         if not hedef.is_relative_to(PUBLIC):
             hedef = PUBLIC / "yok"

@@ -7,6 +7,25 @@ Vercel'de duran sitesi. İki sayfası var:
 |---|---|
 | `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, veri güvenliği notu |
 | `/pano` | **Kişisel hesapla** giren uzak izleme ve yönetim panosu: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve role göre **Müdahale** (anons, hoparlör denemesi, olay inceleme) ile **Yönetim** (teşhis, yeniden başlatma, güncelleme) |
+| `/demo` | Aynı pano, **örnek verilerle** ve girişsiz: tasarımı denetlemek için (aşağıda Demo) |
+
+## Demo
+
+`/demo` adresi panoyu örnek bir fabrikanın verisiyle açar: 6 kamera (biri yavaş,
+biri yeniden bağlanıyor, biri kopuk), kanıt fotoğraflı 20 olay, son 14 gün,
+saatlik dağılım, müdahale ve yönetim geçmişi, kullanıcılar, işlem kaydı ve
+üç tesisli Tesisler ekranı.
+Üstteki demo bandından **rol** (Yönetici / Operatör / İzleyici) ve **bağlantı**
+(Canlı / Haber yok / Kapatıldı) seçilir; anons, hoparlör denemesi, olay
+inceleme, teşhis, yeniden başlatma, güncelleme ve hesap işleri birkaç saniyede
+sonuçlanır.
+
+Demo gerçek veriye **dokunmaz**: sayfadaki `/api/...` istekleri tarayıcıda
+`public/demo.js` tarafından karşılanır, siteye ve fabrikaya hiçbir istek gitmez,
+hiçbir şey kaydedilmez (sayfa yenilenince başa döner). Kamera görüntüleri ve
+kanıt fotoğrafları tarayıcıda çizilir. `/pano` adresinde `demo.js` hiçbir şey
+yapmaz. Yönlendirme `vercel.json`'daki `rewrites` satırıdır; demoyu kaldırmak
+için o satırı ve `pano.html`'deki `demo.js` etiketini silmek yeter.
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
 bir durum özeti, ihlallerin kanıt fotoğrafını ve (Kameralar ekranı açıkken)
@@ -424,8 +443,8 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
-| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css`, `404.html` |
-| `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması |
+| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css`, `404.html`; `demo.js` yalnız `/demo`'da örnek veri verir |
+| `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması, `/demo` yönlendirmesi |
 | `yerel_sunucu.py` | Siteyi Vercel'siz, bu bilgisayarda denemek için |
 
 Yalnız Python'un standart kütüphanesi ve sade HTML/CSS/JS kullanılır: kurulacak
