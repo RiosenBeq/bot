@@ -276,7 +276,7 @@ SAYI_ALANLARI = (
 
 # ---- "Sistemden haber yok" dış alarmı (öneri 5, docs/20 §3) - hepsi opt-in
 # Rapor BEKCI_ESIK_DK dakikadan uzun süre gelmezse seçili kişilere BİR KEZ
-# e-posta / Telegram bildirimi gider; taze rapor gelince işaret silinir ve bir
+# e-posta bildirimi gider; taze rapor gelince işaret silinir ve bir
 # sonraki kesintide yeniden uyarılır. İşaret SET NX EX ile tutulur: ana pano
 # için BEKCI_UYARI_ANAHTARI, izlenen her tesis için sonuna ":<tesis>" eklenir.
 BEKCI_UYARI_ANAHTARI = "dalsan:bekci:uyarildi"
@@ -295,8 +295,6 @@ BEKCI_ANAHTAR_EN_AZ = 16
 # Türkiye 2016'dan beri yaz saati uygulamaz: sabit UTC+3 (tzdata gerekmez).
 TURKIYE_SAATI = timezone(timedelta(hours=3))
 EPOSTA_DESENI = re.compile(r"[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']+")
-TELEGRAM_JETON_DESENI = re.compile(r"[0-9]{1,20}:[A-Za-z0-9_-]{1,100}")
-TELEGRAM_SOHBET_DESENI = re.compile(r"-?[0-9]{1,20}|@[A-Za-z0-9_]{5,32}")
 
 # ---- Çoklu fabrika / filo görünümü (öneri 10, docs/20 §4) - geri uyumlu
 # Rapor isteğe bağlı bir "tesis" alanı taşırsa site kütüğe (registry) küçük bir
@@ -341,6 +339,15 @@ BEKCI_AYAR_HATASI_METNI = (
     "Vercel'deki BEKCI ayarı tanınmadı: bekçiyi açmak için acik yazın, kapatmak için silin "
     "ya da kapali yazın; sonra yeniden yayınlayın."
 )
+# BEKCI_ALICILAR yalnız e-posta adresi alır. Eski "tg:<sohbet>" girdileri artık
+# desteklenmez: atlanır ve alıcı sayısına girmez (bekçi e-postalarla sürer; başka
+# alıcı kalmazsa alıcısız gibi davranır). /api/bekci cevabı ve Tesisler ekranı bu
+# sabit metinle bildirir; metin girdileri yazmaz.
+BEKCI_TG_ONEKI = "tg:"
+BEKCI_TG_METNI = (
+    "Vercel'deki BEKCI_ALICILAR ayarındaki tg: alıcıları artık desteklenmiyor ve yok "
+    "sayılıyor: bekçi yalnız e-posta gönderir. tg: girdilerini silip yeniden yayınlayın."
+)
 # Ortam ayarındaki Türkçe harfler (ANA_TESIS="İzmir", BEKCI="açık") ASCII karşılığına
 # indirilir: Python'da "İ".lower() iki karakterdir (i ve U+0307), kimliğe uymazdı.
 TURKCE_KATLAMA = str.maketrans("İıÇçĞğÖöŞşÜü", "iiccggoossuu")
@@ -377,11 +384,13 @@ class Ayar:
     redis_adresi: str
     redis_jetonu: str
     fabrika_adresi: str
-    # Bekçi (öneri 5) ve e-posta / Telegram kanalları: hepsi opt-in, varsayılan
-    # boş/kapalı. Sırlar repr'de gizlenir ve hiçbir cevaba / hata metnine girmez.
+    # Bekçi (öneri 5) ve e-posta kanalı: hepsi opt-in, varsayılan boş/kapalı.
+    # Sırlar repr'de gizlenir ve hiçbir cevaba / hata metnine girmez.
     bekci: str = "kapali"
     bekci_esik_dk: int = BEKCI_ESIK_VARSAYILAN_DK
     bekci_alicilar: tuple[str, ...] = ()
+    # BEKCI_ALICILAR'da eski tg: girdisi vardı: yok sayılır; /api/bekci ve Tesisler uyarır.
+    bekci_tg_yok_sayildi: bool = False
     bekci_anahtari: str = field(default="", repr=False)
     cron_sirri: str = field(default="", repr=False)
     smtp_sunucu: str = ""
@@ -389,8 +398,6 @@ class Ayar:
     smtp_kullanici: str = ""
     smtp_sifresi: str = field(default="", repr=False)
     smtp_kimden: str = ""
-    telegram_bot: str = field(default="", repr=False)
-    telegram_sohbet: str = ""
     # Filo (öneri 10): komut alan tesisin kimliği. Boşsa ilk tesis raporu sahiplenir.
     ana_tesis: str = ""
     # ANA_TESIS yazılmış ama kimlik olamıyor: yok sayılır, Tesisler ekranı uyarır.
@@ -405,16 +412,18 @@ def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> i
     return max(en_az, min(en_cok, int(ham)))
 
 
-def _alicilar(ham: str | None) -> tuple[str, ...]:
-    """Virgülle ayrık alıcı listesi: e-posta ya da `tg:<sohbet_id>`. Boşlar atılır."""
-    liste = []
+def _alicilar(ham: str | None) -> tuple[tuple[str, ...], bool]:
+    """Virgülle ayrık e-posta alıcıları (boşlar atılır, en çok BEKCI_ALICI_EN_COK)
+    ve listede eski bir `tg:` girdisi olup olmadığı. tg: girdileri (büyük harfle
+    yazılmış olsa da) artık desteklenmez: atlanır ve sayıya girmez."""
+    liste, tg_vardi = [], False
     for parca in (ham or "").split(","):
         alici = parca.strip()
-        if alici and len(alici) <= 200:
+        if alici[: len(BEKCI_TG_ONEKI)].lower() == BEKCI_TG_ONEKI:
+            tg_vardi = True
+        elif alici and len(alici) <= 200 and len(liste) < BEKCI_ALICI_EN_COK:
             liste.append(alici)
-        if len(liste) >= BEKCI_ALICI_EN_COK:
-            break
-    return tuple(liste)
+    return tuple(liste), tg_vardi
 
 
 def _katla(ham: str | None) -> str:
@@ -430,11 +439,13 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     Bekçi ve filo ayarları opt-in'dir: tanımlı değilse bekçi sessizce hiçbir şey
     yapmaz ve eksikler()'e GİRMEZ (ikisi de açılmadıkça bugünkü davranış aynı).
     BEKCI ve ANA_TESIS Türkçe harfle de yazılabilir; tanınmayan BEKCI "gecersiz",
-    kimlik olamayan ANA_TESIS boş sayılır (ikisi de ayrıca bildirilir)."""
+    kimlik olamayan ANA_TESIS boş sayılır, BEKCI_ALICILAR'daki eski tg: girdileri
+    atlanır (üçü de ayrıca bildirilir)."""
     ortam = os.environ if ortam is None else ortam
     bekci = _katla(ortam.get("BEKCI"))
     ana_tesis = _katla(ortam.get("ANA_TESIS"))
     ana_gecerli = TESIS_ID_DESENI.fullmatch(ana_tesis) is not None
+    alicilar, tg_vardi = _alicilar(ortam.get("BEKCI_ALICILAR"))
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
         rapor_anahtari=ortam.get("RAPOR_ANAHTARI", "").strip(),
@@ -447,7 +458,8 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         fabrika_adresi=_fabrika_adresi(ortam.get("FABRIKA_ADRESI", "")),
         bekci=(bekci if bekci in BEKCI_DEGERLERI else "gecersiz") if bekci else "kapali",
         bekci_esik_dk=_tam_ortam(ortam.get("BEKCI_ESIK_DK"), BEKCI_ESIK_VARSAYILAN_DK, 1, 1440),
-        bekci_alicilar=_alicilar(ortam.get("BEKCI_ALICILAR")),
+        bekci_alicilar=alicilar,
+        bekci_tg_yok_sayildi=tg_vardi,
         bekci_anahtari=ortam.get("BEKCI_ANAHTARI", "").strip(),
         cron_sirri=ortam.get("CRON_SECRET", "").strip(),
         smtp_sunucu=ortam.get("SMTP_SUNUCU", "").strip(),
@@ -455,8 +467,6 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         smtp_kullanici=ortam.get("SMTP_KULLANICI", "").strip(),
         smtp_sifresi=ortam.get("SMTP_SIFRESI", ""),
         smtp_kimden=ortam.get("SMTP_KIMDEN", "").strip(),
-        telegram_bot=ortam.get("TELEGRAM_BOT", "").strip(),
-        telegram_sohbet=ortam.get("TELEGRAM_SOHBET", "").strip(),
         ana_tesis=ana_tesis if ana_gecerli else "",
         ana_tesis_gecersiz=bool(ana_tesis) and not ana_gecerli,
     )
@@ -1500,8 +1510,9 @@ def filo_verisi(
     gösterir: ana tesis yoksa (tesis kimliği kullanılmıyor) ya da kimlik
     göndermeyen (eski) bir program canlıysa panodaki fabrikadır ve hiçbir tesis
     ana değildir (_tesis_kaydet ile aynı kural). Boş kütükte tek satır odur.
-    Uyarılar: tesis kullanılırken eski program canlı; ANA_TESIS geçersiz; aynı
-    tesis kimliği iki bilgisayardan geliyor (satırda `cakisma`).
+    Uyarılar: tesis kullanılırken eski program canlı; ANA_TESIS geçersiz;
+    BEKCI_ALICILAR'daki eski tg: girdileri yok sayılıyor; aynı tesis kimliği iki
+    bilgisayardan geliyor (satırda `cakisma`).
     `veri`: aynı istekte okunmuş pano_verisi (ikinci kez okunmasın)."""
     veri = veri if veri is not None else pano_verisi(depo, ayar, simdi)
     rapor = veri.get("rapor")
@@ -1517,6 +1528,8 @@ def filo_verisi(
     uyarilar = []
     if ayar.ana_tesis_gecersiz:
         uyarilar.append(ANA_TESIS_GECERSIZ_METNI)
+    if ayar.bekci_tg_yok_sayildi:
+        uyarilar.append(BEKCI_TG_METNI)
     if eski_canli and (tesisler or ana):
         uyarilar.append(ESKI_PROGRAM_METNI)
     for satir in tesisler:  # aynı tesis kimliği iki bilgisayardan (kopyalanan .env)
@@ -1533,14 +1546,6 @@ def filo_verisi(
 class BildirimHatasi(ValueError):
     """Bildirim gönderilmeden önce yakalanan ayar ya da adres hatası. İletisi
     sabittir, sır taşımaz: günlüğe olduğu gibi yazılabilir."""
-
-
-def bekci_alicilari(ayar: Ayar) -> tuple[str, ...]:
-    """BEKCI_ALICILAR (e-posta ve/veya `tg:<sohbet>`) ve TELEGRAM_SOHBET."""
-    alicilar = list(ayar.bekci_alicilar)
-    if ayar.telegram_sohbet and "tg:" + ayar.telegram_sohbet not in alicilar:
-        alicilar.append("tg:" + ayar.telegram_sohbet)
-    return tuple(alicilar)
 
 
 def bekci_karari(hedef: dict, esik_dk: int) -> bool:
@@ -1590,38 +1595,15 @@ def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str) -> None:
             raise
 
 
-def _telegram_gonder(ayar: Ayar, sohbet: str, metin: str) -> None:
-    """Telegram bildirimi (mevcut urllib kalıbı, UpstashDepo._istek gibi). Jeton
-    ve sohbet kimliği biçimden geçmeden ağa çıkılmaz."""
-    if not ayar.telegram_bot:
-        raise BildirimHatasi("Telegram bot jetonu tanımlı değil (TELEGRAM_BOT)")
-    if not TELEGRAM_JETON_DESENI.fullmatch(ayar.telegram_bot):
-        raise BildirimHatasi("Telegram bot jetonunun biçimi tanınmadı (TELEGRAM_BOT)")
-    if not TELEGRAM_SOHBET_DESENI.fullmatch(sohbet):
-        raise BildirimHatasi("Telegram sohbet kimliği geçersiz")
-    adres = f"https://api.telegram.org/bot{ayar.telegram_bot}/sendMessage"
-    govde = urllib.parse.urlencode({"chat_id": sohbet, "text": metin}).encode("utf-8")
-    istek = urllib.request.Request(
-        adres,
-        data=govde,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
-    )
-    with urllib.request.urlopen(istek, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN) as yanit:
-        yanit.read()
-
-
 def _alici_gizle(alici: str) -> str:
     """Günlükte alıcıyı kısmen gizler (e-posta adresi tümüyle yazılmasın)."""
-    if alici.startswith("tg:"):
-        return "tg:***"
     ad, _, alan = alici.partition("@")
     return (ad[:2] + "***@" + alan) if alan else "***"
 
 
 def _hata_ozeti(hata: Exception) -> str:
     """Günlük için hatanın türü ve varsa sayısal kodu. Kütüphane ya da sunucu
-    iletisi yazılmaz: SMTP şifresini ya da bot jetonunu (adreste) taşıyabilir."""
+    iletisi yazılmaz: SMTP şifresini ya da alıcının adresini taşıyabilir."""
     if isinstance(hata, BildirimHatasi):
         return str(hata)
     kod = getattr(hata, "smtp_code", None) or getattr(hata, "code", None)
@@ -1635,24 +1617,18 @@ def bekci_uyari_gonder(
     konu: str,
     metin: str,
     eposta_gonder: Callable[[Ayar, str, str, str], None] | None = None,
-    telegram_gonder: Callable[[Ayar, str, str], None] | None = None,
     basarida: Callable[[], object] | None = None,
 ) -> int:
-    """Her alıcıya e-posta ya da Telegram (`tg:<id>`) gönderir; giden bildirim
-    sayısını döner. Her alıcı ayrı denenir: herhangi bir hata (bozuk adres
-    dahil) ötekileri durdurmaz ve 500 yapmaz; günlüğe sırsız yazılır. Telegram
-    önce gider (hızlıdır; SMTP takılsa da ilk bildirim çıkar). `basarida` ilk
-    başarılı gönderimden hemen sonra bir kez çağrılır (bekçi işareti uzatır).
-    Gönderenler enjekte edilebilir (testte sahte gönderici verilir)."""
+    """Her alıcıya e-posta gönderir; giden bildirim sayısını döner. Her alıcı
+    ayrı denenir: herhangi bir hata (bozuk adres dahil) ötekileri durdurmaz ve
+    500 yapmaz; günlüğe sırsız yazılır. `basarida` ilk başarılı gönderimden
+    hemen sonra bir kez çağrılır (bekçi işareti uzatır). Gönderen enjekte
+    edilebilir (testte sahte gönderici verilir)."""
     eposta_gonder = eposta_gonder or _eposta_gonder
-    telegram_gonder = telegram_gonder or _telegram_gonder
     gonderilen = 0
-    for alici in sorted(alicilar, key=lambda a: not a.startswith("tg:")):
+    for alici in alicilar:
         try:
-            if alici.startswith("tg:"):
-                telegram_gonder(ayar, alici[3:], metin)
-            else:
-                eposta_gonder(ayar, alici, konu, metin)
+            eposta_gonder(ayar, alici, konu, metin)
         except Exception as hata:  # noqa: BLE001 - bir alıcının hatası ötekini durdurmaz
             print(
                 f"Bekçi bildirimi gidemedi ({_alici_gizle(alici)}): {_hata_ozeti(hata)}",
@@ -1742,11 +1718,13 @@ def bekci_isle(
     şey yapmaz. Açıksa her hedef için: bağlantı koptu ve son rapor eşikten
     eskiyse BİR KEZ uyarır. İşaret önce kısa bir kilit olarak SET NX EX ile
     alınır (eşzamanlı ikinci çağrı göndermez); ilk bildirim gidince uzar, hiçbiri
-    gidemezse silinir (sonraki çağrı yeniden dener). Taze rapor işareti siler."""
+    gidemezse silinir (sonraki çağrı yeniden dener). Taze rapor işareti siler.
+    BEKCI_ALICILAR'daki eski tg: girdileri ayar okunurken atlanmıştır; varsa
+    cevaba `uyarilar` eklenir (sabit metin, girdiler yazılmaz)."""
     if ayar.bekci != "acik":
         return {"atlandi": True}
     gonder = gonder or bekci_uyari_gonder
-    alicilar = bekci_alicilari(ayar)
+    alicilar = ayar.bekci_alicilar
     uyarildi, gonderilen, durum = False, 0, []
     for isaret, ad, hedef in _bekci_hedefleri(depo, ayar, simdi):
         bayat = bekci_karari(hedef, ayar.bekci_esik_dk)
@@ -1774,7 +1752,10 @@ def bekci_isle(
             print(f"Bekçi: {ad} için {sayi} bildirim gönderildi.", file=sys.stderr)
         else:
             depo.sil(isaret)  # hiçbiri gidemedi: sonraki çağrı yeniden denesin
-    return {"uyarildi": uyarildi, "gonderilen": gonderilen, "durum": durum}
+    sonuc = {"uyarildi": uyarildi, "gonderilen": gonderilen, "durum": durum}
+    if ayar.bekci_tg_yok_sayildi:
+        sonuc["uyarilar"] = [BEKCI_TG_METNI]
+    return sonuc
 
 
 # --------------------------------------------------------- uzaktan müdahale
@@ -3185,10 +3166,11 @@ def _bekci_yetkisi(istek: Isleyici, ayar: Ayar) -> None:
 def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/bekci - "sistemden haber yok" dış alarmı (docs/20 §3). Vercel
     Cron ya da dış izleme servisi çağırır. Bayat hedef varsa 503 döner: e-posta
-    ya da Telegram kurulu olmasa da izleme servisi kendisi alarm verebilir.
+    kurulu olmasa da izleme servisi kendisi alarm verebilir.
     BEKCI tanınmayan bir değerse (anahtar doğrulandıktan sonra) 503 bekci_ayari
     döner: yanlış yazılmış ayar sessizce kapalı kalmaz. Cevapta sır, alıcı ya da
-    görüntü yoktur. HEAD de aynı yoldan geçer (api/bekci.py)."""
+    görüntü yoktur; yok sayılan eski tg: girdisi varsa `uyarilar` notu gelir.
+    HEAD de aynı yoldan geçer (api/bekci.py)."""
     ayar = ayar_oku()
     _bekci_yetkisi(istek, ayar)
     if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın

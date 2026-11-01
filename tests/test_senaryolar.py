@@ -323,7 +323,7 @@ SMTP_SIFRESI = "smtp-gizli-sifre-123"
 
 
 class Postaci:
-    """E-posta ve Telegram yerine: giden bildirimleri kaydeder (ağa çıkmaz)."""
+    """E-posta yerine: giden bildirimleri kaydeder (ağa çıkmaz)."""
 
     def __init__(self) -> None:
         self.giden: list[tuple[str, str, str]] = []  # (kanal, alıcı, metin)
@@ -331,15 +331,11 @@ class Postaci:
     def eposta(self, _ayar, alici, konu, govde):
         self.giden.append(("eposta", alici, f"{konu}\n{govde}"))
 
-    def telegram(self, _ayar, sohbet, metin):
-        self.giden.append(("telegram", sohbet, metin))
-
 
 @pytest.fixture
 def postaci(monkeypatch):
     postaci = Postaci()
     monkeypatch.setattr(_pano, "_eposta_gonder", postaci.eposta)
-    monkeypatch.setattr(_pano, "_telegram_gonder", postaci.telegram)
     return postaci
 
 
@@ -349,7 +345,7 @@ def bekci_acik(monkeypatch):
         "BEKCI": "acik",
         "BEKCI_ESIK_DK": "20",
         "BEKCI_ANAHTARI": BEKCI_ANAHTARI,
-        "BEKCI_ALICILAR": "vardiya.amiri@fabrika.example,tg:424242",
+        "BEKCI_ALICILAR": "vardiya.amiri@fabrika.example",
         "SMTP_SUNUCU": "smtp.fabrika.example",
         "SMTP_KULLANICI": "pano@fabrika.example",
         "SMTP_SIFRESI": SMTP_SIFRESI,
@@ -367,8 +363,8 @@ def bekci(site: str, anahtar: str | None = BEKCI_ANAHTARI) -> tuple[int, dict]:
 
 def test_gece_kesintisi_bir_kez_uyarir_sabah_toparlanir(site, saat, postaci, bekci_acik):
     """Gece fabrika bilgisayarı kapanır. Dış izleme her beş dakikada /api/bekci'yi
-    çağırır: eşik (20 dk) dolunca vardiya amirine BİR KEZ e-posta ve Telegram
-    gider, sonraki çağrılar sessizdir ama 503 döner (izleme servisi de görür).
+    çağırır: eşik (20 dk) dolunca vardiya amirine BİR KEZ e-posta gider,
+    sonraki çağrılar sessizdir ama 503 döner (izleme servisi de görür).
     Sabah program dönünce işaret kalkar; bir sonraki kesinti yeniden bildirilir."""
     fabrika = Fabrika(site, saat)
     fabrika.rapor()
@@ -384,14 +380,16 @@ def test_gece_kesintisi_bir_kez_uyarir_sabah_toparlanir(site, saat, postaci, bek
 
     saat.ilerlet(15 * 60)  # 25 dk
     kod, cevap = bekci(site)
-    assert kod == 503 and cevap["uyarildi"] is True and cevap["gonderilen"] == 2
-    assert sorted(k for k, _, _ in postaci.giden) == ["eposta", "telegram"]
+    assert kod == 503 and cevap["uyarildi"] is True and cevap["gonderilen"] == 1
+    assert [(k, alici) for k, alici, _ in postaci.giden] == [
+        ("eposta", "vardiya.amiri@fabrika.example")
+    ]
     assert all("dakika" in metin for _, _, metin in postaci.giden)
     for _ in range(3):  # sonraki cron çağrıları: bildirim yok, durum yine 503
         saat.ilerlet(5 * 60)
         kod, cevap = bekci(site)
         assert kod == 503 and cevap["uyarildi"] is False
-    assert len(postaci.giden) == 2
+    assert len(postaci.giden) == 1
 
     saat.ilerlet(8 * 3600)  # sabah: program açıldı
     fabrika.rapor()
@@ -401,7 +399,7 @@ def test_gece_kesintisi_bir_kez_uyarir_sabah_toparlanir(site, saat, postaci, bek
     saat.ilerlet(30 * 60)  # öğlen yeni bir kesinti: yeniden bildirilir
     kod, cevap = bekci(site)
     assert kod == 503 and cevap["uyarildi"] is True
-    assert len(postaci.giden) == 4
+    assert len(postaci.giden) == 2
 
 
 def test_bekci_kapaliyken_hicbir_sey_gondermez(site, saat, postaci, monkeypatch):

@@ -300,8 +300,9 @@ göndermez, site bugünkü gibi çalışır. İkinci bir fabrika eklenince:
    alır" ya da "Yalnız izleme". Veri `/api/durum?filo=1` ile yalnız bu ekran
    açıkken istenir. Kütükte tesis yoksa bugünkü fabrika tek satır görünür.
    Kimliksiz bir program canlıyken (o komut alan satırdır), `ANA_TESIS`
-   geçersizken ya da aynı kimlik iki bilgisayardan gelirken ekranın üstünde bir
-   uyarı çıkar (`filo.uyarilar`; çakışan satırda `cakisma: {adlar, zaman}`).
+   geçersizken, aynı kimlik iki bilgisayardan gelirken ya da `BEKCI_ALICILAR`'da
+   yok sayılan bir `tg:` girdisi varken ekranın üstünde bir uyarı çıkar
+   (`filo.uyarilar`; çakışan satırda `cakisma: {adlar, zaman}`).
 
 Ana tesisi değiştirmek için Vercel'de `ANA_TESIS`'e tesisin kimliğini yazıp
 yeniden yayınlayın (**Settings → Environment Variables**, yalnız Production,
@@ -321,8 +322,8 @@ adı ve zamanı, 1 saat).
 ## Sistemden haber yok uyarısı (bekçi)
 
 Pano açık olmasa da fabrika bilgisayarı kapanır, program durur ya da internet
-uzun süre giderse site seçtiğiniz kişilere **bir kez** e-posta ve/veya Telegram
-bildirimi gönderir. Bağlantı geri gelince (ilk taze rapor) işaret sıfırlanır ve
+uzun süre giderse site seçtiğiniz kişilere **bir kez** e-posta bildirimi
+gönderir. Bağlantı geri gelince (ilk taze rapor) işaret sıfırlanır ve
 bir sonraki kesintide yeniden uyarır. Kesinti 24 saatten uzun sürerse günde bir
 hatırlatma gider. Ana pano ve izlenen her tesis ayrı işaret taşır; aynı fabrika
 iki kez sayılmaz. `ANA_TESIS` değişmişse ve pano hâlâ eski ana tesisin son
@@ -336,16 +337,18 @@ eksik ayar listesine girmez.
 |---|---|
 | `BEKCI` | `acik` (ya da `açık`) yazılmadıkça bekçi çalışmaz (`{"atlandi": true}` döner). Tanınmayan bir değer (ör. `evet`) bekçiyi açmaz; `/api/bekci` onu 503 `bekci_ayari` ile bildirir |
 | `BEKCI_ESIK_DK` | Kaç dakika haber gelmezse uyarsın; varsayılan 20 (1-1440). Dalgalı internette uzun tutun |
-| `BEKCI_ALICILAR` | Virgülle ayrık e-posta adresleri ve/veya `tg:<sohbet_id>`; en çok 20 |
+| `BEKCI_ALICILAR` | Virgülle ayrık e-posta adresleri; en çok 20 |
 | `CRON_SECRET` | Vercel Cron'un gizli değeri, en az 16 karakter. Vercel onu `Authorization: Bearer` başlığıyla kendisi yollar |
 | `BEKCI_ANAHTARI` | Dış izleme servisinin gizli anahtarı, en az 16 karakter |
 | `SMTP_SUNUCU`, `SMTP_PORT` | E-posta sunucusu. Port 465 ise doğrudan TLS, başka port (varsayılan 587) ise STARTTLS; şifresiz bağlantıyla gönderilmez |
 | `SMTP_KULLANICI`, `SMTP_SIFRESI` | SMTP girişi |
 | `SMTP_KIMDEN` | Gönderen adresi (boşsa `SMTP_KULLANICI`) |
-| `TELEGRAM_BOT` | Telegram bot jetonu (`123456:ABC...`) |
-| `TELEGRAM_SOHBET` | *(isteğe bağlı)* Bildirimin gideceği sohbet; `BEKCI_ALICILAR`'a `tg:` ile de yazılabilir |
 
 Hepsini **yalnız Production**'a ekleyin ve yeniden yayınlayın.
+
+Telegram bildirimi sahibin isteğiyle 01.11.2026'da kaldırıldı: `BEKCI_ALICILAR`'da
+kalan `tg:` girdileri yok sayılır (e-postalar yine gider; `/api/bekci` cevabı ve
+Tesisler ekranı bunu uyarır), `TELEGRAM_BOT` ve `TELEGRAM_SOHBET` artık okunmaz.
 
 **Kim çağırır?**
 
@@ -364,9 +367,10 @@ Hepsini **yalnız Production**'a ekleyin ve yeniden yayınlayın.
     adrese `?anahtar=<BEKCI_ANAHTARI>` ekleyin. Site HEAD'i GET gibi cevaplar
     (aynı durum kodu, gövdesiz).
 
-**Cevap:** `{uyarildi, gonderilen, durum: [{ad, baglanti, gecikme_dk, bayat}]}`.
-Bir hedef eşikten uzun süredir sessizse durum kodu **503**, değilse **200**:
-e-posta ya da Telegram kurmasanız da izleme servisi 503'te kendisi alarm verir.
+**Cevap:** `{uyarildi, gonderilen, durum: [{ad, baglanti, gecikme_dk, bayat}]}`;
+`BEKCI_ALICILAR`'da yok sayılan bir `tg:` girdisi varsa `uyarilar` (düz metin) da
+gelir. Bir hedef eşikten uzun süredir sessizse durum kodu **503**, değilse **200**:
+e-posta kurmasanız da izleme servisi 503'te kendisi alarm verir.
 Anahtar yoksa 401, yanlışsa ya da sitede hiç tanımlanmamışsa 403 döner; anahtar
 doğru ama `BEKCI` tanınmayan bir değerse 503 `bekci_ayari`. Cevapta sır, alıcı
 adresi ya da görüntü yoktur.
@@ -375,7 +379,7 @@ Bildirim kısa bir metindir: tesisin adı, son rapordan bu yana geçen dakika, s
 raporun saati (Türkiye) ve neye bakılacağı (bilgisayar açık mı, program çalışıyor
 mu, internet var mı). Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
 gidemezse işaret bırakılır ve sonraki çağrı yeniden dener. Hata Vercel
-günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre ve jeton yazılmaz.
+günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre yazılmaz.
 Program kapatılıp açılmadıysa (Kapandı) da eşik dolunca uyarır; hiç rapor
 gelmemiş kurulumda uyarmaz.
 

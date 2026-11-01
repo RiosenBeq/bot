@@ -9,9 +9,9 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
 ## Sahibin yapacakları (kod gerekmez)
 
 1. **Bekçiyi açmak (isteğe bağlı, önerilir).** Vercel, Settings, Environment Variables
-   (Production): `BEKCI=acik`, `BEKCI_ESIK_DK`, `BEKCI_ALICILAR`, `BEKCI_ANAHTARI`, e-posta
-   için `SMTP_*`, Telegram için `TELEGRAM_BOT`, Vercel Cron için `CRON_SECRET`; sonra
-   Redeploy. Hobby'de cron günde bir çalışır: cron-job.org'da her 5 dakikada
+   (Production): `BEKCI=acik`, `BEKCI_ESIK_DK`, `BEKCI_ALICILAR` (yalnız e-posta
+   adresleri), `BEKCI_ANAHTARI`, e-posta için `SMTP_*`, Vercel Cron için `CRON_SECRET`;
+   sonra Redeploy. Hobby'de cron günde bir çalışır: cron-job.org'da her 5 dakikada
    `/api/bekci` adresine `Authorization: Bearer <BEKCI_ANAHTARI>` başlığıyla istek kurun
    (UptimeRobot ücretsiz planı başlık ekleyemez, `?anahtar=` kullanın). Ayrıntı: README,
    "Bekçi" bölümü.

@@ -7,18 +7,18 @@ Uç nokta yalnız CRON_SECRET / BEKCI_ANAHTARI ile açılır; bayat hedef varsa 
 döner (dış izleme servisi kendisi alarm verebilsin). Sırlar hiçbir cevaba ve
 günlüğe girmez. Ağ yok: gönderenler sahtedir."""
 
-import http.client
 import json
 import smtplib
 import socket
 import time
 import urllib.parse
+import urllib.request
 from pathlib import Path
 
 import _pano
 import pytest
 from test_cekirdek import Saat, _ayar, _rapor
-from test_uctan_uca import RAPOR, _istek, _rapor_gonder, site  # noqa: F401
+from test_uctan_uca import RAPOR, _cerez, _giris, _istek, _rapor_gonder, site  # noqa: F401
 
 KOK = Path(__file__).resolve().parents[1]
 T0 = 1_800_000_000.0
@@ -28,8 +28,10 @@ GIZLI = {
     "BEKCI_ANAHTARI": "bekci-gizli-anahtar-0123456789",
     "CRON_SECRET": "cron-gizli-sir-0123456789",
     "SMTP_SIFRESI": "smtp-gizli-sifre-0123",
-    "TELEGRAM_BOT": "123456:telegram-gizli-jeton",
 }
+# Telegram sahibin isteğiyle 01.11.2026'da kaldırıldı. Vercel'de kalmış olabilecek
+# eski ayarlar: site bunları okumaz, onlara hiçbir istek gitmez (en alttaki testler).
+ESKI_TG_ORTAMI = {"TELEGRAM_BOT": "123456:eski-gizli-bot-jetonu", "TELEGRAM_SOHBET": "-100999"}
 
 
 class SahteGonderici:
@@ -51,7 +53,7 @@ class Oldurulen(Exception):
 
 
 def _bekci_ayari(**degisen):
-    alanlar = {"bekci": "acik", "bekci_alicilar": ("sef@ornek.com.tr", "tg:12345")}
+    alanlar = {"bekci": "acik", "bekci_alicilar": ("sef@ornek.com.tr",)}
     alanlar.update(degisen)
     return _ayar(**alanlar)
 
@@ -76,14 +78,14 @@ def test_bekci_ayarlari_okunur_sirlar_gizli_ve_eksiklere_girmez():
         "SMTP_PORT": "465",
         "SMTP_KULLANICI": "pano@ornek.com",
         "SMTP_KIMDEN": "pano@ornek.com",
-        "TELEGRAM_SOHBET": "-100999",
+        **ESKI_TG_ORTAMI,
         **GIZLI,
     }
     ayar = _pano.ayar_oku(ortam)
     assert ayar.bekci == "acik" and ayar.bekci_esik_dk == 30 and ayar.smtp_port == 465
-    assert ayar.bekci_alicilar == ("a@b.co", "tg:-100123", "c@d.co")
-    assert _pano.bekci_alicilari(ayar) == ("a@b.co", "tg:-100123", "c@d.co", "tg:-100999")
-    for sir in GIZLI.values():
+    # Eski tg: girdisi atlanır, e-postalar sırasıyla kalır
+    assert ayar.bekci_alicilar == ("a@b.co", "c@d.co") and ayar.bekci_tg_yok_sayildi is True
+    for sir in [*GIZLI.values(), *ESKI_TG_ORTAMI.values()]:
         assert sir not in repr(ayar)
     assert _pano.eksikler(ayar) == _pano.eksikler(_pano.ayar_oku({}))
 
@@ -94,7 +96,12 @@ def test_bekci_ayarlari_okunur_sirlar_gizli_ve_eksiklere_girmez():
         (),
         587,
     )
-    assert _pano.bekci_alicilari(bos) == ()
+    assert bos.bekci_tg_yok_sayildi is False
+    assert _pano.ayar_oku({"BEKCI_ALICILAR": "a@b.co"}).bekci_tg_yok_sayildi is False
+    # Büyük harfle yazılmış tg: da atlanır; 20 alıcı sınırına girmez
+    cok = _pano.ayar_oku({"BEKCI_ALICILAR": ",".join(["TG:1"] + [f"k{i}@b.co" for i in range(25)])})
+    assert cok.bekci_alicilar == tuple(f"k{i}@b.co" for i in range(20))
+    assert cok.bekci_tg_yok_sayildi is True
     for ham, beklenen in (("abc", 20), ("0", 1), ("99999", 1440), ("-5", 20)):
         assert _pano.ayar_oku({"BEKCI_ESIK_DK": ham}).bekci_esik_dk == beklenen
 
@@ -141,7 +148,7 @@ def test_bayat_rapor_tek_uyari_duzelince_yeniden_uyari():
         {"ad": "Gebze fabrikası", "baglanti": "yok", "gecikme_dk": 21, "bayat": True}
     ]
     alicilar, konu, metin = gonder.cagrilar[0]
-    assert alicilar == ("sef@ornek.com.tr", "tg:12345")
+    assert alicilar == ("sef@ornek.com.tr",)
     assert "Gebze fabrikası" in konu and "21 dakika" in metin
     assert "internet" in metin and "Son rapor" in metin
 
@@ -349,7 +356,7 @@ def test_eski_program_komut_alirken_ana_tesis_ayrica_izlenir():
 
 
 def test_bir_alicinin_hatasi_otekileri_durdurmaz_gunluge_sir_yazilmaz(capsys):
-    ayar = _bekci_ayari(smtp_sifresi="smtp-gizli-sifre-9", telegram_bot="123:gizli-jeton")
+    ayar = _bekci_ayari(smtp_sifresi="smtp-gizli-sifre-9")
     gidenler = []
 
     def eposta(ayar, alici, konu, metin):
@@ -359,27 +366,21 @@ def test_bir_alicinin_hatasi_otekileri_durdurmaz_gunluge_sir_yazilmaz(capsys):
             raise smtplib.SMTPAuthenticationError(535, ayar.smtp_sifresi.encode())
         gidenler.append(alici)
 
-    def telegram(ayar, sohbet, metin):
-        if sohbet == "1":
-            raise http.client.InvalidURL(f"/bot{ayar.telegram_bot}/sendMessage")
-        gidenler.append("tg:" + sohbet)
-
     basari = []
     sayi = _pano.bekci_uyari_gonder(
         ayar,
-        ("bozuk", "kopuk@ornek.com", "tg:1", "iyi@ornek.com", "tg:2"),
+        ("bozuk", "kopuk@ornek.com", "iyi@ornek.com", "ikinci@ornek.com"),
         "konu",
         "metin",
         eposta,
-        telegram,
         lambda: basari.append(1),
     )
-    assert sayi == 2 and sorted(gidenler) == ["iyi@ornek.com", "tg:2"]
+    assert sayi == 2 and gidenler == ["iyi@ornek.com", "ikinci@ornek.com"]
     assert basari == [1]  # ilk başarıda bir kez
     gunluk = capsys.readouterr().err
-    assert gunluk.count("Bekçi bildirimi gidemedi") == 3
+    assert gunluk.count("Bekçi bildirimi gidemedi") == 2
     assert "SMTPAuthenticationError" in gunluk and "ValueError" in gunluk
-    for sir in ("smtp-gizli-sifre-9", "gizli-jeton", "kopuk@ornek.com"):
+    for sir in ("smtp-gizli-sifre-9", "kopuk@ornek.com"):
         assert sir not in gunluk
 
 
@@ -473,37 +474,6 @@ def test_eposta_gittikten_sonra_kapanis_hatasi_basarisizlik_sayilmaz(monkeypatch
     monkeypatch.setattr(_pano.smtplib, "SMTP", Kopuk)
     with pytest.raises(smtplib.SMTPException):
         _pano._eposta_gonder(ayar, "a@b.co", "K", "M")
-
-
-def test_telegram_urllib_ile_gider_bozuk_jeton_aga_cikmaz(monkeypatch):
-    istekler = []
-
-    class SahteYanit:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def read(self):
-            return b'{"ok":true}'
-
-    def sahte_urlopen(istek, timeout=None):
-        istekler.append((istek.full_url, istek.get_method(), istek.data, timeout))
-        return SahteYanit()
-
-    monkeypatch.setattr(_pano.urllib.request, "urlopen", sahte_urlopen)
-    _pano._telegram_gonder(_bekci_ayari(telegram_bot="123456:ABC-def_ghi"), "-100123", "Merhaba")
-    adres, yontem, veri, sure = istekler[0]
-    assert adres == "https://api.telegram.org/bot123456:ABC-def_ghi/sendMessage"
-    assert yontem == "POST" and sure == _pano.BEKCI_GONDERIM_ZAMAN_ASIMI_SN
-    assert urllib.parse.parse_qs(veri.decode()) == {"chat_id": ["-100123"], "text": ["Merhaba"]}
-    for bot, sohbet in (("gizli jeton\n", "1"), ("123:abc", "1; DROP"), ("", "1")):
-        with pytest.raises(_pano.BildirimHatasi) as hata:
-            _pano._telegram_gonder(_bekci_ayari(telegram_bot=bot), sohbet, "x")
-        if bot.strip():
-            assert bot.strip() not in str(hata.value)
-    assert len(istekler) == 1
 
 
 # ------------------------------------------------------------ HTTP (uç nokta)
@@ -621,18 +591,14 @@ def test_sirlar_cevapta_ve_gunlukte_yok(site, monkeypatch, capsys):  # noqa: F81
     for ad, deger in GIZLI.items():
         monkeypatch.setenv(ad, deger)
     monkeypatch.setenv("BEKCI", "acik")
-    monkeypatch.setenv("BEKCI_ALICILAR", "sef@ornek.com.tr,tg:12345")
+    monkeypatch.setenv("BEKCI_ALICILAR", "sef@ornek.com.tr")
     monkeypatch.setenv("SMTP_SUNUCU", "smtp.ornek.com")
     monkeypatch.setenv("SMTP_KULLANICI", "pano@ornek.com")
 
     def eposta(ayar, alici, konu, metin):
         raise smtplib.SMTPAuthenticationError(535, f"{ayar.smtp_sifresi} {alici}".encode())
 
-    def telegram(ayar, sohbet, metin):
-        raise ValueError(f"/bot{ayar.telegram_bot}/sendMessage {sohbet}")
-
     monkeypatch.setattr(_pano, "_eposta_gonder", eposta)
-    monkeypatch.setattr(_pano, "_telegram_gonder", telegram)
     _pano.rapor_kaydet(_pano.DEPO, _pano.rapor_temizle(RAPOR), time.time() - 3600)
     kod, basliklar, govde = _bekci_iste(site, _bearer(GIZLI["CRON_SECRET"]))
     assert kod == 503 and json.loads(govde)["gonderilen"] == 0
@@ -650,3 +616,148 @@ def test_vercel_cron_gunluk_ve_islev_sayisi_hobby_sinirinda():
     assert vercel["crons"] == [{"path": "/api/bekci", "schedule": "0 5 * * *"}]
     islevler = sorted(p.name for p in (KOK / "api").glob("*.py") if not p.name.startswith("_"))
     assert "bekci.py" in islevler and len(islevler) <= 12
+
+
+# ---------------------------------------- Vercel'de kalmış eski tg: ayarları
+
+
+class SahteYanit:
+    """urlopen'ın ağa çıkmayan cevabı."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return b'{"ok":true}'
+
+
+def _dis_istekler(monkeypatch):
+    """urlopen'ı sahtesiyle değiştirir (ağ yok): yerel test sunucusuna giden
+    istekler geçer; başka her adres kaydedilir ve ağa çıkmadan cevaplanır."""
+    gercek = urllib.request.urlopen
+    kayit = []
+
+    def sahte_urlopen(istek, *args, **kwargs):
+        adres = istek.full_url if isinstance(istek, urllib.request.Request) else str(istek)
+        if urllib.parse.urlsplit(adres).hostname == "127.0.0.1":
+            return gercek(istek, *args, **kwargs)
+        kayit.append(adres)
+        return SahteYanit()
+
+    monkeypatch.setattr(_pano.urllib.request, "urlopen", sahte_urlopen)
+    return kayit
+
+
+def test_eski_tg_alicisi_ve_bot_jetonu_varken_yalniz_eposta_gider(monkeypatch):
+    """BEKCI_ALICILAR'da e-postanın yanında eski bir tg: girdisi, ortamda bot jetonu
+    duruyor. Bekçi uyarınca gerçek gönderim yolu (sahte SMTP) yalnız e-postayı
+    gönderir; hiçbir HTTP isteği yapılmaz (urlopen sahtedir, çağrılırsa kaydeder)."""
+    istekler = _dis_istekler(monkeypatch)
+    gidenler = []
+
+    class SMTP:
+        def __init__(self, *_, **__):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def starttls(self, context=None):
+            pass
+
+        def login(self, *_):
+            pass
+
+        def send_message(self, mesaj):
+            gidenler.append(mesaj["To"])
+
+    monkeypatch.setattr(_pano.smtplib, "SMTP", SMTP)
+    ayar = _pano.ayar_oku(
+        {
+            "BEKCI": "acik",
+            "BEKCI_ALICILAR": "amir@firma.example,tg:123456789",
+            "SMTP_SUNUCU": "smtp.firma.example",
+            **ESKI_TG_ORTAMI,
+        }
+    )
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    _kaydet(depo, _rapor(), T0, ayar)
+    saat.simdi = T0 + 21 * DK
+    sonuc = _pano.bekci_isle(depo, ayar, saat.simdi)
+    assert istekler == []
+    assert gidenler == ["amir@firma.example"]
+    assert sonuc["uyarildi"] is True and sonuc["gonderilen"] == 1
+    assert ayar.bekci_alicilar == ("amir@firma.example",)
+
+
+def test_yalniz_eski_tg_alicisi_kaldiysa_alici_hic_yokmus_gibi(site, monkeypatch):  # noqa: F811
+    """BEKCI_ALICILAR'da yalnız eski tg: girdileri kaldıysa bekçi çökmez ve bugünkü
+    "alıcı yok" durumunun aynısını yapar: bayat hedefte 503, bildirim yok, işaret
+    bırakılmaz (sonraki çağrı yeniden dener). Cevaba yalnız yok sayma notu eklenir."""
+    istekler = _dis_istekler(monkeypatch)
+    epostalar = []
+    monkeypatch.setattr(_pano, "_eposta_gonder", lambda _ayar, alici, *_: epostalar.append(alici))
+    monkeypatch.setenv("BEKCI", "acik")
+    monkeypatch.setenv("BEKCI_ANAHTARI", GIZLI["BEKCI_ANAHTARI"])
+    monkeypatch.setenv("SMTP_SUNUCU", "smtp.firma.example")
+    jeton = _bearer(GIZLI["BEKCI_ANAHTARI"])
+    _pano.rapor_kaydet(_pano.DEPO, _pano.rapor_temizle(RAPOR), time.time() - 3600)
+
+    kod, _, govde = _bekci_iste(site, jeton)  # bugünkü "alıcı yok" durumu
+    alicisiz = json.loads(govde)
+    assert kod == 503 and alicisiz["uyarildi"] is False and alicisiz["gonderilen"] == 0
+    assert "uyarilar" not in alicisiz
+
+    monkeypatch.setenv("BEKCI_ALICILAR", "tg:123456789, tg:-100999")
+    for ad, deger in ESKI_TG_ORTAMI.items():
+        monkeypatch.setenv(ad, deger)
+    kod, _, govde = _bekci_iste(site, jeton)
+    yalniz_tg = json.loads(govde)
+    assert kod == 503
+    assert {ad: deger for ad, deger in yalniz_tg.items() if ad != "uyarilar"} == alicisiz
+    assert yalniz_tg["uyarilar"] == [_pano.BEKCI_TG_METNI]
+    assert _pano.DEPO.komut("GET", ISARET) is None  # sonraki çağrı yeniden dener
+    assert epostalar == [] and istekler == []
+
+
+def test_yok_sayma_notu_ayar_uyarilarinin_yerinde_sirsiz(site, monkeypatch, capsys):  # noqa: F811
+    """tg: girdisinin yok sayıldığı, ayar uyarılarının çıktığı yerlerde söylenir:
+    /api/bekci cevabında `uyarilar` ve yöneticinin Tesisler ekranında
+    (`filo.uyarilar`, ANA_TESIS uyarısının yanı). Not sabit bir metindir: girdiyi,
+    jetonu, adresi ya da başka bir sırrı yazmaz. tg: girdisi yoksa not da yoktur."""
+    istekler = _dis_istekler(monkeypatch)
+    monkeypatch.setattr(_pano, "_eposta_gonder", lambda *_: None)
+    for ad, deger in {**GIZLI, **ESKI_TG_ORTAMI, "BEKCI": "acik"}.items():
+        monkeypatch.setenv(ad, deger)
+    monkeypatch.setenv("BEKCI_ALICILAR", "amir@firma.example")
+    jeton = _bearer(GIZLI["BEKCI_ANAHTARI"])
+    kurucu = {"Cookie": _cerez(_giris(site)[1])}
+    _pano.rapor_kaydet(_pano.DEPO, _pano.rapor_temizle(RAPOR), time.time() - 3600)
+
+    def filo_uyarilari():
+        ham = _istek(f"{site}/api/durum?filo=1", basliklar=kurucu)[2]
+        return json.loads(ham)["filo"]["uyarilar"], ham.decode()
+
+    assert "uyarilar" not in json.loads(_bekci_iste(site, jeton)[2])  # tg: yok: not yok
+    assert filo_uyarilari()[0] == []
+
+    monkeypatch.setenv("BEKCI_ALICILAR", "amir@firma.example,tg:123456789")
+    kod, basliklar, govde = _bekci_iste(site, jeton)
+    cevap = json.loads(govde)
+    uyarilar, filo_ham = filo_uyarilari()
+    assert kod == 503 and "uyarilar" in cevap, cevap
+    assert len(uyarilar) == 1, uyarilar
+    assert cevap["uyarilar"] == uyarilar == [_pano.BEKCI_TG_METNI]
+    for parca in ("BEKCI_ALICILAR", "tg:", "yok sayılıyor", "e-posta"):
+        assert parca in _pano.BEKCI_TG_METNI
+    metin = govde.decode() + json.dumps(basliklar) + filo_ham + capsys.readouterr().err
+    for gizli in [*GIZLI.values(), *ESKI_TG_ORTAMI.values(), "123456789", "amir@firma.example"]:
+        assert gizli not in metin
+    assert istekler == []
