@@ -688,3 +688,147 @@ def test_operator_yonetim_komutu_yapamaz(site):  # noqa: F811
     opr_cerez = _cerez(_giris(site, "opr-yeni-1234", ad="opr")[1])
     kod, _, govde = _post(site, "/api/mudahale", {"tur": "teshis"}, opr_cerez, site)
     assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+
+
+# ----------------------------------------- komut_red izi (docs/19 §3.3, SITE-B1)
+
+
+def _hazir_cerez(site, kurucu_cerez, ad, rol, ilk, yeni):  # noqa: F811
+    """Hesabı açar, ilk şifresini değiştirir (sifre_degismeli kalkar) ve giriş
+    yapıp çerezini verir: artık durum değiştiren işler denenebilir."""
+    _ekle(site, kurucu_cerez, ad, rol, ilk)
+    _post(
+        site,
+        "/api/hesap",
+        {"eylem": "sifre_degistir", "eski_sifre": ilk, "yeni_sifre": yeni},
+        _cerez(_giris(site, ilk, ad=ad)[1]),
+        site,
+    )
+    return _cerez(_giris(site, yeni, ad=ad)[1])
+
+
+def _kayit(site, kurucu_cerez):  # noqa: F811
+    kod, _, govde = _istek(f"{site}/api/hesap", basliklar={"Cookie": kurucu_cerez})
+    assert kod == 200, govde
+    return json.loads(govde)["kayit"]
+
+
+def test_yetkisiz_denemede_komut_red_izi_kalir(site):  # noqa: F811
+    """Operatör çerezi admin uçlarını yoklarsa iz kalır: /api/hesap ekle ve
+    /api/mudahale teshis 403 döner VE işlem kaydına komut_red satırı yazılır
+    (docs/19 §3.3). Düzeltme öncesi kayıt boştur; bu test o yüzden kırmızıdır."""
+    cerez = _kurucu(site)
+    opr_cerez = _hazir_cerez(site, cerez, "opr", "operator", "parola-opr-123", "opr-yeni-1234")
+    # Operatör hesap ekleyemez (403 yetki) - admin ucu yoklaması
+    kod, _, govde = _post(
+        site,
+        "/api/hesap",
+        {"eylem": "ekle", "ad": "x", "rol": "izleyici", "ilk_sifre": "parola-1234", "sifre": "x"},
+        opr_cerez,
+        site,
+    )
+    assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+    # Operatör yönetim komutu (teshis) isteyemez (403 yetki)
+    kod, _, govde = _post(site, "/api/mudahale", {"tur": "teshis"}, opr_cerez, site)
+    assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+    # İşlem kaydında iki komut_red satırı (kurucu GET /api/hesap ile görür)
+    redler = [s for s in _kayit(site, cerez) if s["is"] == "komut_red"]
+    assert len(redler) == 2
+    assert all(s["sonuc"] == "red" and s["kim"] == "opr" and s["rol"] == "operator" for s in redler)
+    ozetler = " ".join(s["ozet"] for s in redler)
+    assert "ekle" in ozetler and "teshis" in ozetler
+
+
+def test_yalniz_kurucu_denemesi_komut_red_izi_kalir(site):  # noqa: F811
+    """Kurucu olmayan bir yöneticinin yönetici açma denemesi 403 yalniz_kurucu
+    döner VE komut_red izi bırakır (docs/19 §3.3). Düzeltme öncesi iz yok."""
+    cerez = _kurucu(site)
+    mudur_cerez = _hazir_cerez(site, cerez, "mudur", "yonetici", "parola-mudur-1", "mudur-yeni-123")
+    kod, _, govde = _post(
+        site,
+        "/api/hesap",
+        {
+            "eylem": "ekle",
+            "ad": "baska",
+            "rol": "yonetici",
+            "ilk_sifre": "parola-1234",
+            "sifre": "mudur-yeni-123",
+        },
+        mudur_cerez,
+        site,
+    )
+    assert kod == 403 and json.loads(govde)["hata"] == "yalniz_kurucu"
+    redler = [s for s in _kayit(site, cerez) if s["is"] == "komut_red"]
+    assert any(
+        s["kim"] == "mudur" and s["rol"] == "yonetici" and s["sonuc"] == "red" for s in redler
+    )
+
+
+def test_komut_red_akini_sinirlanir(site, monkeypatch):  # noqa: F811
+    """komut_red kaydı sel gibi doldurulamaz: hesap başına pencere başına en çok
+    KOMUT_RED_SINIRI satır yazılır, fazlası toplanır (docs/19 §3.3)."""
+    monkeypatch.setattr(_pano, "KOMUT_RED_SINIRI", 3, raising=False)
+    cerez = _kurucu(site)
+    opr_cerez = _hazir_cerez(site, cerez, "opr", "operator", "parola-opr-123", "opr-yeni-1234")
+    for _ in range(5):  # 5 yetkisiz deneme, sınır 3
+        kod, _, govde = _post(site, "/api/mudahale", {"tur": "teshis"}, opr_cerez, site)
+        assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+    redler = [s for s in _kayit(site, cerez) if s["is"] == "komut_red"]
+    assert len(redler) == 3  # fazlası toplandı
+
+
+# ------------------------------------ hesap kaydı yazma kilidi (SITE-B2, CAS yerine)
+
+
+def test_hesap_kaydi_kilidi_eszamanli_rol_yazmayi_engeller(site, monkeypatch):  # noqa: F811
+    """Aynı hesaba eşzamanlı iki yazma birbirini ezmesin (docs/19 SITE-B2):
+    kayıt kilidi başka bir işlemce tutulurken rol değişikliği 409 mesgul alır ve
+    rol değişmez (lost update olmaz); kilit boşalınca işlem geçer ve bitince kilit
+    bırakılır. Düzeltme öncesi kilit yok: ilk istek 200 döner, test kırmızıdır."""
+    monkeypatch.setattr(_pano, "HESAP_KILIT_DENEME", 1, raising=False)  # testte beklemesiz
+    cerez = _kurucu(site)
+    _ekle(site, cerez, "isci", "operator", "parola-isci-123")
+    kilit = _pano.KULLANICI_KILIT_ONEKI + "isci"
+    # Başka bir işlem hesabı kilitlemiş gibi: kilit anahtarını elle tut
+    _pano.DEPO.komut("SET", kilit, "1")
+    kod, _, govde = _post(
+        site,
+        "/api/hesap",
+        {"eylem": "rol", "ad": "isci", "rol": "izleyici", "sifre": SIFRE},
+        cerez,
+        site,
+    )
+    assert kod == 409 and json.loads(govde)["hata"] == "mesgul"
+    (ham,) = _pano.DEPO.al_coklu([_pano.KULLANICI_ONEKI + "isci"])
+    assert json.loads(ham)["rol"] == "operator"  # yazma hiç yapılmadı (lost update yok)
+    # Kilit boşalınca işlem geçer ve bitince kilidini bırakır
+    _pano.DEPO.sil(kilit)
+    kod, _, govde = _post(
+        site,
+        "/api/hesap",
+        {"eylem": "rol", "ad": "isci", "rol": "izleyici", "sifre": SIFRE},
+        cerez,
+        site,
+    )
+    assert kod == 200, govde
+    (ham,) = _pano.DEPO.al_coklu([_pano.KULLANICI_ONEKI + "isci"])
+    assert json.loads(ham)["rol"] == "izleyici"
+    assert _pano.DEPO.al_coklu([kilit]) == [None]  # kilit bırakıldı
+
+
+def test_sifre_degistir_kaydi_kilidi_tutulur(site, monkeypatch):  # noqa: F811
+    """Kişinin kendi şifre değişikliği de kayıt kilidi altında (docs/19 SITE-B2):
+    kilit tutulurken 409 mesgul. Düzeltme öncesi 200 dönerdi, test kırmızıdır."""
+    monkeypatch.setattr(_pano, "HESAP_KILIT_DENEME", 1, raising=False)
+    cerez = _kurucu(site)
+    _ekle(site, cerez, "opr", "operator", "parola-opr-123")
+    c = _cerez(_giris(site, "parola-opr-123", ad="opr")[1])
+    _pano.DEPO.komut("SET", _pano.KULLANICI_KILIT_ONEKI + "opr", "1")
+    kod, _, govde = _post(
+        site,
+        "/api/hesap",
+        {"eylem": "sifre_degistir", "eski_sifre": "parola-opr-123", "yeni_sifre": "opr-yeni-1234"},
+        c,
+        site,
+    )
+    assert kod == 409 and json.loads(govde)["hata"] == "mesgul"

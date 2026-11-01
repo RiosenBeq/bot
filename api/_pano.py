@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import hashlib
 import hmac
 import http.cookies
@@ -190,6 +191,21 @@ SIFRE_DEGISTIR_SAYAC_ONEKI = "dalsan:kayit:sinir:sifre:"
 HESAP_ISLEM_SINIRI = 30
 HESAP_ISLEM_PENCERESI_SN = 900
 HESAP_ISLEM_SAYAC_ONEKI = "dalsan:kayit:sinir:hesap:"
+# Yetkisiz deneme izi (docs/19 §3.3 komut_red): düşük yetkili ya da çalınan bir
+# çerez admin uçlarını yoklarsa iz kalsın. Ama bu iz kaydı sel gibi dolduramasın:
+# hesap başına bir dakikada en çok KOMUT_RED_SINIRI satır yazılır, fazlası toplanır.
+KOMUT_RED_SAYAC_ONEKI = "dalsan:kayit:sinir:red:"
+KOMUT_RED_SINIRI = 10
+KOMUT_RED_PENCERESI_SN = 60
+# Hesap kaydına eşzamanlı yazmayı dizen kısa ömürlü kilit (docs/19 SITE-B2).
+# Upstash boru hattı işlemsel değildir; aynı hesaba iki read-modify-write (ör.
+# yönetici X'i düşürürken X şifresini değiştirir) birbirini sessizce ezebilir.
+# Kilit CAS yerine geçer: alınamazsa kısa süre denenir, sonra 409 mesgul.
+KULLANICI_KILIT_ONEKI = "dalsan:kullanici:kilit:"
+HESAP_KILIT_SURESI_SN = 5
+HESAP_KILIT_DENEME = 5
+HESAP_KILIT_BEKLEME_SN = 0.2
+HESAP_MESGUL_METNI = "Bu hesapta başka bir işlem sürüyor; birkaç saniye sonra yeniden deneyin."
 
 # ---- görüntü (fabrika içi kullanım kararı, 24.10.2026)
 # Kanıt fotoğrafı: ihlal başına bir kez gelir, 7 gün durur (durumla aynı).
@@ -1026,6 +1042,22 @@ def _islem_satiri(simdi: float, kim: str, rol: str, is_: str, ozet: str, sonuc: 
 def kayit_yaz(depo: UpstashDepo | BellekDepo, liste: str, satir: dict, kesme: int) -> None:
     """Bir işlem kaydı satırını yazar ve listeyi kısaltır (LPUSH + LTRIM)."""
     depo.boru_hatti([["LPUSH", liste, _kayit_metni(satir)], ["LTRIM", liste, "0", str(kesme - 1)]])
+
+
+def _komut_red_yaz(depo: UpstashDepo | BellekDepo, oturum: Oturum, ozet: str, simdi: float) -> None:
+    """Rolü yetmeyen komut ya da hesap işi denemesini işlem kaydına yazar
+    (docs/19 §3.3 komut_red): düşük yetkili ya da çalınan bir çerez admin
+    uçlarını iz bırakmadan yoklayamasın. Hesap başına bir dakikada en çok
+    KOMUT_RED_SINIRI satır; fazlası toplanır (kayıt sel gibi dolmasın)."""
+    ad = oturum.ad or ""
+    if depo.say(KOMUT_RED_SAYAC_ONEKI + ad, KOMUT_RED_PENCERESI_SN) > KOMUT_RED_SINIRI:
+        return
+    kayit_yaz(
+        depo,
+        KAYIT_OTURUM_ANAHTARI,
+        _islem_satiri(simdi, ad, oturum.rol, "komut_red", ozet, "red"),
+        KAYIT_EN_COK,
+    )
 
 
 def _kim_gorunumu(ham: object) -> dict:
@@ -2179,6 +2211,7 @@ def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
     depo = depo_al(ayar)
     tur = _secim(govde.get("tur"), KOMUT_TURLERI)
     if tur in YONETIM_TURLERI and oturum.rol != "yonetici":
+        _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {tur}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
     if tur in AGIR_TURLERI:
         onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
@@ -2287,6 +2320,27 @@ def _yeni_sifre_dogrula(yeni: object, ad: str) -> str:
     return yeni
 
 
+@contextlib.contextmanager
+def _hesap_kilidi(depo: UpstashDepo | BellekDepo, ad: str):
+    """Hesap kaydına yazarken kısa ömürlü kilit (docs/19 SITE-B2). Aynı hesaba
+    eşzamanlı read-modify-write birbirini ezmesin diye okuma ve yazma tek kilit
+    altında yapılır. Kilit alınamazsa kısa bir süre denenir, sonra 409 mesgul
+    verilir; kilit her durumda finally'de bırakılır."""
+    anahtar = KULLANICI_KILIT_ONEKI + ad
+    for deneme in range(HESAP_KILIT_DENEME):
+        (alindi,) = depo.boru_hatti([["SET", anahtar, "1", "EX", str(HESAP_KILIT_SURESI_SN), "NX"]])
+        if alindi == "OK":
+            break
+        if deneme + 1 < HESAP_KILIT_DENEME:
+            time.sleep(HESAP_KILIT_BEKLEME_SN)
+    else:
+        raise PanoHatasi(409, "mesgul", HESAP_MESGUL_METNI)
+    try:
+        yield
+    finally:
+        depo.sil(anahtar)
+
+
 def _hesap_sifre_degistir(
     depo: UpstashDepo | BellekDepo,
     ayar: Ayar,
@@ -2302,34 +2356,39 @@ def _hesap_sifre_degistir(
             "Kurucu hesabının şifresi burada değişmez: Vercel'de Settings > Environment "
             "Variables > PANO_SIFRESI'ni değiştirip Redeploy edin. Bütün oturumlar kapanır.",
         )
-    hesap = hesap_oku(depo, oturum.ad)
-    if hesap is None:
-        raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
-    eski = govde.get("eski_sifre")
-    if not sifre_dogrula(hesap.get("sifre"), eski if isinstance(eski, str) else ""):
-        _onay_hatasi_isle(depo, oturum, istek, kurucu=False)
-        raise PanoHatasi(400, "eski_sifre", "Eski şifreniz yanlış; işlem yapılmadı.")
-    yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), oturum.ad)
-    if (
-        depo.say(SIFRE_DEGISTIR_SAYAC_ONEKI + oturum.ad, SIFRE_DEGISTIR_PENCERESI_SN)
-        > SIFRE_DEGISTIR_SINIRI
-    ):
-        raise PanoHatasi(
-            429, "cok_sik", "Şifrenizi çok sık değiştirdiniz; bir saat sonra yeniden deneyin."
+    # Kayıt kilidi altında oku-değiştir-yaz (docs/19 SITE-B2): bir yönetici bu
+    # hesabı düşürürken kişinin kendi şifre değişikliği düşürmeyi geri almasın.
+    with _hesap_kilidi(depo, oturum.ad):
+        hesap = hesap_oku(depo, oturum.ad)
+        if hesap is None:
+            raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+        eski = govde.get("eski_sifre")
+        if not sifre_dogrula(hesap.get("sifre"), eski if isinstance(eski, str) else ""):
+            _onay_hatasi_isle(depo, oturum, istek, kurucu=False)
+            raise PanoHatasi(400, "eski_sifre", "Eski şifreniz yanlış; işlem yapılmadı.")
+        yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), oturum.ad)
+        if (
+            depo.say(SIFRE_DEGISTIR_SAYAC_ONEKI + oturum.ad, SIFRE_DEGISTIR_PENCERESI_SN)
+            > SIFRE_DEGISTIR_SINIRI
+        ):
+            raise PanoHatasi(
+                429, "cok_sik", "Şifrenizi çok sık değiştirdiniz; bir saat sonra yeniden deneyin."
+            )
+        hesap["sifre"] = sifre_ozetle(yeni)
+        hesap["sifre_degismeli"] = False
+        hesap["oturum_surumu"] = _tam(hesap.get("oturum_surumu"), 0, 10**12) + 1
+        hesap["guncellendi"] = int(simdi)
+        depo.boru_hatti([_set_komutu(KULLANICI_ONEKI + oturum.ad, _kayit_metni(hesap), None)])
+        kayit_yaz(
+            depo,
+            KAYIT_ANAHTARI,
+            _islem_satiri(simdi, oturum.ad, oturum.rol, "sifre_degistir", "", "tamam"),
+            KAYIT_EN_COK,
         )
-    hesap["sifre"] = sifre_ozetle(yeni)
-    hesap["sifre_degismeli"] = False
-    hesap["oturum_surumu"] = _tam(hesap.get("oturum_surumu"), 0, 10**12) + 1
-    hesap["guncellendi"] = int(simdi)
-    depo.boru_hatti([_set_komutu(KULLANICI_ONEKI + oturum.ad, _kayit_metni(hesap), None)])
-    kayit_yaz(
-        depo,
-        KAYIT_ANAHTARI,
-        _islem_satiri(simdi, oturum.ad, oturum.rol, "sifre_degistir", "", "tamam"),
-        KAYIT_EN_COK,
-    )
-    yeni_cerez = cerez_uret(ayar, oturum.ad, hesap["hesap_kimligi"], hesap["oturum_surumu"], simdi)
-    return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
+        yeni_cerez = cerez_uret(
+            ayar, oturum.ad, hesap["hesap_kimligi"], hesap["oturum_surumu"], simdi
+        )
+        return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
 
 
 def _hesap_ekle(
@@ -2400,72 +2459,81 @@ def _hesap_yonet(
     istek: Isleyici,
 ) -> tuple[int, dict, str | None]:
     hedef_ad = ad_duzelt(govde.get("ad"))
-    yeni_rol = _secim(govde.get("rol"), ROLLER) if eylem in ("ekle", "rol") else ""
-    hedef = None if eylem == "ekle" else hesap_oku(depo, hedef_ad)
-    hedef_rol = _secim(_sozluk(hedef).get("rol"), ROLLER) if hedef else ""
-    # İşe özgü rol: yönetici hesaplarına dokunan işleri yalnız kurucu yapar (403)
-    yonetici_isi = (
-        (eylem == "ekle" and yeni_rol == "yonetici")
-        or (eylem == "rol" and (yeni_rol == "yonetici" or hedef_rol == "yonetici"))
-        or (eylem in ("sifre_sifirla", "kapat", "ac", "sil") and hedef_rol == "yonetici")
-    )
-    # Kurucuya ve kendine dokunma, yalnız_kurucu'dan önce: kendi yönetici
-    # hesabını değiştirmeye çalışan bir yönetici "yalnız kurucu" değil "kendi
-    # hesabı"nı görür (docs/19 §3.1).
-    if hedef_ad == KURUCU_AD:
-        raise PanoHatasi(400, "kurucu", "Kurucu hesabı buradan değiştirilemez.")
-    if eylem in ("rol", "kapat", "sil") and hedef_ad == oturum.ad:
-        raise PanoHatasi(
-            400, "kendi_hesabi", "Kendi hesabınızın bu ayarını buradan değiştiremezsiniz."
+    # Hedef hesabın kaydına yazarken kilit (docs/19 SITE-B2): okuma ve yazma tek
+    # kilit altında olsun ki eşzamanlı bir yazma rol/açık değişikliğini ezmesin.
+    with _hesap_kilidi(depo, hedef_ad):
+        yeni_rol = _secim(govde.get("rol"), ROLLER) if eylem in ("ekle", "rol") else ""
+        hedef = None if eylem == "ekle" else hesap_oku(depo, hedef_ad)
+        hedef_rol = _secim(_sozluk(hedef).get("rol"), ROLLER) if hedef else ""
+        # İşe özgü rol: yönetici hesaplarına dokunan işleri yalnız kurucu yapar (403)
+        yonetici_isi = (
+            (eylem == "ekle" and yeni_rol == "yonetici")
+            or (eylem == "rol" and (yeni_rol == "yonetici" or hedef_rol == "yonetici"))
+            or (eylem in ("sifre_sifirla", "kapat", "ac", "sil") and hedef_rol == "yonetici")
         )
-    if yonetici_isi and not oturum.kurucu:
-        raise PanoHatasi(
-            403, "yalniz_kurucu", "Yönetici hesaplarını yalnız kurucu hesabı değiştirebilir."
-        )
-    onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
-    if depo.say(HESAP_ISLEM_SAYAC_ONEKI + oturum.ad, HESAP_ISLEM_PENCERESI_SN) > HESAP_ISLEM_SINIRI:
-        raise PanoHatasi(
-            429,
-            "cok_sik",
-            "Kısa sürede çok fazla hesap işlemi yaptınız; 15 dakika sonra yeniden deneyin.",
-        )
-    if eylem == "ekle":
-        return _hesap_ekle(depo, oturum, hedef_ad, yeni_rol, govde, simdi)
-    if hedef is None:
-        raise PanoHatasi(404, "hesap_yok", "Böyle bir hesap yok.")
-    if eylem == "rol":
-        if not yeni_rol:
-            raise PanoHatasi(400, "rol", "Rol seçilmedi.")
-        hedef["rol"] = yeni_rol
-        hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
-        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
-        ozet, is_ = f"{hedef_ad} -> {ROL_ADLARI.get(yeni_rol, yeni_rol)}", "rol_degistir"
-    elif eylem == "sifre_sifirla":
-        yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), hedef_ad)
-        hedef["sifre"] = sifre_ozetle(yeni)
-        hedef["sifre_degismeli"] = True
-        hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
-        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
-        ozet, is_ = hedef_ad, "sifre_sifirla"
-    elif eylem in ("kapat", "ac"):
-        hedef["acik"] = eylem == "ac"
-        if eylem == "kapat":
+        # Kurucuya ve kendine dokunma, yalnız_kurucu'dan önce: kendi yönetici
+        # hesabını değiştirmeye çalışan bir yönetici "yalnız kurucu" değil "kendi
+        # hesabı"nı görür (docs/19 §3.1).
+        if hedef_ad == KURUCU_AD:
+            raise PanoHatasi(400, "kurucu", "Kurucu hesabı buradan değiştirilemez.")
+        if eylem in ("rol", "kapat", "sil") and hedef_ad == oturum.ad:
+            raise PanoHatasi(
+                400, "kendi_hesabi", "Kendi hesabınızın bu ayarını buradan değiştiremezsiniz."
+            )
+        if yonetici_isi and not oturum.kurucu:
+            _komut_red_yaz(depo, oturum, f"Yalnız kurucu: {eylem}", simdi)
+            raise PanoHatasi(
+                403, "yalniz_kurucu", "Yönetici hesaplarını yalnız kurucu hesabı değiştirebilir."
+            )
+        onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
+        if (
+            depo.say(HESAP_ISLEM_SAYAC_ONEKI + oturum.ad, HESAP_ISLEM_PENCERESI_SN)
+            > HESAP_ISLEM_SINIRI
+        ):
+            raise PanoHatasi(
+                429,
+                "cok_sik",
+                "Kısa sürede çok fazla hesap işlemi yaptınız; 15 dakika sonra yeniden deneyin.",
+            )
+        if eylem == "ekle":
+            return _hesap_ekle(depo, oturum, hedef_ad, yeni_rol, govde, simdi)
+        if hedef is None:
+            raise PanoHatasi(404, "hesap_yok", "Böyle bir hesap yok.")
+        if eylem == "rol":
+            if not yeni_rol:
+                raise PanoHatasi(400, "rol", "Rol seçilmedi.")
+            hedef["rol"] = yeni_rol
             hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
-        _hesap_kaydet(depo, hedef_ad, hedef, simdi)
-        ozet, is_ = hedef_ad, "hesap_kapat" if eylem == "kapat" else "hesap_ac"
-    elif eylem == "sil":
-        depo.boru_hatti([["DEL", KULLANICI_ONEKI + hedef_ad], ["DEL", SON_GIRIS_ONEKI + hedef_ad]])
-        depo.komut("LREM", KULLANICILAR_ANAHTARI, "0", hedef_ad)
-        ozet, is_ = hedef_ad, "hesap_sil"
-    else:  # ulaşılmaz (eylem üstte doğrulandı)
-        raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
-    kayit_yaz(
-        depo,
-        KAYIT_ANAHTARI,
-        _islem_satiri(simdi, oturum.ad, oturum.rol, is_, ozet, "tamam"),
-        KAYIT_EN_COK,
-    )
-    return 200, {"tamam": True}, None
+            _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+            ozet, is_ = f"{hedef_ad} -> {ROL_ADLARI.get(yeni_rol, yeni_rol)}", "rol_degistir"
+        elif eylem == "sifre_sifirla":
+            yeni = _yeni_sifre_dogrula(govde.get("yeni_sifre"), hedef_ad)
+            hedef["sifre"] = sifre_ozetle(yeni)
+            hedef["sifre_degismeli"] = True
+            hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
+            _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+            ozet, is_ = hedef_ad, "sifre_sifirla"
+        elif eylem in ("kapat", "ac"):
+            hedef["acik"] = eylem == "ac"
+            if eylem == "kapat":
+                hedef["oturum_surumu"] = _tam(hedef.get("oturum_surumu"), 0, 10**12) + 1
+            _hesap_kaydet(depo, hedef_ad, hedef, simdi)
+            ozet, is_ = hedef_ad, "hesap_kapat" if eylem == "kapat" else "hesap_ac"
+        elif eylem == "sil":
+            depo.boru_hatti(
+                [["DEL", KULLANICI_ONEKI + hedef_ad], ["DEL", SON_GIRIS_ONEKI + hedef_ad]]
+            )
+            depo.komut("LREM", KULLANICILAR_ANAHTARI, "0", hedef_ad)
+            ozet, is_ = hedef_ad, "hesap_sil"
+        else:  # ulaşılmaz (eylem üstte doğrulandı)
+            raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
+        kayit_yaz(
+            depo,
+            KAYIT_ANAHTARI,
+            _islem_satiri(simdi, oturum.ad, oturum.rol, is_, ozet, "tamam"),
+            KAYIT_EN_COK,
+        )
+        return 200, {"tamam": True}, None
 
 
 def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
@@ -2482,6 +2550,7 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
     if eylem == "sifre_degistir":
         return _hesap_sifre_degistir(depo, ayar, oturum, govde, simdi, istek)
     if oturum.rol != "yonetici":
+        _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {_metin(eylem, 40)}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
     if eylem not in ("ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil"):
         raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
