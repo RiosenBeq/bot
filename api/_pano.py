@@ -1371,7 +1371,7 @@ def filo_verisi(
     gösterir: ana tesis yoksa (tesis kimliği kullanılmıyor) ya da kimlik
     göndermeyen (eski) bir program canlıysa panodaki fabrikadır ve hiçbir tesis
     ana değildir (_tesis_kaydet ile aynı kural). Boş kütükte tek satır odur.
-    Tesis kullanılırken eski program canlıysa ve ANA_TESIS geçersizse uyarı çıkar.
+    Uyarılar: tesis kullanılırken eski program canlı; ANA_TESIS geçersiz.
     `veri`: aynı istekte okunmuş pano_verisi (ikinci kez okunmasın)."""
     veri = veri if veri is not None else pano_verisi(depo, ayar, simdi)
     rapor = veri.get("rapor")
@@ -2877,7 +2877,9 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/bekci - "sistemden haber yok" dış alarmı (docs/20 §3). Vercel
     Cron ya da dış izleme servisi çağırır. Bayat hedef varsa 503 döner: e-posta
     ya da Telegram kurulu olmasa da izleme servisi kendisi alarm verebilir.
-    Cevapta sır, alıcı ya da görüntü yoktur."""
+    BEKCI tanınmayan bir değerse (anahtar doğrulandıktan sonra) 503 bekci_ayari
+    döner: yanlış yazılmış ayar sessizce kapalı kalmaz. Cevapta sır, alıcı ya da
+    görüntü yoktur. HEAD de aynı yoldan geçer (api/bekci.py)."""
     ayar = ayar_oku()
     _bekci_yetkisi(istek, ayar)
     if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın

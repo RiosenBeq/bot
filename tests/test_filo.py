@@ -523,8 +523,9 @@ def test_tesisler_gorunumu_yalniz_yoneticide_ve_sekme_degil():
 def test_tesisler_gorunumu_uyarilari_metin_olarak_gosterir():
     """Sunucunun uyarıları (eski program canlı, ANA_TESIS geçersiz) Tesisler
     görünümünde yalnız textContent ile yazılır; uyarı yoksa kutu gizlidir."""
-    gorunum = re.search(r'<div class="gorunum" data-gorunum="tesisler" hidden>.*?\n        </div>',
-                        PANO_HTML, re.S).group(0)
+    gorunum = re.search(
+        r'<div class="gorunum" data-gorunum="tesisler" hidden>.*?\n        </div>', PANO_HTML, re.S
+    ).group(0)
     assert '<p id="tesis-uyarisi" class="site-uyarisi" hidden></p>' in gorunum
     ciz = re.search(r"function tesisleriCiz\(filo\) \{.*?\n  \}", PANO_JS, re.S).group(0)
     assert "filo.uyarilar" in ciz

@@ -301,7 +301,10 @@ def test_ana_tesis_susarsa_uyari_onu_adiyla_anar_ayni_fabrika_iki_kez_sayilmaz()
         assert _kaydet(depo, _tesisli("gebze"), saat.simdi, sonra) == {"filo": {"ana": False}}
     gonder = SahteGonderici()
     sonuc = _pano.bekci_isle(depo, sonra, saat.simdi, gonder)
-    assert _hedefler(sonuc) == [("Izmir fabrikası", "yok", True), ("Gebze fabrikası", "canli", False)]
+    assert _hedefler(sonuc) == [
+        ("Izmir fabrikası", "yok", True),
+        ("Gebze fabrikası", "canli", False),
+    ]
     assert len(gonder.cagrilar) == 1 and "Izmir fabrikası" in gonder.cagrilar[0][1]
     assert not any("Gebze" in konu for _, konu, _ in gonder.cagrilar)
 
@@ -309,7 +312,10 @@ def test_ana_tesis_susarsa_uyari_onu_adiyla_anar_ayni_fabrika_iki_kez_sayilmaz()
     assert _kaydet(depo, _tesisli("izmir"), saat.simdi, sonra)["filo"] == {"ana": True}
     assert depo.komut("GET", ISARET + ":izmir") is None
     sonuc = _pano.bekci_isle(depo, sonra, saat.simdi, gonder)
-    assert _hedefler(sonuc) == [("Izmir fabrikası", "canli", False), ("Gebze fabrikası", "canli", False)]
+    assert _hedefler(sonuc) == [
+        ("Izmir fabrikası", "canli", False),
+        ("Gebze fabrikası", "canli", False),
+    ]
 
 
 def test_ana_tesis_hic_rapor_gondermediyse_hedef_onun_kimligini_tasir():
@@ -332,7 +338,10 @@ def test_eski_program_komut_alirken_ana_tesis_ayrica_izlenir():
         _kaydet(depo, _rapor(bilgisayar={"ad": "Gebze fabrikası"}), saat.simdi, ayar)
     gonder = SahteGonderici()
     sonuc = _pano.bekci_isle(depo, ayar, saat.simdi, gonder)
-    assert _hedefler(sonuc) == [("Gebze fabrikası", "canli", False), ("Izmir fabrikası", "yok", True)]
+    assert _hedefler(sonuc) == [
+        ("Gebze fabrikası", "canli", False),
+        ("Izmir fabrikası", "yok", True),
+    ]
     assert len(gonder.cagrilar) == 1 and "Izmir fabrikası" in gonder.cagrilar[0][1]
 
 
