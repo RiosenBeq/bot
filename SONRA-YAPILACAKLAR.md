@@ -1,9 +1,10 @@
 # Sonra yapılacaklar - site (01.11.2026)
 
-Sitedeki bekçi ("sistemden haber yok" alarmı) ve çoklu tesis görünümü main'dedir; hepsi
-isteğe bağlıdır ve ortam değişkenleri yazılmadıkça site bugünkü gibi çalışır. Bu dosya
-sitede KALAN işleri toplar. Programla birlikte bütün liste DALSAN deposunda:
-`docs/SONRA-YAPILACAKLAR.md`.
+Sitedeki bekçi ("sistemden haber yok" alarmı), çoklu tesis görünümü (aynı tesis kimliği
+iki bilgisayardan gelince uyarı dahil), hesap başına iki adımlı doğrulama ve "bu ay
+çalışma" satırı main'dedir; hepsi isteğe bağlıdır ve açılmadıkça site bugünkü gibi
+çalışır. Bu dosya sitede KALAN işleri toplar. Programla birlikte bütün liste DALSAN
+deposunda: `docs/SONRA-YAPILACAKLAR.md`.
 
 ## Sahibin yapacakları (kod gerekmez)
 
@@ -19,12 +20,15 @@ sitede KALAN işleri toplar. Programla birlikte bütün liste DALSAN deposunda:
    rapor gönderdikçe hiçbir tesis komut almaz; Tesisler ekranı bunu uyarıyla söyler.
 3. **Yayın sonrası bir kez:** Vercel panosunda son yayının Runtime Logs'una bakın. Bekçi
    açılmadıysa günde bir 403 satırı (Vercel Cron, CRON_SECRET yok) olağandır.
+4. **İki adımlı doğrulama (isteğe bağlı, yöneticiler için önerilir).** Her kişi kendi
+   hesabında açar: Sistem, İki adımlı doğrulama, Aç (Google Authenticator ya da Microsoft
+   Authenticator, "anahtarı elle gir"). Telefonu kaybedenin iki adımını yönetici
+   Kullanıcılar ekranından sıfırlar; kurucuda Vercel'de PANO_SIFRESI değiştirilir. Ayrıntı:
+   README, "İki adımlı doğrulama".
 
 ## Teknik işler
 
 1. **Çoklu tesis tam ayrımı:** tesis başına pano, komut kuyruğu, bekçi eşiği ve hesap
    yetkisi (bir operatör yalnız kendi tesisine). İkinci saha gerçekten gelince.
-2. **Aynı tesis kimliği iki bilgisayarda:** tesis özetine bilgisayar adı ekleyip
-   Tesisler ekranında "kimlik çakışması" uyarısı göstermek. Bugün yalnız belgede uyarı var.
-3. **Vercel Pro'ya geçilirse** `vercel.json` cron'unu `*/5 * * * *` yapmak. Hobby'de
+2. **Vercel Pro'ya geçilirse** `vercel.json` cron'unu `*/5 * * * *` yapmak. Hobby'de
    alt-günlük cron yayını durdurur; değiştirmeyin.

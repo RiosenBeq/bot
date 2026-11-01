@@ -1804,6 +1804,10 @@ time,
   padding: 0;
   font-size: 15px;
 }
+/* İki adımlı doğrulama kartı: açıklama ile altındaki form arasında pay */
+.iki-adim-aciklama {
+  margin-bottom: 12px;
+}
 
 /* ------------------------------------------------------- tanıtım sayfası */
 .site-ust {

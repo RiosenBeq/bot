@@ -94,6 +94,9 @@
     hesap_ac: "Giriş açıldı",
     hesap_sil: "Hesap silindi",
     sifre_degistir: "Şifre değiştirildi",
+    iki_adim_ac: "İki adımlı doğrulama açıldı",
+    iki_adim_kapat: "İki adımlı doğrulama kapatıldı",
+    iki_adim_sifirla: "İki adımlı doğrulama sıfırlandı",
     komut: "Komut gönderildi",
     komut_sonuc: "Komut sonucu",
     komut_dustu: "Komut düştü",
@@ -149,7 +152,8 @@
   const fotoHatalari = new Map(); // olay kimliği -> fotoğrafın gelmediği an
   const fotoKucukleri = new Map(); // "genel:123" -> küçük fotoğraf (tazelemede yeniden inmesin)
   let acikKare = null; // büyütülmüş anlık görüntünün kamerası (canlı yenilenir)
-  let oturum = null; // {ad, rol, rol_adi, kurucu, sifre_degismeli} - /api/durum'dan
+  let oturum = null; // {ad, rol, rol_adi, kurucu, sifre_degismeli, iki_adim?} - /api/durum'dan
+  let ikiAdimKurulum = null; // {ad, sir, uri}: iki adımın kurulumu sürüyor (yalnız bu sekmede)
   let onizleme = false; // önizleme yayını mı
   let hesapVerisi = null; // GET /api/hesap (kullanıcılar + işlem kaydı)
   let hesapIstekSuruyor = false;
@@ -264,9 +268,17 @@
   // ------------------------------------------------------------- ekranlar
 
   function tekEkranGoster(ad) {
+    // Çıkış ve oturum düşmesi giriş ekranını buradan açar: yarım kalan iki adım
+    // kurulumunun anahtarı unutulur, aynı sekmede giren başka kişi görmez.
+    if (ad === "giris") ikiAdimKurulumuUnut();
     $("kabuk").hidden = true;
     $("tek-ekran").hidden = false;
     for (const kimlik of ["yukleniyor", "kurulum", "giris"]) $(kimlik).hidden = kimlik !== ad;
+  }
+
+  function ikiAdimKurulumuUnut() {
+    ikiAdimKurulum = null;
+    for (const kimlik of ["iki-adim-sir", "iki-adim-uri"]) $(kimlik).textContent = "";
   }
 
   function panoyuGoster() {
@@ -336,7 +348,156 @@
     $("hesabim-formu").hidden = kurucu;
     $("hesabim-kurucu").hidden = !kurucu;
     if (kurucu) $("hesabim-kurucu").textContent = KURUCU_HESABIM;
+    ikiAdimCiz();
   }
+
+  // ------------------------------------------------- iki adımlı doğrulama
+
+  const IKI_ADIM_KURTARMA =
+    "Telefonunuzu kaybederseniz yöneticiniz Kullanıcılar ekranından iki adımı sıfırlar; " +
+    "sonra yalnız şifrenizle girer, isterseniz yeniden açarsınız.";
+  const IKI_ADIM_KURTARMA_KURUCU =
+    "Kurucu hesabında telefon kaybolursa Vercel'de PANO_SIFRESI'ni değiştirip Redeploy edin: " +
+    "kurucunun iki adımlı doğrulaması kendiliğinden kapanır.";
+
+  /* Durum (açık / kapalı), kurulum ya da kapatma formu. Sır yalnız kurulum
+     sürerken ve yalnız textContent ile yazılır; tazelemede kutular korunur. */
+  function ikiAdimCiz() {
+    if (!oturum) return;
+    const acik = oturum.iki_adim === true;
+    // Anahtar yalnız kurulumu başlatan hesaba çizilir
+    if (acik || (ikiAdimKurulum && ikiAdimKurulum.ad !== oturum.ad)) ikiAdimKurulumuUnut();
+    const durum = $("iki-adim-durumu");
+    temizle(durum);
+    durum.appendChild(acik ? rozet("Açık", "basari", true) : rozet("Kapalı", ""));
+    $("iki-adim-aciklama").textContent = acik
+      ? "Girişte şifrenizden sonra telefonunuzdaki doğrulama uygulamasının kodu sorulur."
+      : "Açarsanız girişte şifrenize ek olarak telefonunuzdaki 6 haneli kod sorulur: şifreniz " +
+        "başkasının eline geçse de hesabınıza girilemez.";
+    $("iki-adim-ac-formu").hidden = acik || !!ikiAdimKurulum;
+    $("iki-adim-kurulum").hidden = acik || !ikiAdimKurulum;
+    $("iki-adim-kapat-formu").hidden = !acik;
+    const sir = ikiAdimKurulum ? ikiAdimKurulum.sir : "";
+    if ($("iki-adim-sir").textContent !== sir) {
+      $("iki-adim-sir").textContent = sir;
+      $("iki-adim-uri").textContent = ikiAdimKurulum ? ikiAdimKurulum.uri : "";
+      $("iki-adim-sir-kopyala").textContent = "Kopyala";
+      $("iki-adim-uri-kopyala").textContent = "Kopyala";
+    }
+    $("iki-adim-notu").textContent = oturum.kurucu ? IKI_ADIM_KURTARMA_KURUCU : IKI_ADIM_KURTARMA;
+  }
+
+  function kodMetni(deger) {
+    return String(deger || "").replace(/\s+/g, "");
+  }
+
+  async function metniKopyala(kimlik, dugme) {
+    try {
+      await navigator.clipboard.writeText($(kimlik).textContent);
+      dugme.textContent = "Kopyalandı";
+    } catch (hata) {
+      // Pano izni yoksa metni seçili bırak: kullanıcı kendisi kopyalar
+      const secim = window.getSelection();
+      const aralik = document.createRange();
+      aralik.selectNodeContents($(kimlik));
+      secim.removeAllRanges();
+      secim.addRange(aralik);
+      dugme.textContent = "Seçildi, kopyalayın";
+    }
+  }
+
+  $("iki-adim-sir-kopyala").addEventListener("click", function () {
+    metniKopyala("iki-adim-sir", this);
+  });
+  $("iki-adim-uri-kopyala").addEventListener("click", function () {
+    metniKopyala("iki-adim-uri", this);
+  });
+
+  $("iki-adim-ac-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("iki-adim-hatasi").textContent = "";
+    const sifre = $("iki-adim-ac-sifre").value;
+    if (!sifre) {
+      $("iki-adim-hatasi").textContent = "Açmak için şu anki şifrenizi yazın.";
+      return;
+    }
+    const dugme = $("iki-adim-ac-dugmesi");
+    dugme.disabled = true;
+    try {
+      const cevap = await hesapIslem({ eylem: "iki_adim_baslat", sifre: sifre });
+      $("iki-adim-ac-sifre").value = "";
+      ikiAdimKurulum = {
+        ad: oturum.ad,
+        sir: cevap.sir || "",
+        uri: cevap.uri || "",
+      };
+      ikiAdimCiz();
+      $("iki-adim-onay-kodu").focus();
+    } catch (hata) {
+      $("iki-adim-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
+
+  $("iki-adim-onay-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("iki-adim-hatasi").textContent = "";
+    const kod = kodMetni($("iki-adim-onay-kodu").value);
+    if (!/^[0-9]{6}$/.test(kod)) {
+      $("iki-adim-hatasi").textContent = "Uygulamanın gösterdiği 6 haneli kodu yazın.";
+      return;
+    }
+    const dugme = $("iki-adim-onay-dugmesi");
+    dugme.disabled = true;
+    try {
+      await hesapIslem({ eylem: "iki_adim_onayla", kod: kod });
+      ikiAdimKurulum = null;
+      duyur("İki adımlı doğrulama açıldı.");
+      await yukle();
+    } catch (hata) {
+      // Kurulum düştüyse (süre doldu ya da başka sekmede açıldı) başa dönülür
+      if (hata.hata === "iki_adim_bekleyen_yok" || hata.hata === "iki_adim_acik") {
+        ikiAdimKurulum = null;
+        ikiAdimCiz();
+      }
+      $("iki-adim-hatasi").textContent = hata.message;
+    } finally {
+      $("iki-adim-onay-kodu").value = "";
+      dugme.disabled = false;
+    }
+  });
+
+  $("iki-adim-vazgec").addEventListener("click", function () {
+    ikiAdimKurulum = null; // bekleyen sır sunucuda 10 dakikada kendiliğinden düşer
+    $("iki-adim-hatasi").textContent = "";
+    ikiAdimCiz();
+  });
+
+  $("iki-adim-kapat-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("iki-adim-hatasi").textContent = "";
+    const sifre = $("iki-adim-kapat-sifre").value;
+    const kod = kodMetni($("iki-adim-kapat-kodu").value);
+    if (!sifre || !/^[0-9]{6}$/.test(kod)) {
+      $("iki-adim-hatasi").textContent =
+        "Kapatmak için şifrenizi ve uygulamanın gösterdiği 6 haneli kodu yazın.";
+      return;
+    }
+    const dugme = $("iki-adim-kapat-dugmesi");
+    dugme.disabled = true;
+    try {
+      await hesapIslem({ eylem: "iki_adim_kapat", sifre: sifre, kod: kod });
+      $("iki-adim-kapat-sifre").value = "";
+      duyur("İki adımlı doğrulama kapatıldı.");
+      await yukle();
+    } catch (hata) {
+      $("iki-adim-hatasi").textContent = hata.message;
+    } finally {
+      $("iki-adim-kapat-kodu").value = "";
+      dugme.disabled = false;
+    }
+  });
 
   $("hesabim-formu").addEventListener("submit", async function (olay) {
     olay.preventDefault();
@@ -1954,7 +2115,11 @@
       tekEkranGoster("giris");
       throw new Error("Oturumun süresi doldu; yeniden giriş yapın.");
     }
-    if (!yanit.ok) throw new Error(veri.mesaj || "İşlem yapılamadı (HTTP " + yanit.status + ").");
+    if (!yanit.ok) {
+      const hata = new Error(veri.mesaj || "İşlem yapılamadı (HTTP " + yanit.status + ").");
+      hata.hata = veri.hata || "";
+      throw hata;
+    }
     return veri;
   }
 
@@ -2068,7 +2233,19 @@
     });
     altSatir.append(durumDugme, silDugme);
 
-    panel.append(sifreLabel, onaySifre, rolSatiri, sifreSatiri, altSatir, hata);
+    // İki adımı sıfırla: telefonunu kaybeden yalnız şifresiyle girer (yalnız açıkken)
+    const satirlar = [sifreLabel, onaySifre, rolSatiri, sifreSatiri];
+    if (k.iki_adim) {
+      const ikiAdimSatiri = el("div", "islem-satiri");
+      const ikiAdimDugme = el("button", "dugme ikincil", "2 adımı sıfırla");
+      ikiAdimDugme.type = "button";
+      ikiAdimDugme.addEventListener("click", function () {
+        calistir({ eylem: "iki_adim_sifirla", ad: k.ad, sifre: onaySifre.value });
+      });
+      ikiAdimSatiri.appendChild(ikiAdimDugme);
+      satirlar.push(ikiAdimSatiri);
+    }
+    panel.append(...satirlar, altSatir, hata);
     det.appendChild(panel);
     return det;
   }
@@ -2089,6 +2266,7 @@
     rozetler.appendChild(rozet(k.rol_adi || ROL_ADLARI[k.rol] || "", k.rol === "yonetici" ? "bilgi" : ""));
     if (!k.acik && !k.kurucu) rozetler.appendChild(rozet("Girişi kapalı", "tehlike"));
     if (k.sifre_degismeli) rozetler.appendChild(rozet("Şifre bekliyor", "uyari"));
+    if (k.iki_adim) rozetler.appendChild(rozet("2 adım", "basari"));
     ust.appendChild(rozetler);
     satir.appendChild(ust);
     if (yonetilebilir(k)) satir.appendChild(kullaniciIslemleri(k));
@@ -2199,6 +2377,8 @@
     const [ad, sinif] = TESIS_ROZETI[t.baglanti] || ["Bilinmiyor", ""];
     rozetler.appendChild(rozet(ad, sinif, true, t.baglanti === "canli"));
     rozetler.appendChild(t.ana ? rozet("Ana tesis - komut alır", "bilgi") : rozet("Yalnız izleme", ""));
+    // Aynı kimlik iki bilgisayardan geliyor: ayrıntısı ekranın üstündeki uyarıda
+    if (t.cakisma) rozetler.appendChild(rozet("Kimlik çakışması", "tehlike"));
     ust.appendChild(rozetler);
     satir.appendChild(ust);
     return satir;
@@ -2227,6 +2407,21 @@
     return deger === true ? "Evet" : deger === false ? "Hayır" : "Bilinmiyor";
   }
 
+  /* Bu ayın çalışma oranı (raporun isteğe bağlı calisma alanı): tek satır,
+     Türkçe ondalık virgül; ör. "Bu ay çalışma: %99,6 (kameralar %98,9; ...)". */
+  function calismaMetni(c) {
+    const yuzde = new Intl.NumberFormat("tr-TR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return (
+      "Bu ay çalışma: %" +
+      yuzde.format(c.sistem_yuzde) +
+      " (kameralar %" +
+      yuzde.format(c.kamera_yuzde) +
+      "; " +
+      new Intl.NumberFormat("tr-TR").format(c.olculen_saat) +
+      " saat ölçüldü)"
+    );
+  }
+
   function sistemiCiz(veri) {
     const r = veri.rapor;
     const satirlar = [
@@ -2252,6 +2447,10 @@
       satir.appendChild(el("dd", "", deger));
       liste.appendChild(satir);
     }
+    // Yalnız program gönderiyorsa (yoksa satır hiç görünmez)
+    const calisma = r && r.calisma;
+    $("calisma-satiri").textContent = calisma ? calismaMetni(calisma) : "";
+    $("calisma-satiri").hidden = !calisma;
 
     const adres = fabrikaAdresi(veri);
     for (const kimlik of ["fabrika-baglantisi", "fabrika-dugmesi", "kenar-fabrika"]) {
@@ -2371,18 +2570,31 @@
   }
 
   // Hata iletisi ve kutuların kırmızı kenarı birlikte yazılır, birlikte silinir.
-  function girisHatasi(metin) {
+  // `alanlar`: kırmızı kenarlı kutular (varsayılan ad ve şifre; kod hatasında kod).
+  function girisHatasi(metin, alanlar) {
+    const hatali = metin ? alanlar || ["ad", "sifre"] : [];
     $("giris-hatasi").textContent = metin;
-    for (const kimlik of ["ad", "sifre"]) {
-      if (metin) $(kimlik).setAttribute("aria-invalid", "true");
+    for (const kimlik of ["ad", "sifre", "giris-kod"]) {
+      if (hatali.includes(kimlik)) $(kimlik).setAttribute("aria-invalid", "true");
       else $(kimlik).removeAttribute("aria-invalid");
     }
   }
-  for (const kimlik of ["ad", "sifre"]) {
+  for (const kimlik of ["ad", "sifre", "giris-kod"]) {
     $(kimlik).addEventListener("input", function () {
       if ($(kimlik).hasAttribute("aria-invalid")) girisHatasi("");
     });
   }
+
+  /* İki adımlı doğrulama açık hesapta sunucu "iki_adim_gerekli" der: kod kutusu
+     açılır, aynı ad ve şifre kodla yeniden gönderilir. */
+  function kodAlaniGoster(goster) {
+    $("giris-kod-alani").hidden = !goster;
+    if (!goster) $("giris-kod").value = "";
+  }
+  // Başka bir kullanıcı adı yazılınca kod kutusu kapanır
+  $("ad").addEventListener("input", function () {
+    kodAlaniGoster(false);
+  });
 
   $("giris-formu").addEventListener("submit", async function (olay) {
     olay.preventDefault();
@@ -2392,22 +2604,45 @@
       girisHatasi("Kullanıcı adı ve şifre gerekir.");
       return;
     }
+    const kodAcik = !$("giris-kod-alani").hidden;
+    const kod = kodAcik ? $("giris-kod").value.replace(/\s+/g, "") : "";
+    if (kodAcik && !kod) {
+      girisHatasi("Doğrulama uygulamasındaki 6 haneli kodu yazın.", ["giris-kod"]);
+      $("giris-kod").focus();
+      return;
+    }
     const dugme = $("giris-dugmesi");
     dugme.disabled = true;
     girisHatasi("");
     try {
+      const govde = { ad: ad, sifre: sifre };
+      if (kod) govde.kod = kod;
       const yanit = await fetch("/api/giris", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ad: ad, sifre: sifre }),
+        body: JSON.stringify(govde),
       });
       const veri = await yanit.json().catch(() => ({}));
       if (!yanit.ok) {
+        if (veri.hata === "iki_adim_gerekli") {
+          // Şifre doğru; kod isteniyor (hata değil): kod kutusu açılır
+          kodAlaniGoster(true);
+          $("giris-kod").focus();
+          return;
+        }
+        if (veri.hata === "kod_yanlis") {
+          $("giris-kod").value = "";
+          girisHatasi(veri.mesaj || "Doğrulama kodu yanlış.", ["giris-kod"]);
+          $("giris-kod").focus();
+          return;
+        }
+        kodAlaniGoster(false);
         girisHatasi(veri.mesaj || "Giriş yapılamadı (HTTP " + yanit.status + ").");
         return;
       }
       $("sifre").value = "";
+      kodAlaniGoster(false);
       $("yukleniyor-metni").textContent = "Yükleniyor...";
       tekEkranGoster("yukleniyor");
       await yukle();

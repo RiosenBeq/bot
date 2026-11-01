@@ -68,6 +68,12 @@
         <input id="ad" name="ad" type="text" autocomplete="username" required maxlength="32" placeholder="Kullanıcı adınız" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi">
         <label for="sifre">Şifre</label>
         <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200" placeholder="Şifreniz" aria-describedby="giris-hatasi">
+        <!-- İki adımlı doğrulama açık hesapta sunucu "iki_adim_gerekli" deyince açılır -->
+        <div id="giris-kod-alani" class="form" hidden>
+          <label for="giris-kod">Doğrulama kodu</label>
+          <input id="giris-kod" name="kod" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi giris-kod-notu">
+          <p id="giris-kod-notu" class="not">Bu hesapta iki adımlı doğrulama açık. Telefonunuzdaki doğrulama uygulamasında (Google Authenticator ya da Microsoft Authenticator) DALSAN satırının gösterdiği kodu yazın.</p>
+        </div>
         <p id="giris-hatasi" class="hata" role="alert"></p>
         <button id="giris-dugmesi" class="dugme birincil tam" type="submit">Giriş yap <svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>
       </form>
@@ -315,6 +321,7 @@
               <section class="kart" aria-labelledby="sistem-baslik">
                 <div class="kart-basligi"><h2 id="sistem-baslik">Bağlantı ve program</h2></div>
                 <dl id="sistem-bilgisi" class="ozellikler-listesi"></dl>
+                <p id="calisma-satiri" class="kart-dipnot" hidden></p>
               </section>
               <section class="kart" aria-labelledby="bilgisayar-baslik">
                 <div class="kart-basligi"><div><h2 id="bilgisayar-baslik">Kurulu olduğu bilgisayar</h2><p id="bilgisayar-alt">Programın çalıştığı makine</p></div></div>
@@ -357,6 +364,44 @@
                   <a class="dugme ikincil" href="/"><svg class="simge" aria-hidden="true"><use href="#i-ana"/></svg>Tanıtım sayfası</a>
                   <button class="dugme ikincil" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
                 </div>
+              </section>
+              <section id="iki-adim-karti" class="kart" aria-labelledby="iki-adim-baslik">
+                <div class="kart-basligi"><div><h2 id="iki-adim-baslik">İki adımlı doğrulama</h2><p>Girişte şifreye ek olarak telefondaki 6 haneli kod</p></div><div id="iki-adim-durumu" class="rozetler"></div></div>
+                <p id="iki-adim-aciklama" class="ikincil-metin iki-adim-aciklama"></p>
+                <form id="iki-adim-ac-formu" class="form" novalidate hidden>
+                  <label for="iki-adim-ac-sifre">Açmak için şu anki şifreniz</label>
+                  <input id="iki-adim-ac-sifre" name="iki-adim-ac-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
+                  <button id="iki-adim-ac-dugmesi" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Aç</button>
+                </form>
+                <div id="iki-adim-kurulum" class="form" hidden>
+                  <ol class="adimlar">
+                    <li><span>Telefonunuza <b>Google Authenticator</b> ya da <b>Microsoft Authenticator</b> uygulamasını kurun.</span></li>
+                    <li><span>Uygulamada hesap ekleyin ve <b>anahtarı elle gir</b> seçeneğini seçin (Google: "Kurulum anahtarı girin", Microsoft: "Kodu elle girin"). Hesap adına <b>DALSAN</b>, anahtar olarak aşağıdaki anahtarı yazın; tür <b>zamana dayalı</b> kalsın.</span></li>
+                    <li><span>Uygulamanın gösterdiği 6 haneli kodu aşağıya yazıp <b>Onayla</b>'ya basın.</span></li>
+                  </ol>
+                  <p class="not">Anahtar</p>
+                  <div class="anahtar-kutusu"><code id="iki-adim-sir"></code><button id="iki-adim-sir-kopyala" class="dugme ikincil" type="button">Kopyala</button></div>
+                  <p class="not">Aynı anahtarın bağlantısı (bazı uygulamalar bunu da kabul eder)</p>
+                  <div class="anahtar-kutusu"><code id="iki-adim-uri"></code><button id="iki-adim-uri-kopyala" class="dugme ikincil" type="button">Kopyala</button></div>
+                  <form id="iki-adim-onay-formu" class="form" novalidate>
+                    <label for="iki-adim-onay-kodu">Uygulamadaki 6 haneli kod</label>
+                    <input id="iki-adim-onay-kodu" name="iki-adim-onay-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" aria-describedby="iki-adim-hatasi">
+                    <div class="dugmeler">
+                      <button id="iki-adim-onay-dugmesi" class="dugme birincil" type="submit">Onayla</button>
+                      <button id="iki-adim-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                    </div>
+                  </form>
+                  <p class="not">Kurulum 10 dakika içinde tamamlanmalı. Telefonun tarih ve saati otomatik ayarlı olmalı.</p>
+                </div>
+                <form id="iki-adim-kapat-formu" class="form" novalidate hidden>
+                  <label for="iki-adim-kapat-sifre">Kapatmak için şu anki şifreniz</label>
+                  <input id="iki-adim-kapat-sifre" name="iki-adim-kapat-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
+                  <label for="iki-adim-kapat-kodu">Uygulamadaki 6 haneli kod</label>
+                  <input id="iki-adim-kapat-kodu" name="iki-adim-kapat-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" aria-describedby="iki-adim-hatasi">
+                  <button id="iki-adim-kapat-dugmesi" class="dugme ikincil" type="submit">Kapat</button>
+                </form>
+                <p id="iki-adim-hatasi" class="hata" role="alert"></p>
+                <p id="iki-adim-notu" class="not"></p>
               </section>
               <section id="fabrika-yonetim-karti" class="kart yalniz-mobil" aria-label="Fabrika yönetimi" hidden>
                 <div class="kart-basligi"><h2>Fabrika yönetimi</h2></div>

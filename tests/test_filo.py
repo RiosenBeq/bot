@@ -531,3 +531,158 @@ def test_tesisler_gorunumu_uyarilari_metin_olarak_gosterir():
     assert "filo.uyarilar" in ciz
     assert re.search(r'\$\("tesis-uyarisi"\)', ciz)
     assert ".textContent = " in ciz and ".hidden = " in ciz
+
+
+# ------------------------- aynı tesis kimliği iki bilgisayarda (SONRA-YAPILACAKLAR B3)
+
+CAKISMA_UYARISI = (
+    "Aynı tesis kimliği iki bilgisayardan geliyor: gebze (Gebze fabrikası · DALSAN-PC, "
+    "Gebze fabrikası · ISG-PC-02). Her bilgisayara farklı UZAK_PANO_TESIS_ID yazın."
+)
+
+
+def _bilgisayarli(kimlik, bilgisayar_adi, ad="Gebze fabrikası", **degisen):
+    return _tesisli(kimlik, bilgisayar={"ad": ad, "bilgisayar_adi": bilgisayar_adi}, **degisen)
+
+
+def test_tesis_ozeti_raporun_bilgisayarini_tasir():
+    depo = _pano.BellekDepo(Saat(T0))
+    _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), T0)
+    ozet = json.loads(depo.komut("GET", "dalsan:tesis:gebze"))
+    assert ozet["bilgisayar"] == "Gebze fabrikası · DALSAN-PC"
+    _kaydet(depo, _tesisli("izmir"), T0)  # bilgisayar bilgisi göndermeyen program
+    assert json.loads(depo.komut("GET", "dalsan:tesis:izmir"))["bilgisayar"] == ""
+
+
+def test_ayni_kimlik_iki_bilgisayardan_gelirse_uyarir_ve_satirda_rozet_cikar():
+    """Bir bilgisayarın .env'i öbürüne kopyalanınca ikisi aynı kimliği gönderir.
+    Önceki özet hâlâ canlıyken başka bir bilgisayardan rapor gelirse çakışma
+    yazılır (iki ad + zaman); filo uyarısı ve satır rozeti çıkar. İkisi
+    göndermeyi sürdürdükçe tazelenir; biri susunca yaklaşık bir saatte kalkar."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    ayar = _ayar()
+    _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), T0, ayar)
+    _kaydet(depo, _bilgisayarli("izmir", "IZMIR-PC", ad="İzmir fabrikası"), T0, ayar)
+    saat.simdi = T0 + 15
+    _kaydet(depo, _bilgisayarli("gebze", "ISG-PC-02"), saat.simdi, ayar)
+    filo = _pano.filo_verisi(depo, ayar, saat.simdi)
+    assert filo["uyarilar"] == [CAKISMA_UYARISI]
+    satirlar = {s["id"]: s for s in filo["tesisler"]}
+    assert satirlar["gebze"]["cakisma"] == {
+        "adlar": ["Gebze fabrikası · DALSAN-PC", "Gebze fabrikası · ISG-PC-02"],
+        "zaman": _pano._iso(saat.simdi),
+    }
+    assert "cakisma" not in satirlar["izmir"]
+
+    saat.simdi += 15
+    _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), saat.simdi, ayar)  # sıra öbüründe
+    son_cakisma = saat.simdi
+    for _ in range(3):  # ISG-PC-02 sustu, yalnız DALSAN-PC gönderiyor
+        saat.simdi += 30
+        _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), saat.simdi, ayar)
+    assert _pano.filo_verisi(depo, ayar, saat.simdi)["uyarilar"] == [CAKISMA_UYARISI]
+    saat.simdi = son_cakisma + _pano.TESIS_CAKISMA_SN + 1
+    _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), saat.simdi, ayar)
+    filo = _pano.filo_verisi(depo, ayar, saat.simdi)
+    assert filo["uyarilar"] == []
+    assert all("cakisma" not in satir for satir in filo["tesisler"])
+
+
+def test_yalniz_kurulum_adi_farkliysa_da_cakisma_sayilir():
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    _kaydet(depo, _tesisli("gebze", bilgisayar={"ad": "Gebze B"}), T0)
+    _kaydet(depo, _tesisli("gebze", bilgisayar={"ad": "Gebze A"}), T0 + 20)
+    uyarilar = _pano.filo_verisi(depo, _ayar(), T0 + 20)["uyarilar"]
+    assert uyarilar == [
+        "Aynı tesis kimliği iki bilgisayardan geliyor: gebze (Gebze A, Gebze B). Her "
+        "bilgisayara farklı UZAK_PANO_TESIS_ID yazın."
+    ]
+
+
+@pytest.mark.parametrize(
+    ("once", "sonra", "aradan_sn"),
+    [
+        (_bilgisayarli("gebze", "DALSAN-PC"), _bilgisayarli("gebze", "DALSAN-PC"), 15),
+        # önceki rapor artık canlı değil (30 sn aralıkta 95 sn): bilgisayar değişmiş
+        (_bilgisayarli("gebze", "ESKI-PC"), _bilgisayarli("gebze", "DALSAN-PC"), 200),
+        # önceki bilgisayar kapanırken son raporunu gönderdi
+        (_bilgisayarli("gebze", "ESKI-PC", kapanis=True), _bilgisayarli("gebze", "DALSAN-PC"), 15),
+        # bilgisayar adı göndermeyen (eski) program: karşılaştırılamaz
+        (_tesisli("gebze"), _bilgisayarli("gebze", "DALSAN-PC"), 15),
+        (_bilgisayarli("gebze", "ESKI-PC"), _tesisli("gebze"), 15),
+    ],
+    ids=["ayni-bilgisayar", "eski-rapor", "kapanis", "once-adsiz", "sonra-adsiz"],
+)
+def test_ayni_bilgisayar_canli_olmayan_rapor_ya_da_adsiz_rapor_cakisma_sayilmaz(
+    once, sonra, aradan_sn
+):
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    _kaydet(depo, once, T0)
+    saat.simdi = T0 + aradan_sn
+    _kaydet(depo, sonra, saat.simdi)
+    filo = _pano.filo_verisi(depo, _ayar(), saat.simdi)
+    assert filo["uyarilar"] == []
+    assert depo.komut("GET", "dalsan:tesis_cakisma:gebze") is None
+
+
+def test_onceki_ozet_ayni_komutla_okunur_ek_istek_yalniz_cakismada():
+    """Önceki özet kütük yazımıyla aynı komutta okunur (SET ... GET): çakışmasız
+    raporun istek ve komut sayısı değişmez (yukarıdaki sayım testi). Çakışma ana
+    tesiste panonun boru hattına girer; öbür tesiste tek bir SET isteği olur."""
+    ayar = _ayar()
+    depo = KayitliDepo(Saat(T0))
+    _kaydet(depo, _bilgisayarli("gebze", "DALSAN-PC"), T0, ayar)  # ana tesis
+    _kaydet(depo, _bilgisayarli("izmir", "IZMIR-1", ad="İzmir"), T0, ayar)
+    assert depo.cagrilar[0][0][:2] == ["SET", "dalsan:tesis:gebze"]
+    assert "GET" in depo.cagrilar[0][0][3:]
+
+    depo.cagrilar.clear()
+    _kaydet(depo, _bilgisayarli("gebze", "ISG-PC-02"), T0 + 10, ayar)
+    assert len(depo.cagrilar) == 2
+    yazilan = [k for k in depo.cagrilar[1] if k[:2] == ["SET", "dalsan:tesis_cakisma:gebze"]]
+    assert len(yazilan) == 1 and yazilan[0][3:] == ["EX", str(_pano.TESIS_CAKISMA_SN)]
+    kayit = json.loads(yazilan[0][2])
+    assert kayit == {
+        "adlar": ["Gebze fabrikası · DALSAN-PC", "Gebze fabrikası · ISG-PC-02"],
+        "z": int(T0 + 10),
+    }
+
+    depo.cagrilar.clear()
+    _kaydet(depo, _bilgisayarli("izmir", "IZMIR-2", ad="İzmir"), T0 + 10, ayar)
+    assert len(depo.cagrilar) == 2
+    assert [k[:2] for k in depo.cagrilar[1]] == [["SET", "dalsan:tesis_cakisma:izmir"]]
+
+
+def test_tesissiz_raporda_bilgisayar_degisse_de_hicbir_sey_degismez():
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    _kaydet(depo, _rapor(bilgisayar={"ad": "Gebze", "bilgisayar_adi": "PC-1"}), T0)
+    _kaydet(depo, _rapor(bilgisayar={"ad": "Gebze", "bilgisayar_adi": "PC-2"}), T0 + 10)
+    filo = _pano.filo_verisi(depo, _ayar(), T0 + 10)
+    assert filo["uyarilar"] == []
+    assert [sorted(s) for s in filo["tesisler"]] == [
+        ["ad", "ana", "baglanti", "bugun_ihlal", "gecikme_sn", "id", "son_rapor"]
+    ]
+    assert not [a for a in depo._veri if "cakisma" in a or a.startswith("dalsan:tesis")]
+
+
+def test_cakisma_tesisler_ekraninda_yoneticiye_gorunur(site):  # noqa: F811
+    kurucu = _cerez(_giris(site)[1])
+    for bilgisayar_adi in ("DALSAN-PC", "ISG-PC-02"):
+        rapor = {
+            **RAPOR,
+            "tesis": {"id": "gebze", "ad": "Gebze"},
+            "bilgisayar": {"ad": "Gebze fabrikası", "bilgisayar_adi": bilgisayar_adi},
+        }
+        assert _rapor_gonder(site, rapor)[0] == 200
+    filo = json.loads(_istek(f"{site}/api/durum?filo=1", basliklar={"Cookie": kurucu})[2])["filo"]
+    assert filo["uyarilar"] == [CAKISMA_UYARISI]
+    assert filo["tesisler"][0]["cakisma"]["adlar"][1] == "Gebze fabrikası · ISG-PC-02"
+
+
+def test_tesis_satirinda_cakisma_rozeti_metin_olarak():
+    satir = re.search(r"function tesisSatiri\(t\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    assert "t.cakisma" in satir and 'rozet("Kimlik çakışması", "tehlike")' in satir

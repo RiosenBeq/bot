@@ -14,7 +14,8 @@ Vercel'de duran sitesi. İki sayfası var:
 `/demo` adresi panoyu örnek bir fabrikanın verisiyle açar: 6 kamera (biri yavaş,
 biri yeniden bağlanıyor, biri kopuk), kanıt fotoğraflı 20 olay, son 14 gün,
 saatlik dağılım, müdahale ve yönetim geçmişi, kullanıcılar, işlem kaydı ve
-üç tesisli Tesisler ekranı.
+üç tesisli Tesisler ekranı (birinde kimlik çakışması örneği). İki adımlı
+doğrulama da denenebilir: demoda kod olarak herhangi 6 hane kabul edilir.
 Üstteki demo bandından **rol** (Yönetici / Operatör / İzleyici) ve **bağlantı**
 (Canlı / Haber yok / Kapatıldı) seçilir; anons, hoparlör denemesi, olay
 inceleme, teşhis, yeniden başlatma, güncelleme ve hesap işleri birkaç saniyede
@@ -48,10 +49,10 @@ düğme ekranda gizlenir, istek yine rolle denetlenir.
 | İş | İzleyici | Operatör | Yönetici |
 |---|:-:|:-:|:-:|
 | Durum, özet, olaylar, kanıt fotoğrafı, kameraların anlık görüntüsü | var | var | var |
-| Kendi şifresini değiştirme | var | var | var |
+| Kendi şifresini değiştirme, kendi iki adımlı doğrulamasını açma / kapatma | var | var | var |
 | Hazır anons, hoparlör denemesi, olay inceleme | | var | var |
 | Teşhis, yeniden başlatma, güncelleme | | | var |
-| Hesap açma, rol, yeni şifre, girişi kapatma / açma, silme | | | var |
+| Hesap açma, rol, yeni şifre, girişi kapatma / açma, silme, iki adımı sıfırlama | | | var |
 | İşlem kaydını görme | | | var |
 
 - **İzleyici** - durumu, olayları ve kamera görüntülerini görür; hiçbir şey
@@ -64,7 +65,8 @@ düğme ekranda gizlenir, istek yine rolle denetlenir.
 **Kurucu hesap.** Site ilk kurulduğunda tek hesap vardır: kullanıcı adı `kurucu`,
 şifresi Vercel'deki `PANO_SIFRESI`. Kurucu tam yetkilidir, silinemez, düşürülemez;
 şifresi yalnız Vercel'de değişir. Yönetici hesaplarına dokunan her işi (yönetici
-yapma / düşürme, yöneticiye yeni şifre, kapatma, silme) yalnız kurucu yapar:
+yapma / düşürme, yöneticiye yeni şifre, kapatma, silme, iki adımı sıfırlama)
+yalnız kurucu yapar:
 çalınan bir yönetici hesabı kendine kalıcı yetki açamaz. Kurucuyla girince her
 ekranda bir bant çıkar ("... Kullanıcılar ekranından herkese kendi hesabını açın,
 sonra Vercel'de PANO_SIFRESI'ni değiştirin."), çünkü ortak şifreyle yapılan işin
@@ -81,11 +83,54 @@ sahibi işlem kaydında görünmez.
 4. Programda "Uzaktan yönetim"i ancak bundan sonra açın (Ayarlar → Uzak izleme
    panosu).
 
+### İki adımlı doğrulama (isteğe bağlı, hesap başına)
+
+Her kişi kendi hesabında açar; açılmamış hesap bugünkü gibi yalnız şifreyle
+girer (varsayılan kapalı). Açılınca girişte şifreden sonra telefondaki
+doğrulama uygulamasının 6 haneli kodu sorulur (RFC 6238 TOTP: 30 saniyede bir
+değişen kod; Google Authenticator, Microsoft Authenticator ve benzerleri).
+Yöneticilerin açması önerilir.
+
+- **Açmak:** Sistem → **İki adımlı doğrulama** → şu anki şifre → **Aç**. Ekranda
+  anahtar ve aynı anahtarın `otpauth://` bağlantısı metin olarak çıkar (QR kod
+  yok). Uygulamada hesap ekleyip **anahtarı elle gir**in (hesap adı `DALSAN`,
+  tür zamana dayalı), uygulamanın gösterdiği kodu yazıp **Onayla**'ya basın.
+  Kurulum 10 dakika içinde bitmeli; 5 yanlış kodda baştan başlanır. Açmak açık
+  oturumları düşürmez.
+- **Giriş:** şifre doğruysa kod kutusu açılır. Kod yoksa çerez verilmez ve bu
+  hiçbir kilide sayılmaz; **yanlış kod yanlış şifre gibi** üç kilide sayılır ve
+  işlem kaydına "Hatalı giriş - Doğrulama kodu yanlış" diye yazılır. Bir kod bir
+  kez geçer: aynı kod ve daha eskisi ikinci kez kabul edilmez. Telefon saatinin
+  bir adım (30 sn) önü ve arkası kabul edilir; telefonun saati otomatik ayarlı
+  olmalı. Şifre yanlışsa cevap bugünküyle aynıdır (iki adımın açık olduğu
+  sızmaz).
+- **Kapatmak:** aynı bölümde şu anki şifre **ve** uygulamanın kodu ile **Kapat**.
+  Hesabın öbür oturumları düşer, bu cihaz sürer (kurucunun oturumları bugünkü
+  gibi yalnız `PANO_SIFRESI` değişince düşer).
+- **Telefon kaybolursa:** yönetici Kullanıcılar → İşlemler → **2 adımı sıfırla**
+  (kendi onay şifresiyle; yönetici hesabınınkini yalnız kurucu sıfırlar). Hesabın
+  bütün oturumları düşer; kişi yalnız şifresiyle girer, isterse yeniden açar.
+  Kullanıcılar listesinde iki adımı açık hesap "2 adım" rozeti taşır.
+- **Kurucu:** kurucu da açabilir. Sırrı ayrı anahtarda (`dalsan:iki_adim:kurucu`)
+  ve o anki `PANO_SIFRESI`'ne bağlı durur. Bağ, `RAPOR_ANAHTARI`'nı da içeren bir
+  HMAC izidir: Redis dökümünü okuyan biri `PANO_SIFRESI`'ni çevrimdışı deneyemez.
+  Kurucunun telefonu kaybolursa kurtarma yolu: Vercel'de `PANO_SIFRESI`'ni
+  değiştirip **Redeploy** edin; yeni şifreyle ilk girişte kayıt silinir, kod
+  sorulmaz (eski şifreye dönmek kaybolan telefonun sırrını geri getirmez).
+  `RAPOR_ANAHTARI` değişince de kurucunun iki adımı aynı yolla kapanır.
+
+Sır yalnız kurulum cevabında bir kez görünür; başka hiçbir cevaba, işlem
+kaydına ya da Vercel günlüğüne girmez. Sözleşme: `/api/giris` `{ad, sifre, kod}`
+alır; kod gerekiyorsa 401 `iki_adim_gerekli`, yanlışsa 401 `kod_yanlis`.
+`/api/hesap` eylemleri: `iki_adim_baslat {sifre}` (sır ve `uri` döner),
+`iki_adim_onayla {kod}`, `iki_adim_kapat {sifre, kod}` (herkes kendi hesabında)
+ve `iki_adim_sifirla {ad, sifre}` (yönetici; öbür hesap işleriyle aynı kurallar).
+
 ## Siteye ne gelir, ne gelmez
 
 | Siteye gelir | Ne kadar durur | Siteye gelmez |
 |---|---|---|
-| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, fabrikadaki kullanıcı adları ve şifreler |
+| Sistem çalışıyor mu, analiz, model, sistem şeridindeki sorunlar, boş disk, bu ayın çalışma oranı (program gönderirse) | 7 gün (her raporda yenilenir) | Kamera ve hoparlör adresleri, fabrikadaki kullanıcı adları ve şifreler |
 | Kameraların adı, bölümü, bağlantı durumu, kare hızı | 7 gün | Video kaydı (yalnız tek kareler gelir) |
 | Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
 | Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (adres ve dosya yolu çıkarılmış) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
@@ -221,7 +266,15 @@ göndermez, site bugünkü gibi çalışır. İkinci bir fabrika eklenince:
    farklı bir kimlik kullanmalı:** bir bilgisayarın `.env` dosyasını öbürüne
    kopyalarsanız kimliği değiştirin. Aynı kimliği gönderen iki bilgisayar sitede
    tek tesis sayılır ve ikisi de ana olur: ikisi de komut alır, panoyu sırayla
-   ezer, Tesisler ekranında tek satır görünür.
+   ezer, Tesisler ekranında tek satır görünür. **Site bunu yakalar:** tesis
+   özeti raporun bilgisayarını (kurulum adı · bilgisayar adı) taşır; önceki rapor
+   hâlâ canlıyken (panoyla aynı bağlantı kuralı) başka bir bilgisayardan rapor
+   gelirse Tesisler ekranının üstünde "Aynı tesis kimliği iki bilgisayardan
+   geliyor: gebze (Gebze fabrikası · DALSAN-PC, Gebze fabrikası · ISG-PC-02). Her
+   bilgisayara farklı UZAK_PANO_TESIS_ID yazın." uyarısı ve satırda "Kimlik
+   çakışması" rozeti çıkar. İki bilgisayar göndermeyi sürdürdükçe uyarı tazelenir;
+   biri susunca yaklaşık bir saatte kendiliğinden kalkar. Bilgisayar bilgisi
+   göndermeyen (eski) programda karşılaştırma yapılmaz.
 2. **Ana tesis** komut alan tek tesistir: anons, hoparlör denemesi, olay
    inceleme, teşhis, yeniden başlatma ve güncelleme yalnız ona gider; Genel
    bakış, Kameralar, Olaylar, Müdahale ve Yönetim ekranları onu gösterir.
@@ -246,8 +299,9 @@ göndermez, site bugünkü gibi çalışır. İkinci bir fabrika eklenince:
    rapordan bu yana geçen süre, bugünkü ihlal sayısı ve "Ana tesis - komut
    alır" ya da "Yalnız izleme". Veri `/api/durum?filo=1` ile yalnız bu ekran
    açıkken istenir. Kütükte tesis yoksa bugünkü fabrika tek satır görünür.
-   Kimliksiz bir program canlıyken (o komut alan satırdır) ya da `ANA_TESIS`
-   geçersizken ekranın üstünde bir uyarı çıkar (`filo.uyarilar`).
+   Kimliksiz bir program canlıyken (o komut alan satırdır), `ANA_TESIS`
+   geçersizken ya da aynı kimlik iki bilgisayardan gelirken ekranın üstünde bir
+   uyarı çıkar (`filo.uyarilar`; çakışan satırda `cakisma: {adlar, zaman}`).
 
 Ana tesisi değiştirmek için Vercel'de `ANA_TESIS`'e tesisin kimliğini yazıp
 yeniden yayınlayın (**Settings → Environment Variables**, yalnız Production,
@@ -261,7 +315,8 @@ dakika içinde yeni ana tesise gidebilir (sonra kendiliğinden düşer).
 
 Depoda: `dalsan:tesis:<id>` (tesis başına küçük özet, 7 gün), `dalsan:tesisler`
 (dizin, en çok 50 tesis), `dalsan:ana_tesis` (ana tesis; onun her raporunda 7
-güne tazelenir).
+güne tazelenir), `dalsan:tesis_cakisma:<id>` (kimlik çakışması: iki bilgisayarın
+adı ve zamanı, 1 saat).
 
 ## Sistemden haber yok uyarısı (bekçi)
 
@@ -347,6 +402,7 @@ tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 | `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
 | `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis, ip[]}` (`ip` yerel ağdaki adresler, en çok 4) |
 | `tesis` | *(isteğe bağlı)* `{id, ad}`: `id` küçük harf, rakam, `-`, `_` (1-32 karakter), `ad` en çok 80 karakter. Yoksa site tek fabrika gibi davranır; bozuk `id` 400 alır (yukarıda **Birden çok fabrika**) |
+| `calisma` | *(isteğe bağlı)* bu ayın çalışma oranı `{ay, sistem_yuzde, kamera_yuzde, olculen_saat}`: `ay` `YYYY-AA` (ör. `2026-11`), yüzdeler 0-100 (site bir ondalığa yuvarlar), `olculen_saat` 0-744 tam sayı. Bir parçası bile bozuksa alan hiç girmez (rapor bugünküyle aynı). Varsa Sistem ekranında her role tek satır: "Bu ay çalışma: %99,6 (kameralar %98,9; 312 saat ölçüldü)" |
 
 `bilgisayar.ad`, kurulumun okunur adıdır ("Gebze fabrikası"); fabrika
 programında elle yazılan bir ayardır. `son_olaylar[].foto` fabrikadan okunmaz:
@@ -430,7 +486,9 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   3-4 komut. Kameralar ekranı açıkken 4 kamerada saatte yaklaşık 8 bin komut ve
   dakikada 3 MB kadar veri akar; ekrana 10 dakika dokunulmazsa durur.
 - **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
-  doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. Müdahale ya da
+  doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. İki adımı açık
+  hesabın her girişi 2 istek daha yapar (son kullanılan adım okunur, adım
+  harcanır); kapalı hesapta giriş aynıdır. Müdahale ya da
   Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
   saniyede bir uğrar (ekran kapanınca durur).
 - **Bekçi:** her çağrı 2-4 komuttur; 5 dakikada bir çağrılırsa ayda yaklaşık
@@ -439,7 +497,9 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   raporda bir `DEL` gider. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder;
   site 10 kullanır.
 - **Birden çok tesis:** tesis kimliği taşıyan rapor 3 yerine 10 komuttur (2
-  istek); ana olmayan tesiste 5-6 komut (1 istek). 30 sn aralıkla ana tesis
+  istek); ana olmayan tesiste 5-6 komut (1 istek). Kimlik çakışması denetimi
+  komut eklemez (önceki özet kütük yazımıyla aynı `SET ... GET` komutunda okunur);
+  yalnız çakışma varken ana olmayan tesiste rapor başına 1 istek daha gider. 30 sn aralıkla ana tesis
   ayda yaklaşık 860 bin, öbür her tesis 430-520 bin komut. Ana olabilecek
   tesisin raporu (ANA_TESIS yazılı değilse her tesis) eski program denetimi
   için panonun son durumunu da okur: rapor başına bir rapor boyu veri. Birden
@@ -460,9 +520,9 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | Dosya | İşi |
 |---|---|
 | `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
-| `api/giris.py`, `api/cikis.py` | Panoya kişisel hesapla giriş ve çıkış (oturum çerezi, kilitler) |
+| `api/giris.py`, `api/cikis.py` | Panoya kişisel hesapla giriş ve çıkış (oturum çerezi, kilitler, iki adımlı doğrulama kodu) |
 | `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir) |
-| `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir, herkes kendi şifresini değiştirir (onay şifresiyle) |
+| `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir / iki adımı sıfırlar, herkes kendi şifresini değiştirir ve kendi iki adımlı doğrulamasını açar / kapatır (onay şifresiyle) |
 | `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
@@ -502,11 +562,18 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
   tutmayan ya da saati 5 dakikadan fazla kaymış istek reddedilir; gövde imzadan
   önce okunmaz. Komut cevabı programın o soruda gönderdiği `nonce`'u taşır: eski
   bir cevap yeniden oynatılamaz.
+- **İki adımlı doğrulama (isteğe bağlı):** Açık hesapta girişte şifreye ek
+  olarak telefondaki 6 haneli kod istenir (RFC 6238, HMAC-SHA1, 30 sn, bir adım
+  pay). Yanlış kod kilitlere sayılır, bir kod bir kez geçer. Sır hesap kaydında,
+  kurucununki `PANO_SIFRESI`'ne bağlı (rapor anahtarlı HMAC izi) ayrı anahtarda durur ve
+  yalnız kurulum cevabında görünür. Kapatmak şifre ve kod, başkasınınkini
+  sıfırlamak yönetici onay şifresi ister (yöneticininkini yalnız kurucu).
 - **Giriş kilitleri:** Üç kilit şifre denetiminden önce okunur - adres başına
   5 yanlışta 5 dakika (IPv6'da /64 öneki), ad başına 15 dakikada 10 yanlışta
   15 dakika, bütün adreslerden 15 dakikada 100 yanlışta 15 dakika. Bilinmeyen
   adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
-  geri çevrilemeyen özeti tutulur.
+  geri çevrilemeyen özeti tutulur. İki adımlı hesapta yanlış kod da yanlış şifre
+  gibi sayılır.
 - **İşlem kaydı:** Her hesap işi, her komut ve her giriş / çıkış, kim yaptığıyla
   üç listede tutulur; yönetici Kullanıcılar ekranından görür. Rolü yetmeyen her
   deneme (ör. izleyicinin müdahale isteği) de "reddedildi" diye yazılır (hesap
@@ -548,7 +615,10 @@ yenileyin.
 | Pano: "Site henüz kurulmadı" | Listedeki ayarları yazın, sonra Redeploy |
 | Pano: "Fabrikadan henüz rapor gelmedi" | Fabrika programında Ayarlar → Uzak izleme panosu doldurulmadı ya da sistem yeniden başlatılmadı |
 | Pano: "Kullanıcı adı ya da şifre yanlış" | İlk girişte ad `kurucu`, şifre `PANO_SIFRESI`; kendi hesabınızı yöneticiniz açar |
-| Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı ya da kurucu şifresi değişti; yeniden giriş yapın |
+| Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı, iki adımınız kapatıldı / sıfırlandı ya da kurucu şifresi değişti; yeniden giriş yapın |
+| Giriş: "Doğrulama kodu yanlış ya da süresi geçti" | Telefonun tarih ve saatinde "otomatik ayarla"yı açın; aynı kod ikinci kez geçmez, uygulamadaki yeni kodu bekleyin |
+| Telefon kayboldu, kod üretilemiyor | Yönetici Kullanıcılar → İşlemler → **2 adımı sıfırla** (yöneticininkini kurucu); kurucuda Vercel'de `PANO_SIFRESI`'ni değiştirip Redeploy |
+| Tesisler: "Aynı tesis kimliği iki bilgisayardan geliyor" | Bir `.env` öbür bilgisayara kopyalanmış: bilgisayarlardan birinde `UZAK_PANO_TESIS_ID`'yi değiştirip programı yeniden başlatın; uyarı yaklaşık bir saatte kalkar |
 | Pano: "ÖNİZLEME - fabrikaya komut ve hesap değişikliği gönderilmez" | Önizleme (Preview) adresindesiniz; Vercel'in ana (Production) adresini açın |
 | Yönetim: düğme pasif, "Fabrika programı bu işi bilmiyor" | Fabrika programı eski; güncellendiğinde Yönetim işleri açılır (ilk güncelleme fabrikada elle yapılır) |
 | Program: "İmza tutmadı" | Programdaki anahtar ile `RAPOR_ANAHTARI` aynı değil |

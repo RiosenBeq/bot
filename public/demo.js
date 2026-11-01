@@ -445,6 +445,7 @@
       rol: "operator",
       acik: true,
       sifre_degismeli: false,
+      iki_adim: true,
       olusturulduMs: ACILIS - 9 * 24 * SA,
       sonGirisMs: ACILIS - 48 * DK,
     },
@@ -574,6 +575,7 @@
       sifre_degismeli: k.sifre_degismeli,
       olusturuldu: k.olusturulduMs ? iso(k.olusturulduMs) : null,
       son_giris: k.sonGirisMs ? iso(k.sonGirisMs) : null,
+      ...(k.iki_adim ? { iki_adim: true } : {}),
     }));
     const liste = kayit
       .slice()
@@ -710,7 +712,19 @@
         yeniden_baslatma: { mumkun: true, sebep: "" },
         guncelleme: { mumkun: true, sebep: "" },
       },
+      // Bu ayın çalışma oranı (isteğe bağlı alan): ayın başından bu yana ölçülen saat
+      calisma: {
+        ay: new Date(simdi).toISOString().slice(0, 7),
+        sistem_yuzde: 99.6,
+        kamera_yuzde: 98.9,
+        olculen_saat: Math.min(744, Math.max(1, Math.floor((simdi - ayBasi(simdi)) / SA))),
+      },
     };
+  }
+
+  function ayBasi(ms) {
+    const an = new Date(ms);
+    return Date.UTC(an.getUTCFullYear(), an.getUTCMonth(), 1);
   }
 
   /* pano_verisi + durum(): bağlantı, rol süzgeci, ?mudahale=1 / ?yonetim=1 /
@@ -747,6 +761,7 @@
         rol_adi: ROL_ADLARI[durum.rol],
         kurucu: false,
         sifre_degismeli: false,
+        ...(oturumHesabi() && oturumHesabi().iki_adim ? { iki_adim: true } : {}),
       },
       onizleme: false,
     };
@@ -786,6 +801,10 @@
       const paketlemeSon = ACILIS - 135 * DK;
       veri.filo = {
         ana_tesis: "merkez",
+        uyarilar: [
+          "Aynı tesis kimliği iki bilgisayardan geliyor: lojistik (Lojistik deposu · DEPO-PC, " +
+            "Lojistik deposu · DEPO-PC-2). Her bilgisayara farklı UZAK_PANO_TESIS_ID yazın.",
+        ],
         tesisler: [
           {
             id: "merkez",
@@ -804,6 +823,11 @@
             gecikme_sn: 12,
             bugun_ihlal: 4,
             ana: false,
+            // Aynı kimlik iki bilgisayardan geliyor (kopyalanan .env örneği)
+            cakisma: {
+              adlar: ["Lojistik deposu · DEPO-PC", "Lojistik deposu · DEPO-PC-2"],
+              zaman: iso(simdi - 12 * SN),
+            },
           },
           {
             id: "paketleme",
@@ -942,8 +966,65 @@
     if (yeni === ad) throw new DemoHatasi(400, "sifre_ad_ayni", "Şifre kullanıcı adıyla aynı olamaz.");
   }
 
+  function oturumHesabi() {
+    return kullanicilar.find((k) => k.ad === durum.ad) || null;
+  }
+
+  function demoSir() {
+    const harfler = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    const baytlar = new Uint8Array(32);
+    crypto.getRandomValues(baytlar);
+    return Array.from(baytlar, (b) => harfler[b % 32]).join("");
+  }
+
+  /* Kendi iki adımı (her rol): baslat şifreyle sır verir, onayla 6 haneli
+     herhangi bir kodu kabul eder (demo), kapat şifre ve kod ister. */
+  function ikiAdimIstegi(govde, simdi) {
+    const hesap = oturumHesabi();
+    const eylem = govde.eylem;
+    if (!hesap) throw new DemoHatasi(400, "eylem", "Bu demoda bu hesabın iki adımı yok.");
+    const kodGecerli = /^[0-9]{6}$/.test(String(govde.kod || "").replace(/\s+/g, ""));
+    if (eylem === "iki_adim_baslat") {
+      if (!govde.sifre) throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
+      if (hesap.iki_adim) {
+        throw new DemoHatasi(409, "iki_adim_acik", "İki adımlı doğrulama zaten açık; yeni telefon için önce kapatın.");
+      }
+      const sir = demoSir();
+      hesap.bekleyenSir = sir;
+      return {
+        tamam: true,
+        sir: sir,
+        uri: "otpauth://totp/DALSAN:" + hesap.ad + "?secret=" + sir + "&issuer=DALSAN",
+        sure_sn: 600,
+      };
+    }
+    if (eylem === "iki_adim_onayla") {
+      if (!hesap.bekleyenSir) {
+        throw new DemoHatasi(
+          400,
+          "iki_adim_bekleyen_yok",
+          "Kurulum bulunamadı ya da 10 dakikası doldu; İki adımlı doğrulama bölümünden yeniden başlatın.",
+        );
+      }
+      if (!kodGecerli) throw new DemoHatasi(400, "kod_yanlis", "Doğrulama kodu yanlış ya da süresi geçti.");
+      hesap.bekleyenSir = null;
+      hesap.iki_adim = true;
+      kayitYaz(simdi, durum.ad, durum.rol, "iki_adim_ac", "", "tamam");
+      return { tamam: true };
+    }
+    if (!hesap.iki_adim) throw new DemoHatasi(409, "iki_adim_kapali", "İki adımlı doğrulama zaten kapalı.");
+    if (!govde.sifre) throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
+    if (!kodGecerli) throw new DemoHatasi(400, "kod_yanlis", "Doğrulama kodu yanlış; işlem yapılmadı.");
+    hesap.iki_adim = false;
+    kayitYaz(simdi, durum.ad, durum.rol, "iki_adim_kapat", "", "tamam");
+    return { tamam: true };
+  }
+
   function hesapIstegi(govde, simdi) {
     const eylem = govde.eylem;
+    if (["iki_adim_baslat", "iki_adim_onayla", "iki_adim_kapat"].includes(eylem)) {
+      return ikiAdimIstegi(govde, simdi);
+    }
     if (eylem === "sifre_degistir") {
       if (!govde.eski_sifre)
         throw new DemoHatasi(400, "eski_sifre", "Eski şifreniz yanlış; işlem yapılmadı.");
@@ -955,7 +1036,7 @@
       kayitYaz(simdi, durum.ad, durum.rol, "komut_red", "Yetki yetmedi: " + eylem, "red");
       throw new DemoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.");
     }
-    if (!["ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil"].includes(eylem)) {
+    if (!["ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"].includes(eylem)) {
       throw new DemoHatasi(400, "eylem", "Bilinmeyen işlem.");
     }
     const ad = String(govde.ad || "")
@@ -966,9 +1047,11 @@
     const yoneticiIsi =
       (eylem === "ekle" && yeniRol === "yonetici") ||
       (eylem === "rol" && (yeniRol === "yonetici" || (hedef && hedef.rol === "yonetici"))) ||
-      (["sifre_sifirla", "kapat", "ac", "sil"].includes(eylem) && hedef && hedef.rol === "yonetici");
+      (["sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"].includes(eylem) &&
+        hedef &&
+        hedef.rol === "yonetici");
     if (ad === "kurucu") throw new DemoHatasi(400, "kurucu", "Kurucu hesabı buradan değiştirilemez.");
-    if (["rol", "kapat", "sil"].includes(eylem) && ad === durum.ad) {
+    if (["rol", "kapat", "sil", "iki_adim_sifirla"].includes(eylem) && ad === durum.ad) {
       throw new DemoHatasi(400, "kendi_hesabi", "Kendi hesabınızın bu ayarını buradan değiştiremezsiniz.");
     }
     if (yoneticiIsi) {
@@ -1016,6 +1099,12 @@
     } else if (eylem === "kapat" || eylem === "ac") {
       hedef.acik = eylem === "ac";
       is = eylem === "ac" ? "hesap_ac" : "hesap_kapat";
+    } else if (eylem === "iki_adim_sifirla") {
+      if (!hedef.iki_adim) {
+        throw new DemoHatasi(409, "iki_adim_kapali", "Bu hesapta iki adımlı doğrulama zaten kapalı.");
+      }
+      hedef.iki_adim = false;
+      is = "iki_adim_sifirla";
     } else {
       kullanicilar.splice(kullanicilar.indexOf(hedef), 1);
       is = "hesap_sil";
@@ -1030,6 +1119,15 @@
       .toLocaleLowerCase("tr-TR");
     if (!ad || !govde.sifre) throw new DemoHatasi(400, "giris_eksik", "Kullanıcı adı ve şifre gerekir.");
     const hesap = kullanicilar.find((k) => k.ad === ad);
+    if (hesap && hesap.iki_adim && !/^[0-9]{6}$/.test(String(govde.kod || "").replace(/\s+/g, ""))) {
+      throw new DemoHatasi(
+        401,
+        govde.kod ? "kod_yanlis" : "iki_adim_gerekli",
+        govde.kod
+          ? "Doğrulama kodu yanlış ya da süresi geçti; uygulamadaki güncel kodu yazın."
+          : "Telefonunuzdaki doğrulama uygulamasının gösterdiği 6 haneli kodu yazın.",
+      );
+    }
     durum.rol = hesap ? hesap.rol : "yonetici";
     durum.ad = hesap ? hesap.ad : ROL_HESABI[durum.rol];
     durum.girisli = true;
