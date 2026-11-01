@@ -2208,6 +2208,10 @@
     if (ana) komutAlan = "komut alan: " + (ana.ad || ana.id || "Fabrika");
     else if (filo.ana_tesis) komutAlan = "ana tesis (" + filo.ana_tesis + ") henüz rapor göndermedi";
     $("tesisler-ozet").textContent = sayiMetni(tesisler.length) + " tesis · " + komutAlan;
+    // Sunucunun uyarıları (kimliksiz program canlı, ANA_TESIS geçersiz): düz metin
+    const uyarilar = filo.uyarilar || [];
+    $("tesis-uyarisi").textContent = uyarilar.join(" ");
+    $("tesis-uyarisi").hidden = !uyarilar.length;
     const liste = $("tesis-listesi");
     temizle(liste);
     if (!tesisler.length) liste.appendChild(bosDurum("Henüz tesis yok", "Fabrikadan ilk rapor gelince görünür"));

@@ -739,6 +739,27 @@ def test_yetkisiz_denemede_komut_red_izi_kalir(site):  # noqa: F811
     assert "ekle" in ozetler and "teshis" in ozetler
 
 
+def test_izleyici_mudahale_denemesi_komut_red_izi_birakir(site):  # noqa: F811
+    """İzleyicinin /api/mudahale denemesi rol kapısında (403 yetki) reddedilir VE
+    işlem kaydına tek bir komut_red satırı yazılır (docs/19 §3.3: reddedilen her
+    deneme kayda geçer). Sıra aynı: oturumsuz istek 401 alır ve iz bırakmaz; rol
+    kapısı kökenden önce gelir."""
+    cerez = _kurucu(site)
+    _ekle(site, cerez, "bakici", "izleyici", "parola-bakici-1")
+    bakici_cerez = _cerez(_giris(site, "parola-bakici-1", ad="bakici")[1])
+    istek = {"tur": "anons", "mesaj_id": 3}
+    assert _post(site, "/api/mudahale", istek, "", site)[0] == 401
+    kod, _, govde = _post(site, "/api/mudahale", istek, bakici_cerez, site)
+    assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+    redler = [s for s in _kayit(site, cerez) if s["is"] == "komut_red"]
+    assert [(s["kim"], s["rol"], s["sonuc"], s["ozet"]) for s in redler] == [
+        ("bakici", "izleyici", "red", "Yetki yetmedi: müdahale")
+    ]
+    kod, _, govde = _post(site, "/api/mudahale", istek, bakici_cerez, "https://kotu.example")
+    assert kod == 403 and json.loads(govde)["hata"] == "yetki"  # yetki kökenden önce
+    assert len([s for s in _kayit(site, cerez) if s["is"] == "komut_red"]) == 2
+
+
 def test_yalniz_kurucu_denemesi_komut_red_izi_kalir(site):  # noqa: F811
     """Kurucu olmayan bir yöneticinin yönetici açma denemesi 403 yalniz_kurucu
     döner VE komut_red izi bırakır (docs/19 §3.3). Düzeltme öncesi iz yok."""
