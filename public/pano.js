@@ -47,10 +47,16 @@
     mudahale: ["Müdahale", "Fabrikada uzaktan anons ve hoparlör denemesi"],
     yonetim: ["Yönetim", "Teşhis, yeniden başlatma ve güncelleme"],
     kullanicilar: ["Kullanıcılar", "Hesaplar, roller ve işlem kaydı"],
+    tesisler: ["Tesisler", "Bütün tesislerin son durumu; komut yalnız ana tesise gider"],
     sistem: ["Sistem", "Program, bağlantı ve canlı görüntü"],
   };
   // Hangi görünüm hangi rolü ister (docs/19 §1). İzleyici yalnız izler.
-  const GORUNUM_ROLU = { mudahale: "operator", yonetim: "yonetici", kullanicilar: "yonetici" };
+  const GORUNUM_ROLU = {
+    mudahale: "operator",
+    yonetim: "yonetici",
+    kullanicilar: "yonetici",
+    tesisler: "yonetici",
+  };
   const MUDAHALE_TURLERI = ["anons", "ses_dene", "olay_incele"];
   const YONETIM_TURLERI = ["teshis", "yeniden_baslat", "guncelle"];
   const INCELE_BEKLEME_MS = 3 * 60 * 1000; // sonuç bu süre gelmezse düğmeler geri gelir
@@ -292,9 +298,10 @@
     )) {
       oge.hidden = !mudahale;
     }
-    // Yönetim ve Kullanıcılar: yalnız kenar menüsünde (telefonda Sistem'den açılır)
+    // Yönetim, Kullanıcılar ve Tesisler: yalnız kenar menüsünde (telefonda Sistem'den açılır)
     for (const oge of document.querySelectorAll(
-      '.menu-ogesi[data-gorunum="yonetim"], .menu-ogesi[data-gorunum="kullanicilar"]'
+      '.menu-ogesi[data-gorunum="yonetim"], .menu-ogesi[data-gorunum="kullanicilar"], ' +
+        '.menu-ogesi[data-gorunum="tesisler"]'
     )) {
       oge.hidden = !yonetici;
     }
@@ -386,7 +393,9 @@
     $("gorunum-basligi").textContent = baslik;
     $("gorunum-aciklamasi").textContent = ad === "genel" && kurulumMetni ? kurulumMetni : aciklama;
     // Müdahale ve Yönetim bağlantıyı kendi bandında söyler; iki bant üst üste binmesin
-    $("durum-bandi").hidden = ad === "mudahale" || ad === "yonetim" || ad === "kullanicilar";
+    // Tesisler her tesisin durumunu kendi satırında söyler
+    $("durum-bandi").hidden =
+      ad === "mudahale" || ad === "yonetim" || ad === "kullanicilar" || ad === "tesisler";
     $("yol-adi").textContent = baslik;
     document.title = baslik + " · Uzak izleme panosu";
   }
@@ -404,6 +413,7 @@
       yukle();
     }
     if (g === "kullanicilar" && gorunumYetkili("kullanicilar")) hesaplariYukle();
+    if (tesislerAcik()) yukle();
   });
 
   // ------------------------------------------------------------- kurulum
@@ -2156,6 +2166,54 @@
     }
   });
 
+  // -------------------------------------------------------------- tesisler
+
+  /* Tesisler ekranı açık mı: filo verisi (/api/durum?filo=1) yalnız o zaman
+     istenir (docs/20 §4). */
+  function tesislerAcik() {
+    return aktifGorunum === "tesisler" && gorunumYetkili("tesisler");
+  }
+
+  const TESIS_ROZETI = {
+    canli: ["Canlı", "basari"],
+    yok: ["Haber yok", "tehlike"],
+    kapandi: ["Kapandı", ""],
+    hic: ["Rapor gelmedi", ""],
+  };
+
+  function tesisSatiri(t) {
+    const satir = el("li", "kullanici-satiri");
+    const ust = el("div", "kullanici-ust");
+    const govde = el("div", "satir-govde");
+    govde.appendChild(el("b", "", t.ad || t.id || "Fabrika"));
+    const alt = [];
+    if (t.id) alt.push("kimlik " + t.id);
+    alt.push(t.son_rapor ? "son rapor " + sureMetni(t.gecikme_sn || 0) + " önce" : "henüz rapor gelmedi");
+    alt.push("bugün " + sayiMetni(t.bugun_ihlal) + " ihlal");
+    govde.appendChild(el("span", "", alt.join(" · ")));
+    ust.appendChild(govde);
+    const rozetler = el("div", "rozetler");
+    const [ad, sinif] = TESIS_ROZETI[t.baglanti] || ["Bilinmiyor", ""];
+    rozetler.appendChild(rozet(ad, sinif, true, t.baglanti === "canli"));
+    rozetler.appendChild(t.ana ? rozet("Ana tesis - komut alır", "bilgi") : rozet("Yalnız izleme", ""));
+    ust.appendChild(rozetler);
+    satir.appendChild(ust);
+    return satir;
+  }
+
+  function tesisleriCiz(filo) {
+    const tesisler = filo.tesisler || [];
+    const ana = tesisler.find((t) => t.ana);
+    let komutAlan = "komut alan tesis yok";
+    if (ana) komutAlan = "komut alan: " + (ana.ad || ana.id || "Fabrika");
+    else if (filo.ana_tesis) komutAlan = "ana tesis (" + filo.ana_tesis + ") henüz rapor göndermedi";
+    $("tesisler-ozet").textContent = sayiMetni(tesisler.length) + " tesis · " + komutAlan;
+    const liste = $("tesis-listesi");
+    temizle(liste);
+    if (!tesisler.length) liste.appendChild(bosDurum("Henüz tesis yok", "Fabrikadan ilk rapor gelince görünür"));
+    for (const t of tesisler) liste.appendChild(tesisSatiri(t));
+  }
+
   // ---------------------------------------------------------------- sistem
 
   function evetHayir(deger) {
@@ -2235,6 +2293,7 @@
     sistemiCiz(veri);
     mudahaleyiCiz(veri);
     if (rolu() === "yonetici") yonetimiCiz(veri);
+    if (veri.filo) tesisleriCiz(veri.filo);
     if (aktifGorunum === "genel") {
       $("gorunum-aciklamasi").textContent = kurulumMetni || GORUNUMLER.genel[1];
     }
@@ -2252,7 +2311,9 @@
           ? "/api/durum?yonetim=1"
           : kareIzleniyor()
             ? "/api/durum?kare=1"
-            : "/api/durum";
+            : tesislerAcik()
+              ? "/api/durum?filo=1"
+              : "/api/durum";
       const yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store" });
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
