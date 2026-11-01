@@ -4,6 +4,7 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
+  "crons": [{ "path": "/api/bekci", "schedule": "0 5 * * *" }],
   "headers": [
     {
       "source": "/(.*)",
