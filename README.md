@@ -217,14 +217,25 @@ göndermez, site bugünkü gibi çalışır. İkinci bir fabrika eklenince:
    harf, rakam, `-` ve `_`, en çok 32 karakter). Program raporuna
    `"tesis": {"id": "gebze", "ad": "Gebze fabrikası"}` ekler. Kimliği bozuk
    rapor 400 ile reddedilir; program hatayı Ayarlar sayfasında gösterir. Önce
-   **mevcut** fabrikaya kimlik verin, sonra yenisini bağlayın.
+   **mevcut** fabrikaya kimlik verin, sonra yenisini bağlayın. **Her fabrika
+   farklı bir kimlik kullanmalı:** bir bilgisayarın `.env` dosyasını öbürüne
+   kopyalarsanız kimliği değiştirin. Aynı kimliği gönderen iki bilgisayar sitede
+   tek tesis sayılır ve ikisi de ana olur: ikisi de komut alır, panoyu sırayla
+   ezer, Tesisler ekranında tek satır görünür.
 2. **Ana tesis** komut alan tek tesistir: anons, hoparlör denemesi, olay
    inceleme, teşhis, yeniden başlatma ve güncelleme yalnız ona gider; Genel
    bakış, Kameralar, Olaylar, Müdahale ve Yönetim ekranları onu gösterir.
-   Vercel'de `ANA_TESIS` (ör. `gebze`) yazılıysa ana tesis odur. Yazılı değilse
-   **ilk rapor veren tesis** ana olur; ana tesis 7 gün hiç rapor göndermezse
-   sıradaki tesis devralır. Tesis kimliği yazılmamış (eski) bir program canlı
-   rapor gönderirken hiçbir tesis ana olmaz: iki fabrika birden komut almasın.
+   Vercel'de `ANA_TESIS` (ör. `gebze`) yazılıysa ana tesis odur; Türkçe harf de
+   yazılabilir (`İzmir` kimlik olarak `izmir` okunur). Kimlik olamayan bir değer
+   (ör. boşluklu `İzmir fabrikası`) yok sayılır ve Tesisler ekranı uyarır.
+   `ANA_TESIS` yazılı değilse **ilk rapor veren tesis** ana olur; ana tesis 7 gün
+   hiç rapor göndermezse sıradaki tesis devralır.
+   **Komut alan her zaman tek fabrikadır:** tesis kimliği yazılmamış (eski) bir
+   program canlı rapor gönderdiği sürece hiçbir tesis ana olmaz. `ANA_TESIS`
+   yazılı olsa da, bir tesis daha önce ana olmuş olsa da komutları ve panoyu
+   eski program alır, tesisler yalnız izlenir ve Tesisler ekranı uyarır. Eski
+   program susunca ya da kapanınca ana tesis geri döner; kimliksiz yeniden
+   başlarsa yine bırakır.
 3. **Öbür tesisler yalnız izlenir:** raporları yalnız tesis kütüğüne yazılır,
    panonun durumunu ezmez. Raporun cevabı yalnız `{"filo": {"ana": false}}`
    taşır (`komut`, `kare`, `foto` yok): program komut sormaz, anlık görüntü ve
@@ -235,6 +246,8 @@ göndermez, site bugünkü gibi çalışır. İkinci bir fabrika eklenince:
    rapordan bu yana geçen süre, bugünkü ihlal sayısı ve "Ana tesis - komut
    alır" ya da "Yalnız izleme". Veri `/api/durum?filo=1` ile yalnız bu ekran
    açıkken istenir. Kütükte tesis yoksa bugünkü fabrika tek satır görünür.
+   Kimliksiz bir program canlıyken (o komut alan satırdır) ya da `ANA_TESIS`
+   geçersizken ekranın üstünde bir uyarı çıkar (`filo.uyarilar`).
 
 Ana tesisi değiştirmek için Vercel'de `ANA_TESIS`'e tesisin kimliğini yazıp
 yeniden yayınlayın (**Settings → Environment Variables**, yalnız Production,
@@ -242,8 +255,9 @@ sonra **Redeploy**). Ayar sonradan silinirse o tesis ana kalır. Değiştirmeden
 önce Müdahale ve Yönetim ekranında bekleyen komut olmasın: bekleyen komut 2
 dakika içinde yeni ana tesise gidebilir (sonra kendiliğinden düşer).
 
-> **Karışık kurulumdan kaçının:** birden çok fabrikada her programa tesis
-> kimliği yazın. Kimliksiz program her zaman bugünkü gibi komut alır.
+> **Karışık kurulumdan kaçının:** birden çok fabrikada her programa farklı bir
+> tesis kimliği yazın. Kimliksiz program her zaman bugünkü gibi komut alır;
+> canlıyken hiçbir tesis komut almaz.
 
 Depoda: `dalsan:tesis:<id>` (tesis başına küçük özet, 7 gün), `dalsan:tesisler`
 (dizin, en çok 50 tesis), `dalsan:ana_tesis` (ana tesis; onun her raporunda 7
@@ -255,7 +269,9 @@ Pano açık olmasa da fabrika bilgisayarı kapanır, program durur ya da interne
 uzun süre giderse site seçtiğiniz kişilere **bir kez** e-posta ve/veya Telegram
 bildirimi gönderir. Bağlantı geri gelince (ilk taze rapor) işaret sıfırlanır ve
 bir sonraki kesintide yeniden uyarır. Kesinti 24 saatten uzun sürerse günde bir
-hatırlatma gider. Ana pano ve izlenen her tesis ayrı işaret taşır.
+hatırlatma gider. Ana pano ve izlenen her tesis ayrı işaret taşır; aynı fabrika
+iki kez sayılmaz. `ANA_TESIS` değişmişse ve pano hâlâ eski ana tesisin son
+raporunu gösteriyorsa uyarı susan yeni ana tesisi adıyla anar.
 
 Bekçi `GET /api/bekci` adresidir ve **kendiliğinden çalışmaz**: bir zamanlayıcı
 çağırır (aşağıda). Ayarlar yoksa hiçbir şey yapmaz; hepsi isteğe bağlıdır ve
@@ -263,7 +279,7 @@ eksik ayar listesine girmez.
 
 | Ad | Not |
 |---|---|
-| `BEKCI` | `acik` yazılmadıkça bekçi çalışmaz (`{"atlandi": true}` döner) |
+| `BEKCI` | `acik` (ya da `açık`) yazılmadıkça bekçi çalışmaz (`{"atlandi": true}` döner). Tanınmayan bir değer (ör. `evet`) bekçiyi açmaz; `/api/bekci` onu 503 `bekci_ayari` ile bildirir |
 | `BEKCI_ESIK_DK` | Kaç dakika haber gelmezse uyarsın; varsayılan 20 (1-1440). Dalgalı internette uzun tutun |
 | `BEKCI_ALICILAR` | Virgülle ayrık e-posta adresleri ve/veya `tg:<sohbet_id>`; en çok 20 |
 | `CRON_SECRET` | Vercel Cron'un gizli değeri, en az 16 karakter. Vercel onu `Authorization: Bearer` başlığıyla kendisi yollar |
@@ -284,18 +300,21 @@ Hepsini **yalnız Production**'a ekleyin ve yeniden yayınlayın.
   zaman yazılırsa yayın başarısız olur); Hobby'de bu yalnız günlük bir
   denetimdir. `CRON_SECRET`'ı tanımlayın: Vercel onu her çağrıda başlıkta yollar.
   **Pro planda** `vercel.json`'daki zamanı `"*/5 * * * *"` yapın (5 dakikada bir).
-- **Dış izleme servisi (Hobby'de önerilen):** UptimeRobot ya da cron-job.org gibi
-  bir servis `https://<projeniz>.vercel.app/api/bekci` adresini 5 dakikada bir
-  çağırsın ve `Authorization: Bearer <BEKCI_ANAHTARI>` başlığını eklesin. Başlık
-  eklenemeyen serviste `?anahtar=<BEKCI_ANAHTARI>` da kabul edilir; ama adres
-  servisin ve Vercel'in günlüklerine düşebilir, başlık yeğlenir. `CRON_SECRET`
-  adreste kabul edilmez.
+- **Dış izleme servisi (Hobby'de önerilen):** bir servis
+  `https://<projeniz>.vercel.app/api/bekci` adresini 5 dakikada bir çağırsın.
+  Başlık eklenebiliyorsa onu kullanın: `?anahtar=` adresi servisin ve Vercel'in
+  günlüklerine düşebilir. `CRON_SECRET` adreste kabul edilmez.
+  - **cron-job.org** başlık ekleyebilir: `Authorization: Bearer <BEKCI_ANAHTARI>`.
+  - **UptimeRobot**'un ücretsiz planı başlık ekleyemez ve HEAD isteği gönderir:
+    adrese `?anahtar=<BEKCI_ANAHTARI>` ekleyin. Site HEAD'i GET gibi cevaplar
+    (aynı durum kodu, gövdesiz).
 
 **Cevap:** `{uyarildi, gonderilen, durum: [{ad, baglanti, gecikme_dk, bayat}]}`.
 Bir hedef eşikten uzun süredir sessizse durum kodu **503**, değilse **200**:
 e-posta ya da Telegram kurmasanız da izleme servisi 503'te kendisi alarm verir.
-Anahtar yoksa 401, yanlışsa ya da sitede hiç tanımlanmamışsa 403 döner. Cevapta
-sır, alıcı adresi ya da görüntü yoktur.
+Anahtar yoksa 401, yanlışsa ya da sitede hiç tanımlanmamışsa 403 döner; anahtar
+doğru ama `BEKCI` tanınmayan bir değerse 503 `bekci_ayari`. Cevapta sır, alıcı
+adresi ya da görüntü yoktur.
 
 Bildirim kısa bir metindir: tesisin adı, son rapordan bu yana geçen dakika, son
 raporun saati (Türkiye) ve neye bakılacağı (bilgisayar açık mı, program çalışıyor
@@ -362,9 +381,9 @@ Eski bir program `nonce` ve `kim` göndermez; site boş `nonce` ile cevap verir 
 program yalnız `anons` ile `ses_dene`'yi kabul eder.
 
 İstek `tesis` (raporla aynı biçim ya da yalnız kimlik) taşıyabilir. Ana tesisten
-gelmiyorsa cevap `komutlar: []`, `hizli: false`, `filo: {ana: false}` olur:
-kuyruktan hiçbir şey çekilmez, gönderilen sonuçlar yine yazılır. `tesis` yoksa
-cevap bugünkü gibidir.
+gelmiyorsa (ya da kimliksiz bir program canlıyken) cevap `komutlar: []`,
+`hizli: false`, `filo: {ana: false}` olur: kuyruktan hiçbir şey çekilmez,
+gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
 
 ## Vercel'e kurulum (bir kez)
 
@@ -415,10 +434,16 @@ cevap bugünkü gibidir.
   Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
   saniyede bir uğrar (ekran kapanınca durur).
 - **Bekçi:** her çağrı 2-4 komuttur; 5 dakikada bir çağrılırsa ayda yaklaşık
-  35 bin. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder; site 10 kullanır.
-- **Birden çok tesis:** tesis kimliği taşıyan rapor 3 yerine yaklaşık 10-12
-  komuttur (ana olmayan tesiste 6-7): 30 sn aralıkla tesis başına ayda 500-950
-  bin. Birden çok tesiste kullandıkça öde planı gerekir.
+  35 bin. `BEKCI=acik` rapor başına komut eklemez: "haber yok" işareti raporun
+  zaten yaptığı okumayla (aynı `MGET`) okunur; yalnız bir kesintiden sonraki ilk
+  raporda bir `DEL` gider. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder;
+  site 10 kullanır.
+- **Birden çok tesis:** tesis kimliği taşıyan rapor 3 yerine 10 komuttur (2
+  istek); ana olmayan tesiste 5-6 komut (1 istek). 30 sn aralıkla ana tesis
+  ayda yaklaşık 860 bin, öbür her tesis 430-520 bin komut. Ana olabilecek
+  tesisin raporu (ANA_TESIS yazılı değilse her tesis) eski program denetimi
+  için panonun son durumunu da okur: rapor başına bir rapor boyu veri. Birden
+  çok tesiste kullandıkça öde planı gerekir.
 - Ücretsiz plan (ayda 500 bin komut) günde birkaç kez bakmaya yeter. Pano bir
   ekranda sürekli açık kalacaksa ya da Kameralar sık açılacaksa kullandıkça öde
   planına geçip harcama sınırı koyun. Depoda en çok 60 fotoğraf durur (24 MB'tan
@@ -483,8 +508,9 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
   adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
   geri çevrilemeyen özeti tutulur.
 - **İşlem kaydı:** Her hesap işi, her komut ve her giriş / çıkış, kim yaptığıyla
-  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Şifre asla kayda
-  girmez.
+  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Rolü yetmeyen her
+  deneme (ör. izleyicinin müdahale isteği) de "reddedildi" diye yazılır (hesap
+  başına dakikada en çok 10 satır). Şifre asla kayda girmez.
 - **Önizleme kilidi:** Vercel'in önizleme (Preview) yayınından komut ve hesap
   değişikliği yapılamaz; sayfada kalıcı önizleme bandı çıkar. Dört ortam
   değişkenini de yalnız Production'a bağlı tutun.

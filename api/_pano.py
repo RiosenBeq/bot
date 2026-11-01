@@ -287,6 +287,26 @@ TESIS_HATA_METNI = (
     "Tesis kimliği geçersiz. Fabrika programında UZAK_PANO_TESIS_ID yalnız küçük harf, "
     "rakam, - ve _ içerebilir (en çok 32 karakter)."
 )
+# Tesisler ekranının uyarıları (yalnız yönetici görür; düz metin).
+ESKI_PROGRAM_METNI = (
+    "Kimlik göndermeyen bir program canlı: komutları o alıyor, tesisler yalnız izleniyor. "
+    "Her programa farklı bir UZAK_PANO_TESIS_ID verin."
+)
+ANA_TESIS_GECERSIZ_METNI = (
+    "Vercel'deki ANA_TESIS ayarı bir tesis kimliği olmadığı için yok sayılıyor. Fabrika "
+    "programındaki UZAK_PANO_TESIS_ID değerini yazın: harf, rakam, - ve _ (boşluksuz, en çok "
+    "32 karakter)."
+)
+# BEKCI yalnız bu iki değeri tanır; başka bir değer "gecersiz" sayılır (bekçi
+# çalışmaz, /api/bekci 503 ile bildirir: dış izleme servisi fark etsin).
+BEKCI_DEGERLERI = ("acik", "kapali")
+BEKCI_AYAR_HATASI_METNI = (
+    "Vercel'deki BEKCI ayarı tanınmadı: bekçiyi açmak için acik yazın, kapatmak için silin "
+    "ya da kapali yazın; sonra yeniden yayınlayın."
+)
+# Ortam ayarındaki Türkçe harfler (ANA_TESIS="İzmir", BEKCI="açık") ASCII karşılığına
+# indirilir: Python'da "İ".lower() iki karakterdir (i ve U+0307), kimliğe uymazdı.
+TURKCE_KATLAMA = str.maketrans("İıÇçĞğÖöŞşÜü", "iiccggoossuu")
 
 
 # ------------------------------------------------------------------- hatalar
@@ -336,6 +356,8 @@ class Ayar:
     telegram_sohbet: str = ""
     # Filo (öneri 10): komut alan tesisin kimliği. Boşsa ilk tesis raporu sahiplenir.
     ana_tesis: str = ""
+    # ANA_TESIS yazılmış ama kimlik olamıyor: yok sayılır, Tesisler ekranı uyarır.
+    ana_tesis_gecersiz: bool = False
 
 
 def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
@@ -358,13 +380,24 @@ def _alicilar(ham: str | None) -> tuple[str, ...]:
     return tuple(liste)
 
 
+def _katla(ham: str | None) -> str:
+    """Ortam ayarını karşılaştırılabilir yapar: boşluk atılır, Türkçe harfler
+    ASCII karşılığına iner, küçük harfe çevrilir ("Açık" -> "acik")."""
+    return (ham or "").strip().translate(TURKCE_KATLAMA).lower()
+
+
 def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     """Vercel'in ortam değişkenleri. Upstash bağlantısı iki adla gelebilir:
     Upstash'in kendi adları ya da Vercel'in eski KV adları (README.md).
 
     Bekçi ve filo ayarları opt-in'dir: tanımlı değilse bekçi sessizce hiçbir şey
-    yapmaz ve eksikler()'e GİRMEZ (ikisi de açılmadıkça bugünkü davranış aynı)."""
+    yapmaz ve eksikler()'e GİRMEZ (ikisi de açılmadıkça bugünkü davranış aynı).
+    BEKCI ve ANA_TESIS Türkçe harfle de yazılabilir; tanınmayan BEKCI "gecersiz",
+    kimlik olamayan ANA_TESIS boş sayılır (ikisi de ayrıca bildirilir)."""
     ortam = os.environ if ortam is None else ortam
+    bekci = _katla(ortam.get("BEKCI"))
+    ana_tesis = _katla(ortam.get("ANA_TESIS"))
+    ana_gecerli = TESIS_ID_DESENI.fullmatch(ana_tesis) is not None
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
         rapor_anahtari=ortam.get("RAPOR_ANAHTARI", "").strip(),
@@ -375,7 +408,7 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
             ortam.get("UPSTASH_REDIS_REST_TOKEN") or ortam.get("KV_REST_API_TOKEN") or ""
         ).strip(),
         fabrika_adresi=_fabrika_adresi(ortam.get("FABRIKA_ADRESI", "")),
-        bekci=ortam.get("BEKCI", "").strip().lower() or "kapali",
+        bekci=(bekci if bekci in BEKCI_DEGERLERI else "gecersiz") if bekci else "kapali",
         bekci_esik_dk=_tam_ortam(ortam.get("BEKCI_ESIK_DK"), BEKCI_ESIK_VARSAYILAN_DK, 1, 1440),
         bekci_alicilar=_alicilar(ortam.get("BEKCI_ALICILAR")),
         bekci_anahtari=ortam.get("BEKCI_ANAHTARI", "").strip(),
@@ -387,7 +420,8 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         smtp_kimden=ortam.get("SMTP_KIMDEN", "").strip(),
         telegram_bot=ortam.get("TELEGRAM_BOT", "").strip(),
         telegram_sohbet=ortam.get("TELEGRAM_SOHBET", "").strip(),
-        ana_tesis=ortam.get("ANA_TESIS", "").strip().lower(),
+        ana_tesis=ana_tesis if ana_gecerli else "",
+        ana_tesis_gecersiz=bool(ana_tesis) and not ana_gecerli,
     )
 
 
@@ -1076,26 +1110,24 @@ def rapor_kaydet(
         if not ana:
             return {"filo": {"ana": False}}
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
+    okunan = [IZLEYEN_ANAHTARI, KOMUT_ISARET_ANAHTARI, KARE_IZLEYEN_ANAHTARI, FOTO_LISTESI_ANAHTARI]
+    # Bekçi açıkken "sistemden haber yok" işareti aynı MGET'te okunur ve yalnız
+    # varsa (kesintiden sonraki ilk taze rapor) silinir: düzelme, bir sonraki
+    # kesintide yeniden uyarılır (docs/20 §3). Rapor başına ek komut yok; bekçi
+    # kapalıyken tek fabrika yolu birebir aynı kalır.
+    bekci = ayar is not None and ayar.bekci == "acik"
+    if bekci:
+        okunan.append(BEKCI_UYARI_ANAHTARI)
     komutlar = [
         _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
         _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
-        [
-            "MGET",
-            IZLEYEN_ANAHTARI,
-            KOMUT_ISARET_ANAHTARI,
-            KARE_IZLEYEN_ANAHTARI,
-            FOTO_LISTESI_ANAHTARI,
-        ],
+        ["MGET", *okunan],
     ]
-    # Bekçi açıkken taze rapor "sistemden haber yok" işaretini aynı komutta siler
-    # (düzelme): bir sonraki kesintide yeniden uyarılır (docs/20 §3). Kapalıyken
-    # eklenmez: tek fabrika yolu birebir aynı kalır.
-    if ayar is not None and ayar.bekci == "acik":
-        komutlar.append(["DEL", BEKCI_UYARI_ANAHTARI])
-    isaretler = depo.boru_hatti(komutlar + ek_komutlar)[2]
-    if not (isinstance(isaretler, list) and len(isaretler) == 4):
-        isaretler = [None] * 4
-    izleyen, komut_var, kare, ham_fotolar = isaretler
+    isaretler = _mget_listesi(depo.boru_hatti(komutlar + ek_komutlar)[2], len(okunan))
+    isaretler = isaretler or [None] * len(okunan)
+    izleyen, komut_var, kare, ham_fotolar = isaretler[:4]
+    if bekci and isaretler[4] is not None:
+        depo.sil(BEKCI_UYARI_ANAHTARI)
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
     # Sık sor: müdahale ya da yönetim açık VE ekran açık ya da komut var (docs/19 §3.8)
     komut_acik = rapor["mudahale"]["acik"] or rapor["yonetim"]["acik"]
@@ -1107,6 +1139,11 @@ def rapor_kaydet(
     if tesis:
         cevap["filo"] = {"ana": True}
     return cevap
+
+
+def _mget_listesi(sonuc: object, adet: int) -> list | None:
+    """Boru hattındaki bir MGET'in cevabı; beklenen uzunlukta liste değilse None."""
+    return sonuc if isinstance(sonuc, list) and len(sonuc) == adet else None
 
 
 def _iso(epoch: float) -> str:
@@ -1177,9 +1214,16 @@ def _tesis_kaydet(
     eklenecek komutlar). Kütük dizini TESIS_EN_COK ile kırpılır, süreyle düşer.
 
     Ana tesis ANA_TESIS ayarıdır; yoksa depodaki işaret. İşaret yoksa (ilk tesis
-    raporu ya da ana tesis 7 gündür sessiz) bu rapor SET NX ile sahiplenir;
-    ama tesis kimliği göndermeyen (eski) bir program o an canlıysa sahiplenmez:
-    yoksa iki fabrika birden komut alırdı."""
+    raporu ya da ana tesis 7 gündür sessiz) bu rapor SET NX ile sahiplenir.
+    Komut alan TEK fabrikadır: tesis kimliği göndermeyen (eski) bir program canlı
+    rapor gönderdiği sürece hiçbir tesis ana değildir; ne ayar ne önceden alınmış
+    işaret bunu değiştirir (yoksa iki fabrika birden komut alır ve panoyu sırayla
+    ezerdi). Eski program susunca ya da kapanınca ana tesis geri döner.
+
+    Ek istek yok: işaret, panonun durumu (eski program denetimi) ve bekçi açıksa
+    bu tesisin "haber yok" işareti kütük yazımıyla aynı boru hattında tek MGET'le
+    okunur. Ana olamayacak tesis (ANA_TESIS başka bir tesis) panoyu hiç okumaz.
+    Bekçi işareti yalnız varsa silinir: ana tesiste panonun boru hattında."""
     tesis = rapor["tesis"]
     kimlik = tesis["id"]
     ozet = {
@@ -1198,34 +1242,57 @@ def _tesis_kaydet(
         ["LTRIM", TESISLER_ANAHTARI, str(-TESIS_EN_COK), "-1"],
         ["EXPIRE", TESISLER_ANAHTARI, str(TESIS_SAKLAMA_SN)],
     ]
-    if ayar is not None and ayar.bekci == "acik":
-        komutlar.append(["DEL", BEKCI_UYARI_ANAHTARI + ":" + kimlik])  # bu tesis döndü
     sabit = ayar.ana_tesis if ayar is not None else ""
-    if sabit:
-        depo.boru_hatti(komutlar)
-        if kimlik != sabit:
-            return False, []
+    aday = not sabit or kimlik == sabit  # ana olabilir: işaret ve pano okunur
+    isaret = BEKCI_UYARI_ANAHTARI + ":" + kimlik
+    anahtarlar = [ANA_TESIS_ANAHTARI, DURUM_ANAHTARI, SON_RAPOR_ANAHTARI] if aday else []
+    if ayar is not None and ayar.bekci == "acik":
+        anahtarlar.append(isaret)
+    if anahtarlar:
+        komutlar.append(["MGET", *anahtarlar])
+    sonuclar = depo.boru_hatti(komutlar)
+    degerler = _mget_listesi(sonuclar[-1], len(anahtarlar)) if anahtarlar else []
+    if degerler is None:
+        return False, []  # okunamadı: ana sayılmaz (komut iki fabrikaya gitmesin)
+    oku = dict(zip(anahtarlar, degerler, strict=True))
+    mevcut = oku.get(ANA_TESIS_ANAHTARI)
+    eski_canli = _eski_rapor_canli(oku.get(DURUM_ANAHTARI), oku.get(SON_RAPOR_ANAHTARI), simdi)
+    ana = aday and not eski_canli
+    ek: list[list[str]] = []
+    if ana and sabit:
         # Ayar sonradan kaldırılırsa aynı tesis ana kalsın: işaret ayarla eşlenir.
-        return True, [_set_komutu(ANA_TESIS_ANAHTARI, kimlik, TESIS_SAKLAMA_SN)]
-    mevcut = depo.boru_hatti([*komutlar, ["GET", ANA_TESIS_ANAHTARI]])[-1]
-    if mevcut == kimlik:
-        return True, [["EXPIRE", ANA_TESIS_ANAHTARI, str(TESIS_SAKLAMA_SN)]]
-    if mevcut or _eski_program_canli(depo, simdi):
-        return False, []
-    alindi = depo.komut("SET", ANA_TESIS_ANAHTARI, kimlik, "EX", str(TESIS_SAKLAMA_SN), "NX")
-    return alindi == "OK", []
+        ek.append(_set_komutu(ANA_TESIS_ANAHTARI, kimlik, TESIS_SAKLAMA_SN))
+    elif ana and mevcut == kimlik:
+        ek.append(["EXPIRE", ANA_TESIS_ANAHTARI, str(TESIS_SAKLAMA_SN)])
+    elif ana and not mevcut:
+        alindi = depo.komut("SET", ANA_TESIS_ANAHTARI, kimlik, "EX", str(TESIS_SAKLAMA_SN), "NX")
+        ana = alindi == "OK"
+    else:
+        ana = False
+    if oku.get(isaret) is not None:  # bu tesis döndü: "haber yok" işareti kalkar
+        if ana:
+            ek.append(["DEL", isaret])
+        else:
+            depo.sil(isaret)
+    return ana, ek
 
 
-def _eski_program_canli(depo: UpstashDepo | BellekDepo, simdi: float) -> bool:
+def _eski_rapor_canli(ham_durum: object, ham_son: object, simdi: float) -> bool:
     """Panonun durumunu tesis kimliği göndermeyen (eski) bir program mı yazıyor ve
-    şu an canlı mı. Yalnız ana tesis yokken, sahiplenmeden önce okunur."""
-    ham_durum, ham_son = depo.al_coklu([DURUM_ANAHTARI, SON_RAPOR_ANAHTARI])
+    şu an canlı mı (panoyla aynı bağlantı kuralı). Depoya dokunmaz: değerler
+    çağıranın zaten yaptığı okumadan gelir."""
     rapor = _sozluk(_json_sozluk(ham_durum)).get("rapor")
     if not isinstance(rapor, dict) or rapor.get("tesis"):
         return False
-    son = int(ham_son) if ham_son and _rakam_mi(ham_son) else None
+    son = int(ham_son) if isinstance(ham_son, str) and _rakam_mi(ham_son) else None
     aralik = _tam(rapor.get("aralik_sn"), 5, 3600, varsayilan=30)
     return _baglanti_hesapla(son, aralik, bool(rapor.get("kapanis")), simdi) == "canli"
+
+
+def _eski_program_canli(depo: UpstashDepo | BellekDepo, simdi: float) -> bool:
+    """_eski_rapor_canli, panonun durumunu depodan okuyarak (komut sorusu)."""
+    ham_durum, ham_son = depo.al_coklu([DURUM_ANAHTARI, SON_RAPOR_ANAHTARI])
+    return _eski_rapor_canli(ham_durum, ham_son, simdi)
 
 
 def ana_tesis_oku(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> str | None:
@@ -1299,18 +1366,31 @@ def tesis_ozeti(depo: UpstashDepo | BellekDepo, simdi: float) -> list[dict]:
 def filo_verisi(
     depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float, veri: dict | None = None
 ) -> dict:
-    """/api/durum?filo=1 (yalnız yönetici): her tesisin özeti ve ana tesis. Ana
-    tesis yoksa (tesis kimliği kullanılmıyor ya da eski program ana) panodaki
-    fabrika komut alan satır olarak eklenir; boş kütükte tek satır odur.
+    """/api/durum?filo=1 (yalnız yönetici): her tesisin özeti, ana tesis ve
+    yöneticiye uyarılar. Komut alan satır tektir ve komutu gerçekten alanı
+    gösterir: ana tesis yoksa (tesis kimliği kullanılmıyor) ya da kimlik
+    göndermeyen (eski) bir program canlıysa panodaki fabrikadır ve hiçbir tesis
+    ana değildir (_tesis_kaydet ile aynı kural). Boş kütükte tek satır odur.
+    Uyarılar: tesis kullanılırken eski program canlı; ANA_TESIS geçersiz.
     `veri`: aynı istekte okunmuş pano_verisi (ikinci kez okunmasın)."""
+    veri = veri if veri is not None else pano_verisi(depo, ayar, simdi)
+    rapor = veri.get("rapor")
+    eski_canli = (
+        isinstance(rapor, dict) and not rapor.get("tesis") and veri.get("baglanti") == "canli"
+    )
     ana = ana_tesis_oku(depo, ayar)
-    satirlar = [{**satir, "ana": satir["id"] == ana} for satir in tesis_ozeti(depo, simdi)]
-    if ana is None:
-        veri = veri if veri is not None else pano_verisi(depo, ayar, simdi)
+    tesisler = tesis_ozeti(depo, simdi)
+    satirlar = [{**satir, "ana": satir["id"] == ana and not eski_canli} for satir in tesisler]
+    if ana is None or eski_canli:
         if not satirlar or veri["baglanti"] != "hic":
             satirlar.append({**_mevcut_tesis_satiri(veri), "ana": True})
+    uyarilar = []
+    if ayar.ana_tesis_gecersiz:
+        uyarilar.append(ANA_TESIS_GECERSIZ_METNI)
+    if eski_canli and (tesisler or ana):
+        uyarilar.append(ESKI_PROGRAM_METNI)
     satirlar.sort(key=lambda satir: (not satir["ana"], satir["ad"].casefold()))
-    return {"tesisler": satirlar, "ana_tesis": ana}
+    return {"tesisler": satirlar, "ana_tesis": ana, "uyarilar": uyarilar}
 
 
 # ----------------------------------- "sistemden haber yok" dış alarmı (öneri 5)
@@ -1491,13 +1571,29 @@ def _bekci_metni(ad: str, hedef: dict) -> tuple[str, str]:
 def _bekci_hedefleri(
     depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float
 ) -> list[tuple[str, str, dict]]:
-    """(işaret anahtarı, ad, bağlantı bilgisi): ana pano ve ana olmayan her
-    kütük tesisi. Ana tesisin kütük satırı atlanır (ana pano zaten odur)."""
+    """(işaret anahtarı, ad, bağlantı bilgisi). İlk hedef komut alan fabrikadır:
+    ana tesis yoksa ya da panonun raporu ana tesisten veya kimliksiz (eski)
+    programdan geliyorsa panonun kendisi. Ana tesis belli ama pano başka bir
+    tesisin raporunu gösteriyorsa (ANA_TESIS değişti) ya da hiç rapor yoksa ana
+    hedef ana tesisin kütük satırından kurulur ve onun tesis işaretini taşır:
+    uyarı susan ana tesisi adıyla anar. Sonra öbür kütük tesisleri; aynı
+    fabrika iki kez sayılmaz."""
     veri = pano_verisi(depo, ayar, simdi)
-    hedefler = [(BEKCI_UYARI_ANAHTARI, _panonun_adi(veri), veri)]
     ana = ana_tesis_oku(depo, ayar)
-    for satir in tesis_ozeti(depo, simdi):
-        if satir["id"] != ana:
+    satirlar = tesis_ozeti(depo, simdi)
+    rapor = veri.get("rapor")
+    # Panodaki raporun tesisi: None hiç rapor yok, "" kimliksiz (eski) program
+    panodaki = (_sozluk(rapor.get("tesis")).get("id") or "") if isinstance(rapor, dict) else None
+    if ana is None or panodaki in (ana, ""):
+        hedefler = [(BEKCI_UYARI_ANAHTARI, _panonun_adi(veri), veri)]
+        atla = panodaki
+    else:
+        ana_satir = next((satir for satir in satirlar if satir["id"] == ana), None)
+        ana_satir = ana_satir or {"id": ana, "ad": ana, "baglanti": "hic", "gecikme_sn": None}
+        hedefler = [(BEKCI_UYARI_ANAHTARI + ":" + ana, ana_satir["ad"], ana_satir)]
+        atla = ana
+    for satir in satirlar:
+        if satir["id"] != atla:
             hedefler.append((BEKCI_UYARI_ANAHTARI + ":" + satir["id"], satir["ad"], satir))
     return hedefler
 
@@ -2637,7 +2733,8 @@ def komut_al(istek: Isleyici) -> tuple[int, dict, str | None]:
 
     Gövde `tesis` taşıyorsa (öneri 10) komutlar yalnız ana tesise verilir: öbür
     tesis imzalı ama boş bir cevap alır, kuyruktan hiçbir şey çekilmez (sonuçları
-    yine yazılır). `tesis` yoksa bugünkü gibi."""
+    yine yazılır). Kimliksiz (eski) program canlıyken hiçbir tesis ana değildir:
+    komutu o alır (_tesis_kaydet ile aynı kural). `tesis` yoksa bugünkü gibi."""
     ayar, ham, simdi = _fabrika_istegi(istek, KOMUT_EN_BUYUK_BAYT)
     if not isinstance(ham, dict) or ham.get("surum") != RAPOR_SURUMU:
         raise PanoHatasi(400, "bicim", "Komut isteğinin biçimi tanınmadı.")
@@ -2654,7 +2751,7 @@ def komut_al(istek: Isleyici) -> tuple[int, dict, str | None]:
             {"tamam": True, "nonce": nonce, "alinan": alinan, "komutlar": komutlar, "hizli": hizli},
             None,
         )
-    ana = tesis["id"] == ana_tesis_oku(depo, ayar)
+    ana = tesis["id"] == ana_tesis_oku(depo, ayar) and not _eski_program_canli(depo, simdi)
     komutlar, hizli = komutlari_teslim_et(depo, simdi) if ana else ([], False)
     govde = {"tamam": True, "nonce": nonce, "alinan": alinan, "komutlar": komutlar, "hizli": hizli}
     return 200, {**govde, "filo": {"ana": ana}}, None
@@ -2780,9 +2877,13 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/bekci - "sistemden haber yok" dış alarmı (docs/20 §3). Vercel
     Cron ya da dış izleme servisi çağırır. Bayat hedef varsa 503 döner: e-posta
     ya da Telegram kurulu olmasa da izleme servisi kendisi alarm verebilir.
-    Cevapta sır, alıcı ya da görüntü yoktur."""
+    BEKCI tanınmayan bir değerse (anahtar doğrulandıktan sonra) 503 bekci_ayari
+    döner: yanlış yazılmış ayar sessizce kapalı kalmaz. Cevapta sır, alıcı ya da
+    görüntü yoktur. HEAD de aynı yoldan geçer (api/bekci.py)."""
     ayar = ayar_oku()
     _bekci_yetkisi(istek, ayar)
+    if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın
+        raise PanoHatasi(503, "bekci_ayari", BEKCI_AYAR_HATASI_METNI)
     if ayar.bekci != "acik":
         return 200, {"atlandi": True}, None
     if DEPO is None and not (ayar.redis_adresi and ayar.redis_jetonu):
@@ -2792,13 +2893,18 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     return (503 if bayat else 200), sonuc, None
 
 
-def _durum_degistiren(istek: Isleyici, en_az_rol: str) -> tuple[Ayar, float, Oturum, dict]:
+def _durum_degistiren(
+    istek: Isleyici, en_az_rol: str, is_adi: str
+) -> tuple[Ayar, float, Oturum, dict]:
     """Durum değiştiren POST'ların ortak sırası (docs/19 §3.4): oturum (401) ->
-    en az rol (403 yetki) -> köken (403 koken) -> JSON (415). JSON gövdeyi döner;
+    en az rol (403 yetki) -> köken (403 koken) -> JSON (415). Rolü yetmeyen
+    deneme reddedilmeden önce işlem kaydına komut_red olarak yazılır (docs/19
+    §3.3; `is_adi` özete girer, sınırı _komut_red_yaz'dadır). JSON gövdeyi döner;
     sifre_degismeli, önizleme ve işe özgü denetimler çağırana bırakılır."""
     ayar, simdi, oturum = _oturumlu(istek)
     sira = {"izleyici": 0, "operator": 1, "yonetici": 2}
     if sira.get(oturum.rol, -1) < sira[en_az_rol]:
+        _komut_red_yaz(depo_al(ayar), oturum, f"Yetki yetmedi: {is_adi}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yetkiniz yok.")
     istek.koken_dogrula()
     govde = istek.json_govdesi(KOMUT_EN_BUYUK_BAYT)
@@ -2808,7 +2914,7 @@ def _durum_degistiren(istek: Isleyici, en_az_rol: str) -> tuple[Ayar, float, Otu
 def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/mudahale - anons, ses_dene, olay_incele (operatör+); teshis,
     yeniden_baslat, guncelle (yönetici). Ağır işler onay şifresi ister."""
-    ayar, simdi, oturum, govde = _durum_degistiren(istek, "operator")
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, "operator", "müdahale")
     if oturum.sifre_degismeli:
         raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)
     if onizleme_mi():
@@ -3145,7 +3251,7 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/hesap - {"eylem", ...}; sifre_degistir herkese, ötekiler
     yönetici (docs/19 §3.4). Sıra: oturum -> köken -> JSON -> sifre_degismeli ->
     önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
-    ayar, simdi, oturum, govde = _durum_degistiren(istek, "izleyici")
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, "izleyici", "hesap")
     eylem = govde.get("eylem")
     if oturum.sifre_degismeli and eylem != "sifre_degistir":
         raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)

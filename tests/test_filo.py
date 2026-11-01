@@ -90,11 +90,27 @@ def test_tesissiz_rapor_bugunku_komutlarin_aynisini_gonderir():
         assert set(cevap) == {"komut", "kare", "foto"}
 
 
-def test_bekci_acikken_tesissiz_rapor_isareti_ayni_komutta_siler():
+def test_bekci_acikken_tesissiz_rapor_isareti_ayni_okumada_okur_yalniz_varsa_siler():
+    """BEKCI=acik rapor başına komut eklemez (30 sn'de bir DEL ayda ~86 bin komut
+    olurdu): işaret raporun zaten yaptığı MGET'in beşinci anahtarıdır. DEL yalnız
+    işaret varsa (kesintiden sonraki ilk taze rapor) gider ve işaret kalkar."""
     rapor = _pano.rapor_temizle(_rapor())
+    ayar = _ayar(bekci="acik")
     depo = KayitliDepo(Saat(T0))
-    _pano.rapor_kaydet(depo, rapor, T0, _ayar(bekci="acik"))
-    assert depo.cagrilar == [_bugunku_komutlar(rapor, T0) + [["DEL", "dalsan:bekci:uyarildi"]]]
+    _pano.rapor_kaydet(depo, rapor, T0, ayar)
+    beklenen = _bugunku_komutlar(rapor, T0)
+    beklenen[2] = [*beklenen[2], "dalsan:bekci:uyarildi"]
+    assert depo.cagrilar == [beklenen]
+
+    depo.komut("SET", "dalsan:bekci:uyarildi", "1")  # bekçi bu kesinti için uyardı
+    depo.cagrilar.clear()
+    cevap = _pano.rapor_kaydet(depo, rapor, T0 + 30, ayar)
+    assert depo.cagrilar == [
+        _bugunku_komutlar(rapor, T0 + 30)[:2] + [beklenen[2]],
+        [["DEL", "dalsan:bekci:uyarildi"]],
+    ]
+    assert depo.komut("GET", "dalsan:bekci:uyarildi") is None
+    assert set(cevap) == {"komut", "kare", "foto"}
 
 
 def test_rapor_alan_uc_bekci_ayarini_rapor_kaydete_verir(site, monkeypatch):  # noqa: F811
@@ -133,6 +149,33 @@ def test_tesis_suzulur_ve_kisaltilir():
 def test_ana_tesis_ayari_okunur():
     assert _pano.ayar_oku({}).ana_tesis == ""
     assert _pano.ayar_oku({"ANA_TESIS": " Gebze "}).ana_tesis == "gebze"
+
+
+def test_ana_tesis_turkce_harfle_yazilabilir_gecersizse_yok_sayilir_ve_uyarilir():
+    """ANA_TESIS="İzmir" sessizce etkisiz kalmasın ("İ".lower() i ve U+0307 verir):
+    Türkçe harfler kimliğe çevrilir. Kimlik olamayan değer yok sayılır (ilk rapor
+    veren ana olur) ve Tesisler ekranı yöneticiyi uyarır."""
+    assert _pano.ayar_oku({"ANA_TESIS": "İzmir"}).ana_tesis == "izmir"
+    assert _pano.ayar_oku({"ANA_TESIS": " ÇAĞLAYAN "}).ana_tesis == "caglayan"
+    assert _pano.ayar_oku({"ANA_TESIS": "Şile_Ünye-Iğdır"}).ana_tesis == "sile_unye-igdir"
+    assert _pano.ayar_oku({}).ana_tesis_gecersiz is False
+    for ham in ("İzmir fabrikası", "-izmir", "a" * 33, "izmir!"):
+        hatali = _pano.ayar_oku({"ANA_TESIS": ham})
+        assert (hatali.ana_tesis, hatali.ana_tesis_gecersiz) == ("", True), ham
+
+    depo = _pano.BellekDepo(Saat(T0))
+    turkce = _pano.ayar_oku({"ANA_TESIS": "İzmir"})
+    assert _kaydet(depo, _tesisli("gebze"), T0, turkce) == {"filo": {"ana": False}}
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 5, turkce)["filo"] == {"ana": True}
+    assert _pano.filo_verisi(depo, turkce, T0 + 5)["uyarilar"] == []
+
+    depo = _pano.BellekDepo(Saat(T0))
+    hatali = _pano.ayar_oku({"ANA_TESIS": "İzmir fabrikası"})
+    assert _kaydet(depo, _tesisli("gebze"), T0, hatali)["filo"] == {"ana": True}
+    filo = _pano.filo_verisi(depo, hatali, T0)
+    assert filo["ana_tesis"] == "gebze"
+    assert filo["uyarilar"] == [_pano.ANA_TESIS_GECERSIZ_METNI]
+    assert "ANA_TESIS" in filo["uyarilar"][0] and "yok sayılıyor" in filo["uyarilar"][0]
 
 
 # ------------------------------------------------------------ tek ana tesis
@@ -208,6 +251,132 @@ def test_eski_program_canliyken_tesis_ana_olmaz():
     assert _kaydet(depo, _tesisli("izmir"), saat.simdi)["filo"] == {"ana": True}
 
 
+# ---------------- tek komut alan: kimliksiz (eski) program canlıyken tesis ana değil
+
+
+def _panodaki(depo):
+    """Panonun durumunu en son kim yazdı: tesis kimliği ya da "" (eski program)."""
+    rapor = json.loads(depo.komut("GET", "dalsan:durum"))["rapor"]
+    return (rapor.get("tesis") or {}).get("id", "")
+
+
+def test_ana_tesis_ayari_olsa_da_eski_program_canliyken_tesis_ana_olmaz():
+    """ANA_TESIS yazılıyken de kural aynı: kimliksiz program canlı rapor
+    gönderdiği sürece komutları o alır; ayardaki tesis panoyu ezmez, yalnız
+    izlenir. Eski program susunca ayardaki tesis ana olur."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    ayar = _ayar(ana_tesis="izmir")
+    _kaydet(depo, _rapor(), T0, ayar)  # gebze: eski program canlı
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 10, ayar) == {"filo": {"ana": False}}
+    assert _panodaki(depo) == ""
+    assert depo.komut("GET", "dalsan:ana_tesis") is None
+    _kaydet(depo, _rapor(), T0 + 20, ayar)
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 30, ayar) == {"filo": {"ana": False}}
+    assert _panodaki(depo) == ""
+    saat.simdi = T0 + 200  # eski program sustu
+    assert _kaydet(depo, _tesisli("izmir"), saat.simdi, ayar)["filo"] == {"ana": True}
+    assert _panodaki(depo) == "izmir"
+
+
+def test_tesis_ana_olduktan_sonra_eski_program_gelirse_komutu_eski_program_alir():
+    """izmir ana olmuşken ikinci fabrikada kimliksiz program başlar: izmir artık
+    ana değildir (panoyu sırayla ezmezler); işaret durur, eski program susunca
+    izmir yeniden ana olur."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    assert _kaydet(depo, _tesisli("izmir"), T0)["filo"] == {"ana": True}
+    _kaydet(depo, _rapor(), T0 + 10)  # ikinci fabrikadaki eski program
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 20) == {"filo": {"ana": False}}
+    assert _panodaki(depo) == ""
+    assert depo.komut("GET", "dalsan:ana_tesis") == "izmir"
+    saat.simdi = T0 + 200
+    assert _kaydet(depo, _tesisli("izmir"), saat.simdi)["filo"] == {"ana": True}
+    assert _panodaki(depo) == "izmir"
+
+
+def test_eski_program_yeniden_baslayip_kimliksiz_donerse_komutu_yine_o_alir():
+    """Eski program olağan yeniden başlatmada kapanış raporu gönderir; o arada
+    izmir ana olur. Eski program kimliksiz geri gelince izmir bırakır: komut
+    alan ve panoyu yazan yine tek fabrikadır."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    ayar = _ayar()
+    _kaydet(depo, _rapor(), T0, ayar)
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 10, ayar) == {"filo": {"ana": False}}
+    _kaydet(depo, _rapor(kapanis=True), T0 + 20, ayar)  # gebze yeniden başlıyor
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 25, ayar)["filo"] == {"ana": True}
+    _kaydet(depo, _rapor(), T0 + 60, ayar)  # gebze geri geldi, hâlâ kimliksiz
+    assert _kaydet(depo, _tesisli("izmir"), T0 + 70, ayar) == {"filo": {"ana": False}}
+    assert _panodaki(depo) == ""
+    filo = _pano.filo_verisi(depo, ayar, T0 + 70)
+    assert [(s["id"], s["ana"]) for s in filo["tesisler"]] == [("", True), ("izmir", False)]
+
+
+def test_filo_eski_program_canliyken_onu_komut_alan_gosterir_ve_uyarir():
+    """Tesisler ekranı komutu gerçekten alanı gösterir: canlı eski program "Ana
+    tesis - komut alır" satırıdır, her tesis yalnız izlenir ve yönetici uyarılır.
+    Tek fabrikalı kurulumda (tesis kimliği hiç yok) uyarı çıkmaz."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    tek = _rapor(bilgisayar={"ad": "Gebze fabrikası"})
+    _kaydet(depo, tek, T0)
+    assert _pano.filo_verisi(depo, _ayar(), T0)["uyarilar"] == []
+
+    ayar = _ayar(ana_tesis="izmir")
+    _kaydet(depo, _tesisli("izmir"), T0 + 5, ayar)
+    _kaydet(depo, tek, T0 + 10, ayar)
+    filo = _pano.filo_verisi(depo, ayar, T0 + 12)
+    assert [(s["id"], s["ad"], s["ana"]) for s in filo["tesisler"]] == [
+        ("", "Gebze fabrikası", True),
+        ("izmir", "Izmir", False),
+    ]
+    assert filo["uyarilar"] == [_pano.ESKI_PROGRAM_METNI]
+    assert "komutları o alıyor" in filo["uyarilar"][0]
+    assert "UZAK_PANO_TESIS_ID" in filo["uyarilar"][0]
+    # Pano da aynı fabrikayı gösterir: ekrandaki ile komut alan aynıdır
+    assert _pano.pano_verisi(depo, ayar, T0 + 12)["rapor"]["bilgisayar"]["ad"] == "Gebze fabrikası"
+    # Eski program susunca uyarı kalkar; ayardaki tesis ana görünür
+    filo = _pano.filo_verisi(depo, ayar, T0 + 300)
+    assert filo["uyarilar"] == []
+    assert [(s["id"], s["ana"]) for s in filo["tesisler"]] == [("izmir", True)]
+
+
+def test_tesis_raporu_ek_istek_atmaz_isareti_kutuk_okumasinda_okur():
+    """Eski program denetimi (panonun durumu) ve tesisin bekçi işareti kütük
+    yazımıyla aynı boru hattında okunur: ana tesis 2 istekte 10 komut, öbür
+    tesis 1 istekte 6 komut. DEL yalnız işaret varsa gider (ana tesiste pano
+    boru hattında, öbüründe tek komut) ve taze rapor işareti kaldırır."""
+    ayar = _ayar(bekci="acik")
+    depo = KayitliDepo(Saat(T0))
+    _kaydet(depo, _tesisli("gebze"), T0, ayar)  # ilk rapor sahiplenir
+    _kaydet(depo, _tesisli("izmir"), T0, ayar)
+    depo.cagrilar.clear()
+    _kaydet(depo, _tesisli("gebze"), T0 + 30, ayar)
+    assert [len(istek) for istek in depo.cagrilar] == [6, 4]
+    _kaydet(depo, _tesisli("izmir"), T0 + 30, ayar)
+    assert [len(istek) for istek in depo.cagrilar] == [6, 4, 6]
+    assert not any(k[0] == "DEL" for istek in depo.cagrilar for k in istek)
+
+    for kimlik in ("gebze", "izmir"):
+        depo.komut("SET", f"dalsan:bekci:uyarildi:{kimlik}", "1")
+    depo.cagrilar.clear()
+    _kaydet(depo, _tesisli("gebze"), T0 + 60, ayar)
+    assert len(depo.cagrilar) == 2
+    assert ["DEL", "dalsan:bekci:uyarildi:gebze"] in depo.cagrilar[1]
+    depo.cagrilar.clear()
+    _kaydet(depo, _tesisli("izmir"), T0 + 60, ayar)
+    assert depo.cagrilar[1:] == [[["DEL", "dalsan:bekci:uyarildi:izmir"]]]
+    for kimlik in ("gebze", "izmir"):
+        assert depo.komut("GET", f"dalsan:bekci:uyarildi:{kimlik}") is None
+
+    # ANA_TESIS yazılıyken öbür tesis panonun durumunu okumaz (bekçi kapalı: 5 komut)
+    depo = KayitliDepo(Saat(T0))
+    _kaydet(depo, _tesisli("gebze"), T0, _ayar(ana_tesis="izmir"))
+    assert [len(istek) for istek in depo.cagrilar] == [5]
+    assert "dalsan:durum" not in {p for istek in depo.cagrilar for k in istek for p in k}
+
+
 def test_tesis_kutugu_sinirlidir():
     depo = _pano.BellekDepo(Saat(T0))
     for sira in range(_pano.TESIS_EN_COK + 5):
@@ -272,6 +441,30 @@ def test_yalniz_izleyen_tesis_komut_alamaz(site):  # noqa: F811
     assert cevap["filo"] == {"ana": True}
 
 
+@pytest.mark.parametrize("ayarla", [True, False], ids=["ANA_TESIS", "isaret"])
+def test_eski_program_canliyken_komut_yalniz_ona_gider(site, monkeypatch, ayarla):  # noqa: F811
+    """Kuyruktaki komut iki fabrikaya birden gitmez: kimliksiz program canlıyken
+    tesis (ANA_TESIS ayarıyla ya da önceden sahiplendiği işaretle ana olsa da)
+    boş cevap alır ve kuyruktan hiçbir şey çekmez; komutu eski program alır."""
+    izmir = {**RAPOR, "tesis": {"id": "izmir", "ad": "İzmir"}}
+    if ayarla:
+        monkeypatch.setenv("ANA_TESIS", "izmir")
+    else:
+        assert json.loads(_rapor_gonder(site, izmir)[2])["filo"] == {"ana": True}
+    assert _rapor_gonder(site, RAPOR)[0] == 200  # ikinci fabrika: eski program canlı
+    kod, _, govde = _rapor_gonder(site, izmir)
+    assert kod == 200 and json.loads(govde)["filo"] == {"ana": False}
+
+    depo = _pano.DEPO
+    komut = _pano.komut_olustur(depo, _veri(), {"tur": "ses_dene", "kanal_id": 1}, time.time(), YON)
+    cevap = json.loads(_yokla(site, {"id": "izmir"})[2])
+    assert cevap["komutlar"] == [] and cevap["hizli"] is False
+    assert cevap["filo"] == {"ana": False}
+    assert depo.komut("LLEN", _pano.KOMUT_SIRA_ANAHTARI) == 1  # hiçbir şey çekilmedi
+    cevap = json.loads(_yokla(site, None)[2])
+    assert [k["id"] for k in cevap["komutlar"]] == [komut["id"]] and "filo" not in cevap
+
+
 def test_tesissiz_komut_sorusu_bugunku_gibi(site):  # noqa: F811
     cevap = json.loads(_yokla(site, None)[2])
     assert set(cevap) == {"tamam", "nonce", "alinan", "komutlar", "hizli"}
@@ -325,3 +518,16 @@ def test_tesisler_gorunumu_yalniz_yoneticide_ve_sekme_degil():
     assert "/api/durum?filo=1" in PANO_JS
     assert 'aktifGorunum === "tesisler"' in PANO_JS
     assert "ANA_TESIS" in PANO_HTML
+
+
+def test_tesisler_gorunumu_uyarilari_metin_olarak_gosterir():
+    """Sunucunun uyarıları (eski program canlı, ANA_TESIS geçersiz) Tesisler
+    görünümünde yalnız textContent ile yazılır; uyarı yoksa kutu gizlidir."""
+    gorunum = re.search(
+        r'<div class="gorunum" data-gorunum="tesisler" hidden>.*?\n        </div>', PANO_HTML, re.S
+    ).group(0)
+    assert '<p id="tesis-uyarisi" class="site-uyarisi" hidden></p>' in gorunum
+    ciz = re.search(r"function tesisleriCiz\(filo\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    assert "filo.uyarilar" in ciz
+    assert re.search(r'\$\("tesis-uyarisi"\)', ciz)
+    assert ".textContent = " in ciz and ".hidden = " in ciz

@@ -10,6 +10,7 @@ günlüğe girmez. Ağ yok: gönderenler sahtedir."""
 import http.client
 import json
 import smtplib
+import socket
 import time
 import urllib.parse
 from pathlib import Path
@@ -96,6 +97,23 @@ def test_bekci_ayarlari_okunur_sirlar_gizli_ve_eksiklere_girmez():
     assert _pano.bekci_alicilari(bos) == ()
     for ham, beklenen in (("abc", 20), ("0", 1), ("99999", 1440), ("-5", 20)):
         assert _pano.ayar_oku({"BEKCI_ESIK_DK": ham}).bekci_esik_dk == beklenen
+
+
+def test_bekci_ayari_turkce_yazilabilir_taninmayan_deger_hicbir_sey_yapmaz():
+    """BEKCI="açık" sessizce kapalı kalmasın: Türkçe harfler katlanır. Tanınmayan
+    bir değer (ör. "evet") bekçiyi açmaz; /api/bekci onu 503 ile bildirir."""
+    for ham in ("acik", " Açık ", "AÇIK", "açık"):
+        assert _pano.ayar_oku({"BEKCI": ham}).bekci == "acik", ham
+    for ham in ("", "  ", "kapali", "Kapalı", "KAPALI"):
+        assert _pano.ayar_oku({"BEKCI": ham}).bekci == "kapali", ham
+    for ham in ("evet", "on", "1", "true", "açık değil"):
+        ayar = _pano.ayar_oku({"BEKCI": ham, "BEKCI_ALICILAR": "sef@ornek.com.tr"})
+        assert ayar.bekci == "gecersiz", ham
+        depo = _pano.BellekDepo(Saat(T0))
+        _kaydet(depo, _rapor(), T0, ayar)
+        gonder = SahteGonderici()
+        assert _pano.bekci_isle(depo, ayar, T0 + 3600, gonder) == {"atlandi": True}
+        assert not gonder.cagrilar
 
 
 # ------------------------------------------------------------------ çekirdek
@@ -261,6 +279,70 @@ def test_tesis_isaretleri_birbirinden_bagimsiz():
     assert depo.komut("GET", ISARET + ":izmir") is None
     assert depo.komut("GET", ISARET + ":bursa") is not None
     assert depo.komut("GET", ISARET) is None
+
+
+def _hedefler(sonuc):
+    return [(d["ad"], d["baglanti"], d["bayat"]) for d in sonuc["durum"]]
+
+
+def test_ana_tesis_susarsa_uyari_onu_adiyla_anar_ayni_fabrika_iki_kez_sayilmaz():
+    """gebze ana (ilk rapor), izmir izlenir. Yönetici ANA_TESIS=izmir yazar;
+    izmir'in programı o sırada kapalı, gebze rapor göndermeyi sürdürür. Pano
+    gebze'nin son raporunu gösterse de komut alan izmir'dir: bekçi susan izmir'i
+    adıyla anar, canlı gebze bir kez sayılır ve uyarılmaz."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    once = _bekci_ayari()
+    assert _kaydet(depo, _tesisli("gebze"), T0, once)["filo"] == {"ana": True}
+    assert _kaydet(depo, _tesisli("izmir"), T0, once)["filo"] == {"ana": False}
+    sonra = _bekci_ayari(ana_tesis="izmir")
+    for dk in range(1, 26):  # gebze canlı: her dakika rapor
+        saat.simdi = T0 + dk * DK
+        assert _kaydet(depo, _tesisli("gebze"), saat.simdi, sonra) == {"filo": {"ana": False}}
+    gonder = SahteGonderici()
+    sonuc = _pano.bekci_isle(depo, sonra, saat.simdi, gonder)
+    assert _hedefler(sonuc) == [
+        ("Izmir fabrikası", "yok", True),
+        ("Gebze fabrikası", "canli", False),
+    ]
+    assert len(gonder.cagrilar) == 1 and "Izmir fabrikası" in gonder.cagrilar[0][1]
+    assert not any("Gebze" in konu for _, konu, _ in gonder.cagrilar)
+
+    saat.simdi += 30  # izmir döndü: ana olur, işareti kalkar
+    assert _kaydet(depo, _tesisli("izmir"), saat.simdi, sonra)["filo"] == {"ana": True}
+    assert depo.komut("GET", ISARET + ":izmir") is None
+    sonuc = _pano.bekci_isle(depo, sonra, saat.simdi, gonder)
+    assert _hedefler(sonuc) == [
+        ("Izmir fabrikası", "canli", False),
+        ("Gebze fabrikası", "canli", False),
+    ]
+
+
+def test_ana_tesis_hic_rapor_gondermediyse_hedef_onun_kimligini_tasir():
+    depo = _pano.BellekDepo(Saat(T0))
+    ayar = _bekci_ayari(ana_tesis="izmir")
+    assert _kaydet(depo, _tesisli("gebze"), T0, ayar) == {"filo": {"ana": False}}  # pano boş
+    sonuc = _pano.bekci_isle(depo, ayar, T0 + 30 * DK, SahteGonderici())
+    assert _hedefler(sonuc) == [("izmir", "hic", False), ("Gebze fabrikası", "yok", True)]
+
+
+def test_eski_program_komut_alirken_ana_tesis_ayrica_izlenir():
+    """Kimliksiz program canlıyken komutları o alır ve pano onu gösterir; ayardaki
+    ana tesis ayrı bir fabrikadır: o susarsa da uyarılır (atlanmaz)."""
+    saat = Saat(T0)
+    depo = _pano.BellekDepo(saat)
+    ayar = _bekci_ayari(ana_tesis="izmir")
+    assert _kaydet(depo, _tesisli("izmir"), T0, ayar)["filo"] == {"ana": True}
+    for dk in range(1, 26):  # gebze'deki eski program her dakika rapor gönderir
+        saat.simdi = T0 + dk * DK
+        _kaydet(depo, _rapor(bilgisayar={"ad": "Gebze fabrikası"}), saat.simdi, ayar)
+    gonder = SahteGonderici()
+    sonuc = _pano.bekci_isle(depo, ayar, saat.simdi, gonder)
+    assert _hedefler(sonuc) == [
+        ("Gebze fabrikası", "canli", False),
+        ("Izmir fabrikası", "yok", True),
+    ]
+    assert len(gonder.cagrilar) == 1 and "Izmir fabrikası" in gonder.cagrilar[0][1]
 
 
 # ---------------------------------------------------------------- gönderim
@@ -463,6 +545,60 @@ def test_bekci_kapaliyken_atlanir(site, monkeypatch):  # noqa: F811
     monkeypatch.setenv("BEKCI_ANAHTARI", GIZLI["BEKCI_ANAHTARI"])
     kod, _, govde = _bekci_iste(site, _bearer(GIZLI["BEKCI_ANAHTARI"]))
     assert kod == 200 and json.loads(govde) == {"atlandi": True}
+
+
+def test_taninmayan_bekci_ayari_anahtarla_cagrilinca_503(site, monkeypatch):  # noqa: F811
+    """BEKCI="evet" gibi tanınmayan bir değer sessizce "kapalı" sayılmaz: dış
+    izleme servisi fark etsin diye (anahtar doğrulandıktan sonra) 503 döner.
+    Boş bırakılan ayar bugünkü gibi atlanır."""
+    monkeypatch.setenv("BEKCI", "evet")
+    monkeypatch.setenv("BEKCI_ANAHTARI", GIZLI["BEKCI_ANAHTARI"])
+    jeton = _bearer(GIZLI["BEKCI_ANAHTARI"])
+    assert _bekci_iste(site)[0] == 401  # önce anahtar
+    assert _bekci_iste(site, _bearer("yanlis-jeton-0123456789"))[0] == 403
+    kod, _, govde = _bekci_iste(site, jeton)
+    veri = json.loads(govde)
+    assert kod == 503 and veri["hata"] == "bekci_ayari"
+    assert "BEKCI" in veri["mesaj"] and "acik" in veri["mesaj"]
+    monkeypatch.setenv("BEKCI", "Açık")
+    kod, _, govde = _bekci_iste(site, jeton)
+    assert kod == 200 and "durum" in json.loads(govde)
+    monkeypatch.setenv("BEKCI", "")
+    kod, _, govde = _bekci_iste(site, jeton)
+    assert kod == 200 and json.loads(govde) == {"atlandi": True}
+
+
+def _ham_istek(site, yontem, yol):  # noqa: F811
+    """Ham HTTP: cevabın baytlarını olduğu gibi döner (urllib HEAD'de gövdeyi
+    hiç okumadığı için sunucunun gövde yazıp yazmadığını göstermez)."""
+    adres = urllib.parse.urlsplit(site)
+    with socket.create_connection((adres.hostname, adres.port), timeout=5) as baglanti:
+        baglanti.sendall(
+            f"{yontem} {yol} HTTP/1.1\r\nHost: {adres.netloc}\r\nConnection: close\r\n\r\n".encode()
+        )
+        parcalar = []
+        while parca := baglanti.recv(65536):
+            parcalar.append(parca)
+    basliklar, _, govde = b"".join(parcalar).partition(b"\r\n\r\n")
+    return int(basliklar.split()[1]), basliklar.decode("latin-1"), govde
+
+
+def test_head_istegi_get_ile_ayni_kodu_govdesiz_alir(site, monkeypatch):  # noqa: F811
+    """UptimeRobot'un ücretsiz planı HEAD gönderir ve başlık ekleyemez: HEAD,
+    ?anahtar= ile GET'in durum kodunu alır; sunucu gövde yazmaz."""
+    monkeypatch.setenv("BEKCI", "acik")
+    monkeypatch.setenv("BEKCI_ANAHTARI", GIZLI["BEKCI_ANAHTARI"])
+    yol = f"/api/bekci?anahtar={GIZLI['BEKCI_ANAHTARI']}"
+    kod, basliklar, govde = _ham_istek(site, "GET", yol)
+    assert kod == 200 and json.loads(govde)["uyarildi"] is False
+    kod, basliklar, govde = _ham_istek(site, "HEAD", yol)
+    assert kod == 200 and govde == b"" and "Content-Length:" in basliklar
+    assert _ham_istek(site, "HEAD", "/api/bekci")[0] == 401
+    assert _ham_istek(site, "HEAD", "/api/bekci?anahtar=yanlis")[0] == 403
+    _pano.rapor_kaydet(_pano.DEPO, _pano.rapor_temizle(RAPOR), time.time() - 3600)
+    kod, _, govde = _ham_istek(site, "HEAD", yol)
+    assert kod == 503 and govde == b""
+    assert _ham_istek(site, "GET", yol)[0] == 503
 
 
 def test_bayat_hedef_varsa_503_yoksa_200(site, monkeypatch):  # noqa: F811
