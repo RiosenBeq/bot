@@ -38,6 +38,8 @@ import math
 import os
 import re
 import secrets
+import smtplib
+import ssl
 import sys
 import threading
 import time
@@ -45,8 +47,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler
 
 # ------------------------------------------------------------------ sabitler
@@ -241,6 +244,27 @@ SAYI_ALANLARI = (
     "kamera_canli",
 )
 
+# ---- "Sistemden haber yok" dış alarmı (öneri 5, docs/20 §3) - hepsi opt-in
+# Rapor BEKCI_ESIK_DK dakikadan uzun süre gelmezse seçili kişilere BİR KEZ
+# e-posta / Telegram bildirimi gider; taze rapor gelince işaret silinir ve bir
+# sonraki kesintide yeniden uyarılır. Bu işaret SET NX EX ile tutulur.
+BEKCI_UYARI_ANAHTARI = "dalsan:bekci:uyarildi"
+# İşaretin kendiliğinden tazelenme aralığı (uzun tutulur: taze rapor zaten siler).
+BEKCI_UYARI_TTL_SN = 24 * 3600
+BEKCI_ESIK_VARSAYILAN_DK = 20
+# Serverless süresi kısadır: gönderim kısa bir zaman aşımıyla yapılır.
+BEKCI_GONDERIM_ZAMAN_ASIMI_SN = 10.0
+BEKCI_ALICI_EN_COK = 20
+
+# ---- Çoklu fabrika / filo görünümü (öneri 10, docs/20 §4) - salt okuma, geri uyumlu
+# Rapor isteğe bağlı bir "tesis" alanı taşırsa site bu kayıt defterine ek bir
+# özet yazar; "dalsan:durum" / "dalsan:son_rapor" HİÇ değişmez (tek fabrika yolu).
+TESISLER_ANAHTARI = "dalsan:tesisler"  # tesis kimliklerinin dizini
+TESIS_ONEKI = "dalsan:tesis:"  # tesis başına küçük özet
+TESIS_SAKLAMA_SN = DURUM_SAKLAMA_SN  # durumla aynı: 7 gün
+TESIS_EN_COK = 50
+TESIS_ID_DESENI = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
+
 
 # ------------------------------------------------------------------- hatalar
 
@@ -273,11 +297,48 @@ class Ayar:
     redis_adresi: str
     redis_jetonu: str
     fabrika_adresi: str
+    # Bekçi (öneri 5) ve e-posta / Telegram kanalları: hepsi opt-in, varsayılan
+    # boş/kapalı. Sırlar repr'de gizlenir ve hiçbir cevaba / hata metnine girmez.
+    bekci: str = "kapali"
+    bekci_esik_dk: int = BEKCI_ESIK_VARSAYILAN_DK
+    bekci_alicilar: tuple[str, ...] = ()
+    bekci_anahtari: str = field(default="", repr=False)
+    cron_sirri: str = field(default="", repr=False)
+    smtp_sunucu: str = ""
+    smtp_port: int = 587
+    smtp_kullanici: str = ""
+    smtp_sifresi: str = field(default="", repr=False)
+    smtp_kimden: str = ""
+    telegram_bot: str = field(default="", repr=False)
+    telegram_sohbet: str = ""
+
+
+def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
+    """Ortamdan okunan tam sayı; boş ya da bozuksa varsayılan, sınırlara kırpılır."""
+    ham = (deger or "").strip()
+    if not _rakam_mi(ham):
+        return varsayilan
+    return max(en_az, min(en_cok, int(ham)))
+
+
+def _alicilar(ham: str | None) -> tuple[str, ...]:
+    """Virgülle ayrık alıcı listesi: e-posta ya da `tg:<sohbet_id>`. Boşlar atılır."""
+    liste = []
+    for parca in (ham or "").split(","):
+        alici = parca.strip()
+        if alici and len(alici) <= 200:
+            liste.append(alici)
+        if len(liste) >= BEKCI_ALICI_EN_COK:
+            break
+    return tuple(liste)
 
 
 def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     """Vercel'in ortam değişkenleri. Upstash bağlantısı iki adla gelebilir:
-    Upstash'in kendi adları ya da Vercel'in eski KV adları (README.md)."""
+    Upstash'in kendi adları ya da Vercel'in eski KV adları (README.md).
+
+    Bekçi ve filo ayarları opt-in'dir: tanımlı değilse bekçi sessizce hiçbir şey
+    yapmaz ve eksikler()'e GİRMEZ (ikisi de açılmadıkça bugünkü davranış aynı)."""
     ortam = os.environ if ortam is None else ortam
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
@@ -289,6 +350,18 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
             ortam.get("UPSTASH_REDIS_REST_TOKEN") or ortam.get("KV_REST_API_TOKEN") or ""
         ).strip(),
         fabrika_adresi=_fabrika_adresi(ortam.get("FABRIKA_ADRESI", "")),
+        bekci=ortam.get("BEKCI", "").strip().lower() or "kapali",
+        bekci_esik_dk=_tam_ortam(ortam.get("BEKCI_ESIK_DK"), BEKCI_ESIK_VARSAYILAN_DK, 1, 1440),
+        bekci_alicilar=_alicilar(ortam.get("BEKCI_ALICILAR")),
+        bekci_anahtari=ortam.get("BEKCI_ANAHTARI", "").strip(),
+        cron_sirri=ortam.get("CRON_SECRET", "").strip(),
+        smtp_sunucu=ortam.get("SMTP_SUNUCU", "").strip(),
+        smtp_port=_tam_ortam(ortam.get("SMTP_PORT"), 587, 1, 65535),
+        smtp_kullanici=ortam.get("SMTP_KULLANICI", "").strip(),
+        smtp_sifresi=ortam.get("SMTP_SIFRESI", ""),
+        smtp_kimden=ortam.get("SMTP_KIMDEN", "").strip(),
+        telegram_bot=ortam.get("TELEGRAM_BOT", "").strip(),
+        telegram_sohbet=ortam.get("TELEGRAM_SOHBET", "").strip(),
     )
 
 
@@ -760,6 +833,20 @@ def _bilgisayar(ham: object) -> dict | None:
     return bilgi if any(bilgi.values()) else None
 
 
+def _tesis(ham: object) -> dict | None:
+    """Raporun isteğe bağlı tesis kimliği (çoklu fabrika, öneri 10, docs/20 §4).
+
+    `id`: ^[a-z0-9][a-z0-9_-]{0,31}$ (kısa kimlik). `ad`: en çok 80 karakter.
+    Alan yoksa ya da bozuksa None: o zaman site bugünkü tek fabrika gibi davranır
+    (`dalsan:durum` / `dalsan:son_rapor` birebir aynı)."""
+    if not isinstance(ham, dict):
+        return None
+    kimlik = ham.get("id")
+    if not isinstance(kimlik, str) or not TESIS_ID_DESENI.fullmatch(kimlik):
+        return None
+    return {"id": kimlik, "ad": _metin(ham.get("ad"), 80) or kimlik}
+
+
 def _gunluk(ham: object) -> list[int] | None:
     """Son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün."""
     if not isinstance(ham, list) or len(ham) != 14:
@@ -866,7 +953,7 @@ def rapor_temizle(ham: object) -> dict:
     program = _sozluk(ham.get("program"))
     sistem = _sozluk(ham.get("sistem"))
     sayilar = _sozluk(ham.get("sayilar"))
-    return {
+    temiz = {
         "surum": RAPOR_SURUMU,
         "uretildi": _zaman(ham.get("uretildi")),
         "aralik_sn": _tam(ham.get("aralik_sn"), 5, 3600, varsayilan=30),
@@ -927,31 +1014,48 @@ def rapor_temizle(ham: object) -> dict:
         # Yönetici görünümü (eskiden gönderilmez; yoksa her şey kapalı döner)
         "yonetim": _yonetim(ham.get("yonetim")),
     }
+    # Tesis (öneri 10) yalnız VARSA eklenir: yoksa anahtar hiç girmez ve tek
+    # fabrika yolu birebir aynı kalır (docs/20 §4; test_sozlesme buna dayanır).
+    tesis = _tesis(ham.get("tesis"))
+    if tesis is not None:
+        temiz["tesis"] = tesis
+    return temiz
 
 
-def rapor_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> dict:
+def rapor_kaydet(
+    depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float, ayar: Ayar | None = None
+) -> dict:
     """Raporu yazar ve fabrikaya cevabı kurar: komutları sık sorsun mu
     (Müdahale ekranı açık ya da komut bekliyor; müdahale kapalıysa hayır),
     anlık görüntü göndersin mi (Kameralar ekranı açık) ve raporundaki hangi
     olayların fotoğrafı sitede zaten var. Hepsi tek komutla okunur."""
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
-    _, _, isaretler = depo.boru_hatti(
+    komutlar = [
+        _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
+        _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
         [
-            _set_komutu(DURUM_ANAHTARI, kayit, DURUM_SAKLAMA_SN),
-            _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
-            [
-                "MGET",
-                IZLEYEN_ANAHTARI,
-                KOMUT_ISARET_ANAHTARI,
-                KARE_IZLEYEN_ANAHTARI,
-                FOTO_LISTESI_ANAHTARI,
-            ],
-        ]
-    )
+            "MGET",
+            IZLEYEN_ANAHTARI,
+            KOMUT_ISARET_ANAHTARI,
+            KARE_IZLEYEN_ANAHTARI,
+            FOTO_LISTESI_ANAHTARI,
+        ],
+    ]
+    # Bekçi açıkken taze rapor "sistemden haber yok" işaretini siler (resume):
+    # sistem geri gelince bir sonraki kesintide yeniden uyarılabilsin (docs/20 §3).
+    # Kapalıyken komut listesine HİÇ eklenmez: tek fabrika yolu birebir aynı kalır.
+    if ayar is not None and ayar.bekci == "acik":
+        komutlar.append(["DEL", BEKCI_UYARI_ANAHTARI])
+    sonuc = depo.boru_hatti(komutlar)
+    isaretler = sonuc[2]
     if not (isinstance(isaretler, list) and len(isaretler) == 4):
         isaretler = [None] * 4
     izleyen, komut_var, kare, ham_fotolar = isaretler
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
+    # Tesis (öneri 10) VARSA ek bir kayıt defterine yazılır; mevcut anahtarlara
+    # (dalsan:durum / dalsan:son_rapor) DOKUNULMAZ (docs/20 §4).
+    if rapor.get("tesis"):
+        _tesis_kaydet(depo, rapor, simdi)
     # Sık sor: müdahale ya da yönetim açık VE ekran açık ya da komut var (docs/19 §3.8)
     komut_acik = rapor["mudahale"]["acik"] or rapor["yonetim"]["acik"]
     return {
@@ -1004,6 +1108,238 @@ def pano_verisi(depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float) -> dic
         "rapor": rapor if isinstance(rapor, dict) else None,
         "fabrika_adresi": ayar.fabrika_adresi,
     }
+
+
+# ------------------------------------------------- çoklu fabrika / filo (öneri 10)
+
+
+def _baglanti_hesapla(son: int | None, aralik_sn: int, kapanis: bool, simdi: float) -> str:
+    """pano_verisi ile aynı kural, tesis özeti için tekrar kullanılır."""
+    if son is None:
+        return "hic"
+    if kapanis:
+        return "kapandi"
+    if simdi - son <= aralik_sn * GECIKME_KATSAYISI + 5:
+        return "canli"
+    return "yok"
+
+
+def _tesis_kaydet(depo: UpstashDepo | BellekDepo, rapor: dict, simdi: float) -> None:
+    """Tesisin küçük özetini kayıt defterine yazar (öneri 10, docs/20 §4). Yalnız
+    rapor bir tesis taşıdığında çağrılır; mevcut tek fabrika anahtarlarına
+    DOKUNMAZ (ayrı bir boru hattı). Defter indeksine TTL verilir ki bir tesis
+    uzun süre rapor göndermezse kendiliğinden düşsün."""
+    tesis = rapor["tesis"]
+    kimlik = tesis["id"]
+    ozet = {
+        "id": kimlik,
+        "ad": tesis["ad"],
+        "son_rapor": int(simdi),
+        "aralik_sn": rapor.get("aralik_sn", 30),
+        "kapanis": bool(rapor.get("kapanis")),
+        "bugun_ihlal": rapor["sayilar"].get("bugun_ihlal", 0),
+    }
+    metin = json.dumps(ozet, ensure_ascii=False, separators=(",", ":"))
+    depo.boru_hatti(
+        [
+            _set_komutu(TESIS_ONEKI + kimlik, metin, TESIS_SAKLAMA_SN),
+            ["LREM", TESISLER_ANAHTARI, "0", kimlik],
+            ["RPUSH", TESISLER_ANAHTARI, kimlik],
+            ["EXPIRE", TESISLER_ANAHTARI, str(TESIS_SAKLAMA_SN)],
+        ]
+    )
+
+
+def _tesis_satiri(kayit: dict, simdi: float) -> dict:
+    son = _tam(kayit.get("son_rapor"), 0, 10**12) or None
+    aralik = _tam(kayit.get("aralik_sn"), 5, 3600, varsayilan=30)
+    return {
+        "id": _metin(kayit.get("id"), 32),
+        "ad": _metin(kayit.get("ad"), 80) or "Adsız tesis",
+        "baglanti": _baglanti_hesapla(son, aralik, kayit.get("kapanis") is True, simdi),
+        "son_rapor": _iso(son) if son else None,
+        "gecikme_sn": max(0, round(simdi - son)) if son else None,
+        "bugun_ihlal": _tam(kayit.get("bugun_ihlal"), 0, 10**7),
+    }
+
+
+def _mevcut_tesis_satiri(veri: dict) -> dict:
+    """Kayıt defteri boşken (bugünkü tek fabrika) filo görünümüne tek satır:
+    mevcut panonun durumundan türetilir."""
+    rapor = veri.get("rapor") or {}
+    bilgisayar = rapor.get("bilgisayar") or {}
+    return {
+        "id": "",
+        "ad": _metin(bilgisayar.get("ad"), 80) or "Fabrika",
+        "baglanti": veri.get("baglanti"),
+        "son_rapor": veri.get("son_rapor"),
+        "gecikme_sn": veri.get("gecikme_sn"),
+        "bugun_ihlal": _tam((rapor.get("sayilar") or {}).get("bugun_ihlal"), 0, 10**7),
+    }
+
+
+def tesis_ozeti(depo: UpstashDepo | BellekDepo, simdi: float) -> list[dict]:
+    """Kayıt defterindeki tesislerin filo özeti (yalnız-yönetici görünümü).
+    Süresi dolan tesisler dizinden onarılır; ada göre sıralanır."""
+    ham = depo.komut("LRANGE", TESISLER_ANAHTARI, "0", str(TESIS_EN_COK * 2))
+    idler, gorulen = [], set()
+    for oge in ham if isinstance(ham, list) else []:
+        if isinstance(oge, str) and oge not in gorulen:
+            gorulen.add(oge)
+            idler.append(oge)
+    if not idler:
+        return []
+    kayitlar = depo.al_coklu([TESIS_ONEKI + i for i in idler])
+    satirlar, eksik = [], []
+    for kimlik, ham_kayit in zip(idler, kayitlar, strict=True):
+        kayit = _json_sozluk(ham_kayit)
+        if kayit is None:
+            eksik.append(kimlik)
+        else:
+            satirlar.append(_tesis_satiri(kayit, simdi))
+    for kimlik in eksik:
+        depo.komut("LREM", TESISLER_ANAHTARI, "0", kimlik)
+    satirlar.sort(key=lambda s: s["ad"].lower())
+    return satirlar
+
+
+# ----------------------------------- "sistemden haber yok" dış alarmı (öneri 5)
+
+
+def bekci_karari(veri: dict, esik_dk: int, simdi: float) -> bool:
+    """SAF karar (docs/20 §3): pano verisine göre "sistemden haber yok" uyarısı
+    verilmeli mi. Bağlantı yok/kapandı VE son rapor esik_dk dakikadan eskiyse
+    True. "hic" (hiç rapor gelmedi) ve "canli" uyarı vermez."""
+    if veri.get("baglanti") not in ("yok", "kapandi"):
+        return False
+    son_iso = veri.get("son_rapor")
+    if not isinstance(son_iso, str) or not son_iso:
+        return False
+    try:
+        son = datetime.fromisoformat(son_iso).timestamp()
+    except (ValueError, TypeError):
+        return False
+    return simdi - son >= esik_dk * 60
+
+
+def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str) -> None:
+    """Düz metin e-posta (yalnız stdlib: smtplib + ssl). 465 ise SSL, aksi
+    halde STARTTLS (587). Gönderen adresi SMTP_KIMDEN ya da SMTP_KULLANICI."""
+    if not ayar.smtp_sunucu:
+        raise OSError("SMTP sunucusu tanımlı değil")
+    mesaj = EmailMessage()
+    mesaj["From"] = ayar.smtp_kimden or ayar.smtp_kullanici or alici
+    mesaj["To"] = alici
+    mesaj["Subject"] = konu
+    mesaj.set_content(govde)
+    baglam = ssl.create_default_context()
+    if ayar.smtp_port == 465:
+        with smtplib.SMTP_SSL(
+            ayar.smtp_sunucu, 465, context=baglam, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
+        ) as sunucu:
+            if ayar.smtp_kullanici:
+                sunucu.login(ayar.smtp_kullanici, ayar.smtp_sifresi)
+            sunucu.send_message(mesaj)
+    else:
+        with smtplib.SMTP(
+            ayar.smtp_sunucu, ayar.smtp_port, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
+        ) as sunucu:
+            sunucu.starttls(context=baglam)
+            if ayar.smtp_kullanici:
+                sunucu.login(ayar.smtp_kullanici, ayar.smtp_sifresi)
+            sunucu.send_message(mesaj)
+
+
+def _telegram_gonder(ayar: Ayar, sohbet: str, metin: str) -> None:
+    """Telegram bildirimi (mevcut urllib kalıbı, UpstashDepo._istek gibi)."""
+    if not ayar.telegram_bot:
+        raise OSError("Telegram bot jetonu tanımlı değil")
+    adres = f"https://api.telegram.org/bot{ayar.telegram_bot}/sendMessage"
+    govde = urllib.parse.urlencode({"chat_id": sohbet, "text": metin}).encode("utf-8")
+    istek = urllib.request.Request(
+        adres,
+        data=govde,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urllib.request.urlopen(istek, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN) as yanit:
+        yanit.read()
+
+
+def bekci_uyari_gonder(
+    ayar: Ayar,
+    alicilar: tuple[str, ...],
+    konu: str,
+    metin: str,
+    eposta_gonder: Callable[[Ayar, str, str, str], None] = _eposta_gonder,
+    telegram_gonder: Callable[[Ayar, str, str], None] = _telegram_gonder,
+) -> int:
+    """Her alıcıya e-posta ya da Telegram (`tg:<id>`) gönderir. Her gönderim
+    ayrı try/except: bir kanal çökse öteki yine çalışır, hiçbir hata 500
+    yapmaz. Gönderenler enjekte edilebilir (testte sahte gönderici verilir).
+    Giden bildirim sayısını döndürür."""
+    gonderilen = 0
+    for alici in alicilar:
+        try:
+            if alici.startswith("tg:"):
+                telegram_gonder(ayar, alici[3:], metin)
+            else:
+                eposta_gonder(ayar, alici, konu, metin)
+            gonderilen += 1
+        except (OSError, smtplib.SMTPException, urllib.error.URLError, TimeoutError) as hata:
+            # Vercel günlüğüne düşer; sır (şifre / jeton) hata metnine girmez.
+            print(f"Bekçi bildirimi gidemedi ({_alici_gizle(alici)}): {hata}", file=sys.stderr)
+    return gonderilen
+
+
+def _alici_gizle(alici: str) -> str:
+    """Günlükte alıcıyı kısmen gizler (e-posta adresi tümüyle yazılmasın)."""
+    if alici.startswith("tg:"):
+        return "tg:***"
+    ad, _, alan = alici.partition("@")
+    return (ad[:2] + "***@" + alan) if alan else "***"
+
+
+def _bekci_metni(veri: dict, simdi: float) -> tuple[str, str]:
+    """Kısa Türkçe uyarı metni (sır yok, görüntü yok)."""
+    gecikme = veri.get("gecikme_sn")
+    dk = round(gecikme / 60) if isinstance(gecikme, int | float) else "?"
+    son = veri.get("son_rapor")
+    konu = "DALSAN uyarı: sistemden haber yok"
+    govde = (
+        f"DALSAN izleme panosu yaklaşık {dk} dakikadır fabrikadan rapor almıyor. "
+        "Fabrika bilgisayarı kapanmış, çökmüş ya da internet kesilmiş olabilir; "
+        "bu sürede kameralar izlenmiyor olabilir.\n\n"
+        f"Son rapor: {son or 'hiç gelmedi'}\n"
+        "Lütfen fabrikadaki bilgisayarı ve internet bağlantısını kontrol edin."
+    )
+    return konu, govde
+
+
+def bekci_isle(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    simdi: float,
+    gonder: Callable[..., int] = bekci_uyari_gonder,
+) -> dict:
+    """Bekçinin çekirdeği (HTTP'siz, test edilebilir). Bekçi kapalıysa hiçbir
+    şey yapmaz. Açıksa bağlantı koptuysa ve son rapor eşikten eskiyse BİR KEZ
+    uyarır: SET NX EX işareti ikinci çağrıyı susturur, taze rapor onu siler."""
+    if ayar.bekci != "acik":
+        return {"atlandi": True}
+    veri = pano_verisi(depo, ayar, simdi)
+    if not bekci_karari(veri, ayar.bekci_esik_dk, simdi):
+        return {"uyarildi": False, "baglanti": veri["baglanti"]}
+    # SET NX: yalnız işareti ilk koyan çağrı bildirim gönderir (eşzamanlı cron
+    # çağrıları ya da arka arkaya denemeler ikinci bildirimi tetiklemez).
+    (alindi,) = depo.boru_hatti(
+        [["SET", BEKCI_UYARI_ANAHTARI, str(int(simdi)), "EX", str(BEKCI_UYARI_TTL_SN), "NX"]]
+    )
+    if alindi != "OK":
+        return {"uyarildi": False, "baglanti": veri["baglanti"]}
+    konu, metin = _bekci_metni(veri, simdi)
+    gonderilen = gonder(ayar, ayar.bekci_alicilar, konu, metin)
+    return {"uyarildi": True, "baglanti": veri["baglanti"], "gonderilen": gonderilen}
 
 
 # --------------------------------------------------------- uzaktan müdahale
