@@ -32,3 +32,25 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
    yetkisi (bir operatör yalnız kendi tesisine). İkinci saha gerçekten gelince.
 2. **Vercel Pro'ya geçilirse** `vercel.json` cron'unu `*/5 * * * *` yapmak. Hobby'de
    alt-günlük cron yayını durdurur; değiştirmeyin.
+
+## Güvenlik incelemesinden kalanlar (02.11.2026, hepsi düşük)
+
+Aynı incelemede paralel denemeyle kilit aşma, kurucu onay şifresine sınırsız deneme,
+başka siteden zorla çıkış, bozuk JSON'da çökme, bilinmeyen adı ele veren zaman farkı ve
+kanıt fotoğrafının tarayıcı önbelleğinde kalması düzeltildi. Kalanlar tasarım kararıdır:
+
+1. **Eşzamanlı rol düşürme:** oturum sürümünü artıran yazım hesap kilidini almıyor;
+   yönetici düşürülürken aynı anda beşinci yanlış onay şifresi gelirse düşürme
+   kaybolabilir. Hesap kilidinin sahibini bilen bir düzenleme gerekir.
+2. **İmzalı fabrika isteğinin tekrarı:** ±300 sn içinde aynı rapor ya da komut sorusu
+   tekrar gönderilebilir (TLS'i aşan biri gerekir). İmza karmasını `SET NX EX 600` ile
+   saklamak kapatır; rapor başına bir Upstash komutu ekler.
+3. **İşlem kaydı:** kişi kendi başarılı girişleriyle 1000 satırlık kaydı doldurup
+   reddedilen denemesini kaydın dışına itebilir. Ayrı liste ya da hesap başına sınır.
+4. **Şifre özeti:** scrypt n=2^14; OWASP en az 2^17 öneriyor. Girişte yeniden özetleme
+   ile 2^15-2^17'ye çıkarılabilir (Vercel'de giriş süresi ve bellek artar).
+5. **Oturum anahtarı:** `PANO_SIFRESI` ve `RAPOR_ANAHTARI`'ndan türer; ikisini birden ele
+   geçiren kurucu şifresini çevrimdışı deneyebilir. Ayrı, rastgele bir oturum anahtarı
+   ayarı çözümdür (Vercel'e yeni değişken).
+6. **Bekçi anahtarı adreste:** `?anahtar=` Vercel ve izleme servisi günlüğüne düşer;
+   yanlış anahtar sınırlanmaz. Başlıkla gönderim yeğlenmeli (README'de yazıyor).

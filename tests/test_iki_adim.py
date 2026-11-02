@@ -561,9 +561,15 @@ class _SayanDepo(_pano.BellekDepo):
         return super().boru_hatti(komutlar)
 
 
+AYIR = ["SET", "INCR", "SET", "INCR", "SET", "INCR", "GET"]
+
+
 def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
-    """Kurucu ve iki adımı kapalı hesap: başarılı giriş bugünkü istekleri yapar
-    (kilit ve hesap tek MGET'te; kurucunun iki adım kaydı da o MGET'te okunur)."""
+    """Kurucu ve iki adımı kapalı hesap: kilit payı ve hesap kaydı tek istekte
+    (AYIR; kurucunun iki adım kaydı da orada okunur), başarılı giriş payı geri
+    verir. Hesapta geri verme son giriş yazımıyla aynı istektedir: istek sayısı
+    eskisi gibi 3; kurucuda 1 istek fazla. Paralel denemeyle kilidi aşmayı
+    kapatmanın bedeli budur (inceleme 02.11.2026); yanlış giriş 5 yerine 2 istek."""
     ayar = _pano.Ayar(
         pano_sifresi="kurucu-sifresi-123",
         rapor_anahtari="r" * 40,
@@ -573,7 +579,7 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     )
     depo = _SayanDepo()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", "kurucu-sifresi-123", 1_800_000_000)
-    assert depo.istekler == [["MGET"], ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, ["DECR", "DECR", "DECR"], ["LPUSH", "LTRIM"]]
     kayit = {
         "surum": 1,
         "ad": "ali",
@@ -586,7 +592,11 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     depo.boru_hatti([["SET", _pano.KULLANICI_ONEKI + "ali", json.dumps(kayit)]])
     depo.istekler.clear()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "dogru-sifre-1", 1_800_000_000, "123456")
-    assert depo.istekler == [["MGET"], ["SET"], ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, ["DECR", "DECR", "DECR", "SET"], ["LPUSH", "LTRIM"]]
+    depo.istekler.clear()
+    with pytest.raises(_pano.PanoHatasi):
+        _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "yanlis-sifre", 1_800_000_000)
+    assert depo.istekler == [AYIR, ["LPUSH", "LTRIM"]]
 
 
 def test_kurucu_kaydi_pano_sifresinin_cevrimdisi_denenebilir_ozetini_tasimaz(

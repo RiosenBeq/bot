@@ -691,11 +691,11 @@ class BellekDepo(_OrtakDepo):
             for anahtar in silinen:
                 del self._veri[anahtar]
             return len(silinen)
-        if ad == "INCR":
+        if ad in ("INCR", "DECR"):
             mevcut = self._dize(arg[0])
             if mevcut is not None and not _rakam_mi(mevcut.lstrip("-")):
                 raise DepoHatasi("ERR value is not an integer or out of range")
-            yeni = int(mevcut or 0) + 1
+            yeni = int(mevcut or 0) + (1 if ad == "INCR" else -1)
             bitis = self._veri[arg[0]][1] if mevcut is not None else None
             self._veri[arg[0]] = (str(yeni), bitis)
             return yeni
@@ -2394,10 +2394,13 @@ _SAHTE_KAYIT: dict | None = None
 
 def _sahte_dogrula(sifre: object) -> None:
     """Bilinmeyen ad ve kurucuda da gerçek hesapla aynı maliyette çalışır:
-    varlık, zamanlamadan sızmaz (docs/19 §3.2)."""
+    varlık, zamanlamadan sızmaz (docs/19 §3.2). Yeni bir işlevin ilk çağrısında
+    kaydı kurmak da tek özet çalıştırır; o çağrı ayrıca doğrulamaz (iki özet,
+    soğuk başlangıçta adın olmadığını sızdırırdı)."""
     global _SAHTE_KAYIT
     if _SAHTE_KAYIT is None:
         _SAHTE_KAYIT = sifre_ozetle("sahte-parola-zaman-esitleme")
+        return
     sifre_dogrula(_SAHTE_KAYIT, sifre if isinstance(sifre, str) else "")
 
 
@@ -2703,9 +2706,13 @@ def giris_dene(
     kod: str = "",
 ) -> tuple[str, str, int]:
     """Giriş: doğruysa (ad, hesap_kimligi, oturum_surumu); değilse PanoHatasi.
-    Üç kilit de şifreden önce okunur; başarılı giriş adres sayacını silmez
-    (süresi dolar). Kurucu ve bilinmeyen adda da aynı maliyette sahte özet
-    çalışır (docs/19 §3.2).
+    Üç kilidin sayacı şifreden ÖNCE ve atomik olarak bir artırılır (pay ayrılır):
+    sınırı aşan deneme payını hemen geri verir ve 429 alır, başarılı giriş de
+    payını geri verir; yanlış girişin payı sayılan denemedir. Eskiden sayaçlar
+    önce okunup yalnız yanlıştan sonra artırılıyordu: aynı anda gelen denemelerin
+    hepsi eski sayıyı görüp şifreye ulaşıyordu (inceleme 02.11.2026). Başarılı
+    giriş önceki yanlışları silmez (süresi dolar). Kurucu ve bilinmeyen adda da
+    aynı maliyette sahte özet çalışır (docs/19 §3.2).
 
     İki adımı açık hesapta (öneri 6) şifre doğruysa kod da istenir: kod yoksa
     401 iki_adim_gerekli (kilide sayılmaz), yanlışsa 401 kod_yanlis; yanlış kod
@@ -2717,23 +2724,36 @@ def giris_dene(
     # Kurucunun hesap kaydı yoktur (ad ayrılmış): aynı MGET onun iki adım kaydını okur
     kurucu = ad == KURUCU_AD
     hesap_anahtari = IKI_ADIM_KURUCU_ANAHTARI if kurucu else KULLANICI_ONEKI + ad
-    adres_sayisi, ad_sayisi, genel_sayisi, hesap_ham = depo.al_coklu(
-        [adres_anahtari, ad_anahtari, GIRIS_GENEL_ANAHTARI, hesap_anahtari]
+    sayaclar = (
+        (adres_anahtari, KILIT_SURESI_SN),
+        (ad_anahtari, AD_KILIT_SURESI_SN),
+        (GIRIS_GENEL_ANAHTARI, GENEL_KILIT_SURESI_SN),
     )
-    if int(adres_sayisi or 0) >= KILIT_DENEME:
+    ayir: list[list[str]] = []
+    for anahtar, sure in sayaclar:
+        # Sayaç yoksa süresiyle kurulur (pencere ilk denemeden başlar), sonra artar
+        ayir += [["SET", anahtar, "0", "EX", str(sure), "NX"], ["INCR", anahtar]]
+    sonuc = depo.boru_hatti([*ayir, ["GET", hesap_anahtari]])
+    adres_sayisi, ad_sayisi, genel_sayisi = (int(sonuc[i]) for i in (1, 3, 5))
+    hesap_ham = sonuc[6] if isinstance(sonuc[6], str) else None
+    geri_ver = [["DECR", anahtar] for anahtar, _ in sayaclar]
+    if adres_sayisi > KILIT_DENEME:
+        depo.boru_hatti(geri_ver)
         raise PanoHatasi(
             429,
             "kilitli",
             f"Bu adresten çok fazla yanlış deneme yapıldı. {KILIT_SURESI_SN // 60} dakika "
             "sonra yeniden deneyin.",
         )
-    if int(ad_sayisi or 0) >= AD_KILIT_DENEME:
+    if ad_sayisi > AD_KILIT_DENEME:
+        depo.boru_hatti(geri_ver)
         raise PanoHatasi(
             429,
             "ad_kilitli",
             "Bu kullanıcı adıyla çok fazla yanlış deneme yapıldı. 15 dakika sonra yeniden deneyin.",
         )
-    if int(genel_sayisi or 0) >= GENEL_KILIT_DENEME:
+    if genel_sayisi > GENEL_KILIT_DENEME:
+        depo.boru_hatti(geri_ver)
         raise PanoHatasi(
             429,
             "genel_kilit",
@@ -2768,14 +2788,13 @@ def giris_dene(
         )
         if sir is not None:
             if not kod.strip():
+                depo.boru_hatti(geri_ver)  # kod istemek kilide sayılmaz
                 raise PanoHatasi(401, "iki_adim_gerekli", IKI_ADIM_GEREKLI_METNI)
             if not _iki_adim_kod_kullan(depo, ad, sir, kod, simdi):
                 oturum_bilgi = None
                 hata, hata_ozeti = ("kod_yanlis", KOD_YANLIS_METNI), "Doğrulama kodu yanlış"
     if oturum_bilgi is None:
-        depo.say(adres_anahtari, KILIT_SURESI_SN)
-        depo.say(ad_anahtari, AD_KILIT_SURESI_SN)
-        depo.say(GIRIS_GENEL_ANAHTARI, GENEL_KILIT_SURESI_SN)
+        # Ayrılan pay sayılan yanlış denemedir: sayaçlar zaten artmış durumda
         # Hatalı giriş kaydı: kim yalnız var olan hesapsa yazılır (bilinmeyen ad yazılmaz)
         kim = ad if (ad == KURUCU_AD or hesap is not None) else ""
         kim_rol = (
@@ -2790,8 +2809,11 @@ def giris_dene(
             KAYIT_GIRIS_EN_COK,
         )
         raise PanoHatasi(401, *hata)
-    if ad != KURUCU_AD:
-        depo.yaz_coklu([(SON_GIRIS_ONEKI + ad, str(int(simdi)), None)])
+    # Başarılı giriş payını geri verir; son giriş zamanı aynı istekte yazılır
+    son_giris = (
+        [] if ad == KURUCU_AD else [_set_komutu(SON_GIRIS_ONEKI + ad, str(int(simdi)), None)]
+    )
+    depo.boru_hatti([*geri_ver, *son_giris])
     kayit_yaz(
         depo,
         KAYIT_OTURUM_ANAHTARI,
@@ -2805,12 +2827,18 @@ def _onay_hatasi_isle(
     depo: UpstashDepo | BellekDepo, oturum: Oturum, istek: Isleyici, kurucu: bool
 ) -> None:
     """Yanlış onay / eski şifre: adres ve ad kilit sayaçlarına girer; hesapta 15
-    dakikada 5 kez yanlışta bütün oturumlar düşer (docs/19 §3.1-§3.2)."""
+    dakikada 5 kez yanlışta bütün oturumlar düşer (docs/19 §3.1-§3.2). Kurucunun
+    hesap kaydı (oturum sürümü) yoktur: sınırda bu oturum iptal edilir (çıkıştaki
+    gibi). Çalınan bir kurucu çerezi PANO_SIFRESI'ni sınırsız deneyemez."""
     depo.say(_adres_anahtari(istek.istemci_adresi()), KILIT_SURESI_SN)
     depo.say(_ad_kilit_anahtari(oturum.ad), AD_KILIT_SURESI_SN)
-    if not kurucu:
-        if depo.say(ONAY_HATA_ONEKI + oturum.ad, ONAY_HATA_SURESI_SN) >= ONAY_HATA_SINIR:
-            _oturum_surumu_arttir(depo, oturum.ad)
+    if depo.say(ONAY_HATA_ONEKI + oturum.ad, ONAY_HATA_SURESI_SN) < ONAY_HATA_SINIR:
+        return
+    if kurucu:
+        kalan = max(1, oturum.bitis - int(time.time()))
+        depo.yaz_coklu([(_iptal_anahtari(oturum.imza), "1", kalan)])
+    else:
+        _oturum_surumu_arttir(depo, oturum.ad)
 
 
 def onay_sifresi_dogrula(
@@ -2908,7 +2936,10 @@ class Isleyici(BaseHTTPRequestHandler):
             raise PanoHatasi(415, "icerik_turu", "İstek JSON olmalı.")
         try:
             govde = json.loads(self.govde_oku(en_cok) or b"{}")
-        except ValueError:
+            # Tek başına UTF-16 vekil karakteri ("\ud800") JSON'da geçerlidir ama
+            # şifre ve ad özetlenirken çökerdi: UTF-8'e yazılamayan istek reddedilir.
+            json.dumps(govde, ensure_ascii=False).encode("utf-8")
+        except (ValueError, RecursionError):  # RecursionError: çok derin iç içe dizi
             raise PanoHatasi(400, "json", "İstek okunamadı.") from None
         return _sozluk(govde)
 
@@ -2930,7 +2961,11 @@ class Isleyici(BaseHTTPRequestHandler):
         koken = self.headers.get("Origin")
         if koken is None:
             return
-        if urllib.parse.urlsplit(koken).netloc != (self.headers.get("Host") or ""):
+        try:
+            netloc = urllib.parse.urlsplit(koken).netloc
+        except ValueError:  # okunamayan köken ("http://[") yabancı sayılır
+            netloc = None
+        if netloc != (self.headers.get("Host") or ""):
             raise PanoHatasi(403, "koken", "Bu istek başka bir siteden geldi; reddedildi.")
 
     def istemci_adresi(self) -> str:
@@ -3065,7 +3100,10 @@ def giris(istek: Isleyici) -> tuple[int, dict, str | None]:
 
 def cikis(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/cikis - oturum çerezini siler ve bu cihazın oturumunu iptal
-    eder (docs/19 §3.2). Bozuk çerezde de çerez silinir."""
+    eder (docs/19 §3.2). Bozuk çerezde de çerez silinir. Öbür durum değiştiren
+    istekler gibi köken ve JSON ister: başka bir sitenin formu çerezi sildiremez."""
+    istek.koken_dogrula()
+    istek.json_govdesi(GIRIS_EN_BUYUK_BAYT)
     ayar = ayar_oku()
     simdi = time.time()
     cozum = _cerez_coz(istek.cerez_al(CEREZ_ADI))
@@ -3869,9 +3907,11 @@ def _resim_ver(istek: Isleyici, parametre: str, onek: str, onbellek: str) -> tup
 
 
 def foto_ver(istek: Isleyici) -> tuple[int, Ikili, str | None]:
-    """GET /api/foto?olay=123 - kanıt fotoğrafı; oturum ister. Fotoğraf
-    değişmez: tarayıcı bir gün önbellekte tutar (yalnız bu cihazda)."""
-    return _resim_ver(istek, "olay", FOTO_ONEKI, "private, max-age=86400")
+    """GET /api/foto?olay=123 - kanıt fotoğrafı; oturum ister. Kişisel veridir:
+    tarayıcı diske yazmaz, paylaşılan bilgisayarda çıkıştan sonra önbellekten
+    açılamaz (inceleme 02.11.2026; eskiden bir gün önbellekte kalıyordu). Pano
+    küçük fotoğraf öğesini tazelemelerde yeniden kullanır: resim yeniden inmez."""
+    return _resim_ver(istek, "olay", FOTO_ONEKI, "private, no-store")
 
 
 def kare_ver(istek: Isleyici) -> tuple[int, Ikili, str | None]:

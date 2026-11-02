@@ -285,6 +285,66 @@ def test_bes_yanlis_denemede_adres_kilitlenir_dogru_sifre_de_reddedilir():
     _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", SIFRE, saat.simdi)
 
 
+def test_ayni_anda_gelen_denemeler_kilidi_asamaz(monkeypatch):
+    """Paralel deneme: eskiden üç sayaç şifreden önce yalnız OKUNUYOR, yanlış
+    girişten sonra artırılıyordu; aynı anda gelen 30 denemenin hepsi eski sayıyı
+    görüp şifre denetimine giriyordu (5 sınırında 30 deneme; iki adım kodu da
+    böyle tahmin edilebilirdi; inceleme 02.11.2026). Sayaçlar artık şifreden
+    ÖNCE atomik olarak ayrılır: en çok KILIT_DENEME deneme şifreye ulaşır."""
+    import threading
+    import time as gercek_saat
+
+    depo = _pano.BellekDepo()
+    ayar = _ayar()
+    denenen = []
+    kilit = threading.Lock()
+
+    def yavas_sahte(sifre):  # şifre denetimi sürerken öbür istekler gelsin
+        with kilit:
+            denenen.append(sifre)
+        gercek_saat.sleep(0.2)
+
+    monkeypatch.setattr(_pano, "_sahte_dogrula", yavas_sahte)
+    baslangic = threading.Barrier(30)
+    sonuclar = []
+
+    def dene():
+        baslangic.wait()
+        try:
+            _pano.giris_dene(depo, ayar, "1.2.3.4", "bilinmeyen.kisi", "yanlis", 1_800_000_000)
+        except _pano.PanoHatasi as hata:
+            with kilit:
+                sonuclar.append(hata.kod)
+
+    isler = [threading.Thread(target=dene) for _ in range(30)]
+    for is_ in isler:
+        is_.start()
+    for is_ in isler:
+        is_.join(timeout=30)
+    assert len(denenen) <= _pano.KILIT_DENEME, len(denenen)
+    assert sonuclar.count(401) == len(denenen) and sonuclar.count(429) == 30 - len(denenen)
+    # Kilit süresince doğru şifre de reddedilir; reddedilen deneme sayacı büyütmez
+    with pytest.raises(_pano.PanoHatasi) as hata:
+        _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", SIFRE, 1_800_000_000)
+    assert hata.value.kod == 429
+    adres_sayisi = depo.komut("GET", _pano._adres_anahtari("1.2.3.4"))
+    assert int(adres_sayisi) == _pano.KILIT_DENEME
+
+
+def test_basarili_giris_ve_kod_istegi_sayaca_yazilmaz():
+    """Başarılı girişin ayırdığı pay geri verilir: hatasız giriş sayaçları
+    büyütmez, önceki yanlışlar silinmez (süresi dolar)."""
+    depo = _pano.BellekDepo()
+    ayar = _ayar()
+    with pytest.raises(_pano.PanoHatasi):
+        _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", "yanlis", 1_800_000_000)
+    for _ in range(3):
+        _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", SIFRE, 1_800_000_000)
+    assert depo.komut("GET", _pano._adres_anahtari("1.2.3.4")) == "1"
+    assert depo.komut("GET", _pano._ad_kilit_anahtari("kurucu")) == "1"
+    assert depo.komut("GET", _pano.GIRIS_GENEL_ANAHTARI) == "1"
+
+
 def test_genel_kilit_cok_adresten_gelen_denemeyi_durdurur():
     saat = Saat()
     depo = _pano.BellekDepo(saat)
@@ -327,6 +387,43 @@ def test_ipv6_ayni_64_tek_sayacta_sayilir():
     with pytest.raises(_pano.PanoHatasi) as hata:
         _pano.giris_dene(depo, ayar, "2a02:e0:1234:5678::ff", "kurucu", SIFRE, saat.simdi)
     assert hata.value.hata == "kilitli"
+
+
+def test_bilinmeyen_ad_ve_kurucu_ilk_denemede_de_tek_ozet_calistirir(monkeypatch):
+    """Var olmayan ad ve kurucu da bir hesap kadar özet çalıştırır (docs/19 §3.2).
+    Sahte kayıt ilk denemede kuruluyordu: yeni bir işlevin (Vercel'de soğuk
+    başlangıç) ilk bilinmeyen ad denemesi iki özet çalıştırıp ölçülebilir biçimde
+    yavaşlıyor, adın olmadığını sızdırıyordu. Artık her deneme tek özet."""
+    sayi = {"ozet": 0}
+    scrypt, pbkdf2 = _pano.hashlib.scrypt, _pano.hashlib.pbkdf2_hmac
+
+    def sayan(gercek):
+        def ozet(*arg, **ad):
+            sayi["ozet"] += 1
+            return gercek(*arg, **ad)
+
+        return ozet
+
+    depo = _pano.BellekDepo(Saat())
+    hesap = {
+        "ad": "ali",
+        "hesap_kimligi": "1234567890abcdef",
+        "rol": "operator",
+        "acik": True,
+        "sifre": _pano.sifre_ozetle("ali-sifresi-1"),
+        "oturum_surumu": 1,
+    }
+    depo.komut("SET", _pano.KULLANICI_ONEKI + "ali", json.dumps(hesap))
+    monkeypatch.setattr(_pano.hashlib, "scrypt", sayan(scrypt))
+    monkeypatch.setattr(_pano.hashlib, "pbkdf2_hmac", sayan(pbkdf2))
+    denemeler = [("hayalet", True), ("hayalet", False), ("kurucu", True), ("ali", True)]
+    for sira, (ad, yeni_islev) in enumerate(denemeler):
+        if yeni_islev:  # sahte kayıt henüz kurulmamış (yeni işlev)
+            monkeypatch.setattr(_pano, "_SAHTE_KAYIT", None)
+        sayi["ozet"] = 0
+        with pytest.raises(_pano.PanoHatasi):
+            _pano.giris_dene(depo, _ayar(), f"10.9.0.{sira}", ad, "yanlis-sifre", 1_800_000_000)
+        assert sayi["ozet"] == 1, (ad, yeni_islev)
 
 
 def test_kilit_sayaci_ip_adresini_acik_yazmaz():

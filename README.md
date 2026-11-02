@@ -492,7 +492,8 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
 - **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
   doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. İki adımı açık
   hesabın her girişi 2 istek daha yapar (son kullanılan adım okunur, adım
-  harcanır); kapalı hesapta giriş aynıdır. Müdahale ya da
+  harcanır). Giriş kilit payını ayırıp geri verdiği için başarılı giriş 3
+  istektir, yanlış giriş 2. Müdahale ya da
   Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
   saniyede bir uğrar (ekran kapanınca durur).
 - **Bekçi:** her çağrı 2-4 komuttur; 5 dakikada bir çağrılırsa ayda yaklaşık
@@ -557,7 +558,9 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
   yapılır. Kurucunun şifresi (`PANO_SIFRESI`) yalnız Vercel'dedir.
 - **Onay şifresi:** Yeniden başlatma, güncelleme ve her hesap işi (ekleme, rol,
   yeni şifre, kapatma, silme) işi yapanın kendi şifresini ister; yanlış ya da
-  eksikse iş yapılmaz ve kilit sayaçlarına girer.
+  eksikse iş yapılmaz ve kilit sayaçlarına girer. Aynı hesapta 15 dakikada 5
+  yanlışta hesabın bütün oturumları, kurucuda o oturum düşer: çalınan bir oturum
+  şifreyi sınırsız deneyemez.
 - **Yalnız kurucu yöneticileri yönetir:** Bir yöneticiyi yönetici yapmak ya da
   düşürmek, yönetici hesabına yeni şifre vermek, kapatmak ya da silmek yalnız
   kurucuya açıktır. Çalınan bir yönetici hesabı kendine kalıcı yetki açamaz.
@@ -572,7 +575,10 @@ Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
   kurucununki `PANO_SIFRESI`'ne bağlı (rapor anahtarlı HMAC izi) ayrı anahtarda durur ve
   yalnız kurulum cevabında görünür. Kapatmak şifre ve kod, başkasınınkini
   sıfırlamak yönetici onay şifresi ister (yöneticininkini yalnız kurucu).
-- **Giriş kilitleri:** Üç kilit şifre denetiminden önce okunur - adres başına
+- **Giriş kilitleri:** Üç kilidin sayacı şifre denetiminden önce ve tek adımda
+  bir artırılır (pay ayrılır); sınırı aşan deneme payını geri verip reddedilir,
+  başarılı giriş de payını geri verir. Böylece aynı anda gönderilen denemeler de
+  sınırı aşamaz (02.11.2026). Sınırlar: adres başına
   5 yanlışta 5 dakika (IPv6'da /64 öneki), ad başına 15 dakikada 10 yanlışta
   15 dakika, bütün adreslerden 15 dakikada 100 yanlışta 15 dakika. Bilinmeyen
   adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
@@ -619,7 +625,7 @@ yenileyin.
 | Pano: "Site henüz kurulmadı" | Listedeki ayarları yazın, sonra Redeploy |
 | Pano: "Fabrikadan henüz rapor gelmedi" | Fabrika programında Ayarlar → Uzak izleme panosu doldurulmadı ya da sistem yeniden başlatılmadı |
 | Pano: "Kullanıcı adı ya da şifre yanlış" | İlk girişte ad `kurucu`, şifre `PANO_SIFRESI`; kendi hesabınızı yöneticiniz açar |
-| Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı, iki adımınız kapatıldı / sıfırlandı ya da kurucu şifresi değişti; yeniden giriş yapın |
+| Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı, iki adımınız kapatıldı / sıfırlandı, onay şifresi 15 dakikada 5 kez yanlış girildi ya da kurucu şifresi değişti; yeniden giriş yapın |
 | Giriş: "Doğrulama kodu yanlış ya da süresi geçti" | Telefonun tarih ve saatinde "otomatik ayarla"yı açın; aynı kod ikinci kez geçmez, uygulamadaki yeni kodu bekleyin |
 | Telefon kayboldu, kod üretilemiyor | Yönetici Kullanıcılar → İşlemler → **2 adımı sıfırla** (yöneticininkini kurucu); kurucuda Vercel'de `PANO_SIFRESI`'ni değiştirip Redeploy |
 | Tesisler: "Aynı tesis kimliği iki bilgisayardan geliyor" | Bir `.env` öbür bilgisayara kopyalanmış: bilgisayarlardan birinde `UZAK_PANO_TESIS_ID`'yi değiştirip programı yeniden başlatın; uyarı yaklaşık bir saatte kalkar |

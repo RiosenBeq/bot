@@ -73,7 +73,10 @@ def test_kanit_fotografi_yuklenir_ve_yalniz_oturumla_gorulur(site):  # noqa: F81
     assert kod == 200
     assert basliklar["Content-Type"] == "image/jpeg"
     assert basliklar["X-Content-Type-Options"] == "nosniff"
-    assert basliklar["Cache-Control"].startswith("private")
+    # Kanıt fotoğrafı kişisel veridir: paylaşılan bilgisayarda çıkıştan sonra
+    # tarayıcı önbelleğinden açılamasın (inceleme 02.11.2026). Küçük fotoğraf
+    # öğesi tazelemelerde yeniden kullanıldığı için bant genişliği değişmez.
+    assert basliklar["Cache-Control"] == "private, no-store"
     assert veri == JPEG
     assert _istek(f"{site}/api/foto?olay=999", basliklar={"Cookie": cerez})[0] == 404
     assert _istek(f"{site}/api/foto?olay=../x", basliklar={"Cookie": cerez})[0] == 400

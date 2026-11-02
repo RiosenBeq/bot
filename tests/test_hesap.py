@@ -7,6 +7,7 @@ ve uç nokta sırası.
 """
 
 import json
+import time
 
 import _pano
 import pytest
@@ -585,6 +586,38 @@ def test_cikis_oturumu_iptal_eder(site):  # noqa: F811
     assert _istek(f"{site}/api/durum", basliklar={"Cookie": cerez})[0] == 401
 
 
+def test_baska_siteden_cikis_istegi_reddedilir_cerez_kalir(site):  # noqa: F811
+    """Çıkış da durum değiştirir: başka bir sitenin sayfası tarayıcıya düz bir form
+    gönderdirip oturum çerezini sildiremesin. Üst düzey gezinmenin cevabı
+    SameSite=Strict çerezi de yazabilir (RFC 6265bis 5.6); önce bu istek 200 ve
+    çerezi silen Set-Cookie alıyordu. Panonun kendi çıkışı (aynı köken, JSON)
+    bugünkü gibi çalışır."""
+    cerez = _kurucu(site)
+    form = {"Content-Type": "application/x-www-form-urlencoded"}
+    # Tarayıcı Strict çerezi başka siteden gelen isteğe koymaz: istekte çerez yok
+    kod, basliklar, govde = _istek(
+        f"{site}/api/cikis", "POST", b"x=1", {**form, "Origin": "https://kotu.example"}
+    )
+    assert kod == 403 and json.loads(govde)["hata"] == "koken"
+    assert "Set-Cookie" not in basliklar
+    # Origin göndermeyen eski tarayıcının formu da JSON olmadığı için geçmez
+    kod, basliklar, govde = _istek(f"{site}/api/cikis", "POST", b"x=1", form)
+    assert kod == 415 and "Set-Cookie" not in basliklar
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": cerez})[0] == 200
+    kod, basliklar, _ = _post(site, "/api/cikis", {}, cerez, site)
+    assert kod == 200 and basliklar["Set-Cookie"].startswith(f"{_pano.CEREZ_ADI}=;")
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": cerez})[0] == 401
+
+
+def test_okunamayan_koken_basligi_yabanci_koken_gibi_reddedilir(site):  # noqa: F811
+    """Okunamayan Origin (ör. "http://[") köken denetiminde ValueError verip isteği
+    cevapsız bırakıyordu (Vercel'de 500); artık yabancı köken gibi 403 koken."""
+    cerez = _kurucu(site)
+    for yol in ("/api/hesap", "/api/cikis"):
+        kod, _, govde = _post(site, yol, {"eylem": "x"}, cerez, "http://[")
+        assert kod == 403 and json.loads(govde)["hata"] == "koken", yol
+
+
 # ------------------------------------------------- sınırlar ve onay hatası
 
 
@@ -614,6 +647,28 @@ def test_dogru_onay_sifresi_gecer():
     _yaz_hesap(depo, _hesap("mudur", rol="yonetici", sifre="dogru-onay-1"))
     oturum = _pano.Oturum("mudur", "yonetici", "1234567890abcdef", 1, False, False, "imza", 10**12)
     _pano.onay_sifresi_dogrula(depo, ayar, oturum, _SahteIstek(), "dogru-onay-1")  # yükselmez
+
+
+def test_kurucu_onay_sifresini_sinirsiz_deneyemez(site):  # noqa: F811
+    """Kurucunun hesap kaydı (oturum sürümü) yoktur: çalınan bir kurucu çerezi onay
+    şifresiyle PANO_SIFRESI'ni sınırsız deneyebiliyordu (hesapta 5 yanlışta
+    oturumlar düşer, kurucuda hiçbir şey olmuyordu). Artık 15 dakikada
+    ONAY_HATA_SINIR yanlışta bu oturum düşer; kurucunun öbür oturumu sürer ve
+    doğru onay şifresi sayılmaz."""
+    cerez = _kurucu(site)
+    # Kurucunun bir dakika önce başka bir cihazda açtığı oturum (aynı saniyede
+    # açılan iki kurucu oturumunun çerezi aynıdır)
+    deger = _pano.cerez_uret(_pano.ayar_oku(), "kurucu", "kurucu", 0, time.time() - 60)
+    obur = f"{_pano.CEREZ_ADI}={deger}"
+    for _ in range(_pano.ONAY_HATA_SINIR):
+        assert _istek(f"{site}/api/durum", basliklar={"Cookie": cerez})[0] == 200
+        kod, _, govde = _ekle(site, cerez, "veli", "izleyici", "parola-1234", onay="tahmin-123")
+        assert kod == 400 and json.loads(govde)["hata"] == "onay_sifresi"
+    kod, _, govde = _istek(f"{site}/api/durum", basliklar={"Cookie": cerez})
+    assert kod == 401 and json.loads(govde)["hata"] == "oturum_kapandi"
+    assert _ekle(site, cerez, "veli", "izleyici", "parola-1234")[0] == 401  # doğrusu da geçmez
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": obur})[0] == 200
+    assert _ekle(site, obur, "veli", "izleyici", "parola-1234")[0] == 200
 
 
 def test_hatali_giris_kaydi_bilinmeyen_adi_yazmaz():

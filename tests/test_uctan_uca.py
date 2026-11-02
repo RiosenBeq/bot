@@ -138,6 +138,31 @@ def test_giris_yalniz_json_kabul_eder(site):
     assert json.loads(govde)["hata"] == "icerik_turu"
 
 
+def test_bozuk_metinli_ya_da_cok_derin_json_400_alir(site):
+    """Tek başına UTF-16 vekil karakteri ("\\ud800") JSON'da geçerlidir ama ad ve
+    şifre özetlenirken UnicodeEncodeError, çok derin iç içe dizi RecursionError
+    verirdi. İkisi de yakalanmıyordu: istek cevapsız kalıyordu (Vercel'de 500 ve
+    günlükte hata dökümü; giriş oturumsuz denenebilir). Artık 400 json."""
+    for govde in (
+        b'{"ad": "kurucu", "sifre": "\\ud800abc"}',
+        b'{"ad": "\\udfffali", "sifre": "parola-1234"}',
+        b'{"ad": "ali", "sifre": "\xed\xa0\x80"}',  # aynı karakter ham baytla
+    ):
+        kod, _, cevap = _istek(
+            f"{site}/api/giris", "POST", govde, {"Content-Type": "application/json"}
+        )
+        assert kod == 400 and json.loads(cevap)["hata"] == "json", govde
+    kod, basliklar, _ = _giris(site)
+    assert kod == 200  # reddedilen istekler kilide sayılmadı
+    kod, _, cevap = _istek(
+        f"{site}/api/hesap",
+        "POST",
+        b"[" * 30000 + b"]" * 30000,
+        {"Content-Type": "application/json", "Cookie": _cerez(basliklar)},
+    )
+    assert kod == 400 and json.loads(cevap)["hata"] == "json"
+
+
 def test_cikis_cerezi_siler(site):
     kod, basliklar, _ = _istek(
         f"{site}/api/cikis", "POST", b"{}", {"Content-Type": "application/json"}
