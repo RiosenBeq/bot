@@ -46,6 +46,13 @@ Panoya artık ortak bir şifreyle değil, **kişiye özel hesapla** girilir. Her
 hesabın bir rolü vardır; rol her istekte hesap kaydından okunur. Yetkisi olmayan
 düğme ekranda gizlenir, istek yine rolle denetlenir.
 
+Yetki tek yerde yazılıdır: rol merdiveni (İzleyici < Operatör < Yönetici), her
+ekranın en az rolü ve her komutun en az rolü `api/_pano.py`'deki üç tablodur
+(`ROL_SIRASI`, `GORUNUM_EN_AZ_ROL`, `KOMUT_EN_AZ_ROL`); `public/pano.js` ilk
+ikisinin aynısını taşır ve `tests/test_yetki.py` iki tarafı karşılaştırır. Bir
+ekranı gizleyip ucu açık bırakmak (ya da tersi) iki tabloyu birden değiştirmeden
+olmaz. Tabloda sınıflanmamış bir iş hiçbir role açılmaz: varsayılan reddir.
+
 | İş | İzleyici | Operatör | Yönetici |
 |---|:-:|:-:|:-:|
 | Durum, özet, olaylar, kanıt fotoğrafı, kameraların anlık görüntüsü | var | var | var |
@@ -56,7 +63,9 @@ düğme ekranda gizlenir, istek yine rolle denetlenir.
 | İşlem kaydını görme | | | var |
 
 - **İzleyici** - durumu, olayları ve kamera görüntülerini görür; hiçbir şey
-  değiştiremez. Bilgisayarın IP adreslerini ve bilgisayar adını göremez.
+  değiştiremez. Bilgisayarın IP adreslerini, bilgisayar adını ve fabrika
+  adresini göremez; kullanamayacağı müdahale seçenekleri (hazır anons metinleri,
+  hoparlör kanalları ve bölümleri) ile yönetim bloğu cevaba hiç girmez.
 - **Operatör** - izleyiciye ek olarak hazır anons çaldırır, hoparlörü dener,
   olayları İncelendi ya da Yanlış alarm diye işaretler.
 - **Yönetici** - operatöre ek olarak programı yeniden başlatır, günceller, teşhis
@@ -67,7 +76,10 @@ düğme ekranda gizlenir, istek yine rolle denetlenir.
 şifresi yalnız Vercel'de değişir. Yönetici hesaplarına dokunan her işi (yönetici
 yapma / düşürme, yöneticiye yeni şifre, kapatma, silme, iki adımı sıfırlama)
 yalnız kurucu yapar:
-çalınan bir yönetici hesabı kendine kalıcı yetki açamaz. Kurucuyla girince her
+çalınan bir yönetici hesabı kendine kalıcı yetki açamaz. Kimse kendi hesabına
+hesap işi yapamaz (rol, yeni şifre, kapatma / açma, silme, iki adımı sıfırlama);
+kendi şifresini değiştirmek ve kendi iki adımını açıp kapatmak Sistem
+ekranındadır. Kurucuyla girince her
 ekranda bir bant çıkar ("... Kullanıcılar ekranından herkese kendi hesabını açın,
 sonra Vercel'de PANO_SIFRESI'ni değiştirin."), çünkü ortak şifreyle yapılan işin
 sahibi işlem kaydında görünmez.
@@ -563,8 +575,13 @@ sayfasındakiler Lucide'dendir, lisanslar `public/LISANSLAR.md`.
 
 - **Hesaplar ve roller:** Panoya ortak şifreyle değil kişiye özel hesapla
   girilir; rol (İzleyici, Operatör, Yönetici) her istekte kayıttan okunur.
-  Yetkisi olmayan düğme gizlenir, istek yine rolle denetlenir. İzleyici
-  bilgisayarın IP adreslerini ve bilgisayar adını görmez.
+  Yetkisi olmayan düğme gizlenir, istek yine rolle denetlenir. Rol merdiveni,
+  ekranların ve komutların en az rolü tek tablodadır (yukarıdaki "Hesaplar ve
+  roller"); sınıflanmamış bir iş hiçbir role açılmaz. **En az yetki:** izleyici
+  bilgisayarın IP adreslerini, bilgisayar adını, fabrika adresini, yönetim
+  bloğunu ve müdahale seçeneklerini (hazır anons metinleri, hoparlör kanalları)
+  hiç almaz; `?mudahale=1`, `?yonetim=1` ve `?filo=1` sorgularını elle eklemek
+  bir şey açmaz.
 - **Şifre saklama:** Hesap şifreleri açık değil, hesap başına rastgele tuzla
   `scrypt` (yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma sabit sürede
   yapılır. Kurucunun şifresi (`PANO_SIFRESI`) yalnız Vercel'dedir.
@@ -597,7 +614,9 @@ sayfasındakiler Lucide'dendir, lisanslar `public/LISANSLAR.md`.
   geri çevrilemeyen özeti tutulur. İki adımlı hesapta yanlış kod da yanlış şifre
   gibi sayılır.
 - **İşlem kaydı:** Her hesap işi, her komut ve her giriş / çıkış, kim yaptığıyla
-  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Rolü yetmeyen her
+  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Hesap listesini ve
+  işlem kaydını döken `GET /api/hesap` denemesi de yetki yetmezse kayda geçer:
+  çalınan bir izleyici / operatör çerezi bu ucu iz bırakmadan yoklayamaz. Rolü yetmeyen her
   deneme (ör. izleyicinin müdahale isteği) de "reddedildi" diye yazılır (hesap
   başına dakikada en çok 10 satır). Şifre asla kayda girmez.
 - **Önizleme kilidi:** Vercel'in önizleme (Preview) yayınından komut ve hesap

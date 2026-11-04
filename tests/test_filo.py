@@ -506,8 +506,10 @@ def test_tesisler_gorunumu_yalniz_yoneticide_ve_sekme_degil():
     assert re.search(r'tesisler:\s*\["Tesisler"', PANO_JS)
     rol = re.search(r"const GORUNUM_ROLU = \{([^}]*)\}", PANO_JS).group(1)
     assert 'tesisler: "yonetici"' in rol
-    # rolUygula yönetici olmayanda menü öğesini gizler
-    assert '.menu-ogesi[data-gorunum="tesisler"]' in PANO_JS
+    # rolUygula gezinme öğelerini GORUNUM_ROLU tablosundan gizler: seçici artık
+    # elle sayılmaz, görünüm adından kurulur (tests/test_yetki.py tabloyu bağlar)
+    assert "for (const ad of Object.keys(GORUNUM_ROLU))" in PANO_JS
+    assert re.search(r"menu-ogesi\[data-gorunum=\"' \+ ad", PANO_JS)
     menu = re.search(r'<a class="menu-ogesi"[^>]*data-gorunum="tesisler"[^>]*>', PANO_HTML)
     assert menu and " hidden" in menu.group(0)
     assert '<div class="gorunum" data-gorunum="tesisler" hidden>' in PANO_HTML
