@@ -685,4 +685,6 @@ def test_cakisma_tesisler_ekraninda_yoneticiye_gorunur(site):  # noqa: F811
 
 def test_tesis_satirinda_cakisma_rozeti_metin_olarak():
     satir = re.search(r"function tesisSatiri\(t\) \{.*?\n  \}", PANO_JS, re.S).group(0)
-    assert "t.cakisma" in satir and 'rozet("Kimlik çakışması", "tehlike")' in satir
+    # 2. tasarım: çakışma, ilgili tesisin kartında bilgisayar adlarıyla yazılır
+    assert "t.cakisma" in satir and "Kimlik çakışması" in satir
+    assert "t.cakisma.adlar" in satir and "UZAK_PANO_TESIS_ID" in satir

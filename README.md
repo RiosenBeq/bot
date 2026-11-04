@@ -91,23 +91,24 @@ doğrulama uygulamasının 6 haneli kodu sorulur (RFC 6238 TOTP: 30 saniyede bir
 değişen kod; Google Authenticator, Microsoft Authenticator ve benzerleri).
 Yöneticilerin açması önerilir.
 
-- **Açmak:** Sistem → **İki adımlı doğrulama** → şu anki şifre → **Aç**. Ekranda
-  anahtar ve aynı anahtarın `otpauth://` bağlantısı metin olarak çıkar (QR kod
-  yok). Uygulamada hesap ekleyip **anahtarı elle gir**in (hesap adı `DALSAN`,
+- **Açmak:** Sistem → **İki adımlı doğrulama** → **Aç** → şu anki şifre →
+  **Devam**. Ekranda anahtar ve (katlanır satırda) aynı anahtarın
+  `otpauth://` bağlantısı metin olarak çıkar (QR kod yok). Uygulamada hesap ekleyip **anahtarı elle gir**in (hesap adı `DALSAN`,
   tür zamana dayalı), uygulamanın gösterdiği kodu yazıp **Onayla**'ya basın.
   Kurulum 10 dakika içinde bitmeli; 5 yanlış kodda baştan başlanır. Açmak açık
   oturumları düşürmez.
-- **Giriş:** şifre doğruysa kod kutusu açılır. Kod yoksa çerez verilmez ve bu
+- **Giriş:** şifre doğruysa kod adımı açılır (altı kutu; telefonda kod
+  klavyenin üstünde önerilir). Kod yoksa çerez verilmez ve bu
   hiçbir kilide sayılmaz; **yanlış kod yanlış şifre gibi** üç kilide sayılır ve
   işlem kaydına "Hatalı giriş - Doğrulama kodu yanlış" diye yazılır. Bir kod bir
   kez geçer: aynı kod ve daha eskisi ikinci kez kabul edilmez. Telefon saatinin
   bir adım (30 sn) önü ve arkası kabul edilir; telefonun saati otomatik ayarlı
   olmalı. Şifre yanlışsa cevap bugünküyle aynıdır (iki adımın açık olduğu
   sızmaz).
-- **Kapatmak:** aynı bölümde şu anki şifre **ve** uygulamanın kodu ile **Kapat**.
+- **Kapatmak:** aynı satırda **Kapat** → şu anki şifre **ve** uygulamanın kodu.
   Hesabın öbür oturumları düşer, bu cihaz sürer (kurucunun oturumları bugünkü
   gibi yalnız `PANO_SIFRESI` değişince düşer).
-- **Telefon kaybolursa:** yönetici Kullanıcılar → İşlemler → **2 adımı sıfırla**
+- **Telefon kaybolursa:** yönetici Kullanıcılar → hesabın **⋯** menüsü → **2 adımı sıfırla**
   (kendi onay şifresiyle; yönetici hesabınınkini yalnız kurucu sıfırlar). Hesabın
   bütün oturumları düşer; kişi yalnız şifresiyle girer, isterse yeniden açar.
   Kullanıcılar listesinde iki adımı açık hesap "2 adım" rozeti taşır.
@@ -170,16 +171,24 @@ eğilimi haftadan haftaya karşılaştırmayı öneriyor
 
 Buradan alınanlar, sade haliyle:
 
-- **Bugünün özeti:** 4-6 kısa cümle; önce sorun, sonra bugün, haftalık eğilim,
-  en çok ihlal görülen yer, inceleme ve kameralar.
-- **Son 14 gün:** günlük çubuk grafiği, son 7 günü önceki 7 günle karşılaştıran
-  rozet (azalma yeşil) ve inceleme oranı.
-- **En çok ihlal görülen yerler** (son 7 gün, kamera başına) ve ihlal türleri.
-- **Kurulu olduğu bilgisayar:** kurulum adı, bilgisayar adı, IP adresi,
-  işletim sistemi, işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi.
+- **Tek uyarı:** her şey yolundaysa uyarı hiç çıkmaz; üst çubuktaki küçük
+  "Canlı · 14:32" hapı yeter. Fabrikadan haber yoksa kırmızı (ne zamandan beri
+  ve neye bakılacağı), program bilerek kapatıldıysa nötr, kamera ya da sistem
+  sorunu varsa Genel bakışta turuncu ("Kameraları gör").
+- **Dört sayı:** bugünkü ihlal (dünle), son 7 gün (önceki 7 günle; azalma
+  yeşil), inceleme bekleyen ve canlı kamera. Sayıya dokununca ilgili ekran
+  açılır (bekleyen olaylar, sorunlu kameralar ...).
+- **İhlaller:** tek grafik, iki dönem: bugün saat saat ya da son 14 gün.
+- **En çok ihlal** (son 7 gün): kamera (yer) ya da tür başına.
+- **Kurulu olduğu bilgisayar:** Sistem ekranında tek satır özet; IP adresi,
+  işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi katlanır.
 - **Kanıt fotoğrafı ve anlık görüntü:** her ihlalin yanında fotoğrafı durur
   (dokununca büyür); Kameralar ekranında kameraların 10 saniyede bir yenilenen
-  görüntüsü, köşesinde bağlantı durumu.
+  görüntüsü, köşesinde bağlantı durumu; dokununca büyür ve kare hızları görünür.
+- **Olaylar** güne göre gruplanır; "Bekleyenler" yalnız incelenmemiş ihlalleri
+  gösterir, inceleme iki dokunuşla satırın içinde yapılır.
+- **Komut bildirimi:** gönderilen komut sağ altta (telefonda sekme çubuğunun
+  üstünde) Sırada → Fabrikada → Yapıldı diye izlenir.
 
 Bilerek alınmayan: ürünlerin "güvenlik puanı". O puanın formülü her üreticide
 farklı ve gizli; uydurulmuş bir puan yerine her sayı gerçek bir sayımdır.
@@ -533,19 +542,22 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
-| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `stil.css`, `404.html`; `demo.js` yalnız `/demo`'da örnek veri verir |
+| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `pano.css` (pano), `stil.css` (tanıtım ve 404), `404.html`; `demo.js` yalnız `/demo`'da örnek veri verir |
 | `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması, `/demo` yönlendirmesi |
 | `yerel_sunucu.py` | Siteyi Vercel'siz, bu bilgisayarda denemek için |
 
 Yalnız Python'un standart kütüphanesi ve sade HTML/CSS/JS kullanılır: kurulacak
 paket, npm, derleme adımı yoktur. Her Vercel işlevi (`api/` altındaki adresler)
-ayrı bir dosyadır; `_pano.py` adres değil, ortak parçadır. Yazı tipi (Inter) ve
-logo fabrika ekranındakiyle aynıdır ve siteyle birlikte gelir (CDN yok).
+ayrı bir dosyadır; `_pano.py` adres değil, ortak parçadır. Yazı tipi (Inter)
+siteyle birlikte gelir (CDN yok). Logo DALSAN'ın "Eşik" logosudur (köşeden
+bakan kameranın görüş alanı ve eşikteki kişi), ince ayarlı sürümü.
 
-Görünüm: bilgisayarda laffogato yönetim panelinin Innex düzeni (kenar çubuğu ve
-sayfa kartı, sayı şeridi, tablo, rozetler), telefonda lafmobil'in mobil dili
-(altta yüzen sekme çubuğu, en az 44 px dokunma alanı, çentik ve alt çizgi payı).
-Simgeler Lucide'dendir ve sayfanın içindedir; lisanslar `public/LISANSLAR.md`.
+Görünüm: panonun 2. tasarımı (Claude Design, Kasım 2026). Bilgisayarda gri zemin
+üstünde kenar çubuğu ve sayfa kartı, telefonda beyaz sayfa, yapışkan cam üst
+çubuk ve altta yüzen sekme çubuğu (en az 44 px dokunma alanı, çentik ve alt
+çizgi payı). Giriş ekranında solda (telefonda üstte) koyu marka paneli.
+Panodaki simgeler bu proje için çizildi ve sayfanın içindedir; tanıtım
+sayfasındakiler Lucide'dendir, lisanslar `public/LISANSLAR.md`.
 
 ## Güvenlik
 
@@ -627,7 +639,7 @@ yenileyin.
 | Pano: "Kullanıcı adı ya da şifre yanlış" | İlk girişte ad `kurucu`, şifre `PANO_SIFRESI`; kendi hesabınızı yöneticiniz açar |
 | Pano: "Oturumunuz kapandı" | Şifreniz / rolünüz değişti, hesabınız kapatıldı, iki adımınız kapatıldı / sıfırlandı, onay şifresi 15 dakikada 5 kez yanlış girildi ya da kurucu şifresi değişti; yeniden giriş yapın |
 | Giriş: "Doğrulama kodu yanlış ya da süresi geçti" | Telefonun tarih ve saatinde "otomatik ayarla"yı açın; aynı kod ikinci kez geçmez, uygulamadaki yeni kodu bekleyin |
-| Telefon kayboldu, kod üretilemiyor | Yönetici Kullanıcılar → İşlemler → **2 adımı sıfırla** (yöneticininkini kurucu); kurucuda Vercel'de `PANO_SIFRESI`'ni değiştirip Redeploy |
+| Telefon kayboldu, kod üretilemiyor | Yönetici Kullanıcılar → hesabın **⋯** menüsü → **2 adımı sıfırla** (yöneticininkini kurucu); kurucuda Vercel'de `PANO_SIFRESI`'ni değiştirip Redeploy |
 | Tesisler: "Aynı tesis kimliği iki bilgisayardan geliyor" | Bir `.env` öbür bilgisayara kopyalanmış: bilgisayarlardan birinde `UZAK_PANO_TESIS_ID`'yi değiştirip programı yeniden başlatın; uyarı yaklaşık bir saatte kalkar |
 | Pano: "ÖNİZLEME - fabrikaya komut ve hesap değişikliği gönderilmez" | Önizleme (Preview) adresindesiniz; Vercel'in ana (Production) adresini açın |
 | Yönetim: düğme pasif, "Fabrika programı bu işi bilmiyor" | Fabrika programı eski; güncellendiğinde Yönetim işleri açılır (ilk güncelleme fabrikada elle yapılır) |

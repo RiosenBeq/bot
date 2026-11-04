@@ -109,8 +109,8 @@ def test_o10_per_tur_durum_etiketleri():
 
 
 def test_metin_duzeltmeleri():
-    # docs/19 §3.9 metin düzeltmeleri
-    assert "Yalnız hesabıyla giren görür" in PANO_HTML
+    # docs/19 §3.9 metin düzeltmeleri. Panodaki "Bu siteye ne gelir" kartı 2.
+    # tasarımda kaldırıldı (Pano v2); eski metin geri gelmesin.
     assert "Yalnız şifreyle giren görür" not in PANO_HTML
     assert "Pano yalnız kişisel hesapla açılır." in INDEX_HTML
     assert "Pano yalnız şifreyle açılır." not in INDEX_HTML
