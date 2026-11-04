@@ -182,6 +182,8 @@ def test_kurucu_girisi_durum_oturumu_tasir(site):  # noqa: F811
         "rol_adi": "Yönetici",
         "kurucu": True,
         "sifre_degismeli": False,
+        # Kurucu tam yetkilidir: ayarla kısıtlanamaz (docs/19 §1)
+        "yetkiler": list(_pano.YETKILER),
     }
     assert veri["onizleme"] is False
 

@@ -127,7 +127,9 @@ def test_komut_kuyruga_girer_bir_kez_teslim_edilir_sonucu_yazilir():
     ]
     # İkinci yoklamada aynı komut gelmez (fabrika yeniden başlasa da anons tekrarlanmaz)
     assert _pano.komutlari_teslim_et(depo, 1012)[0] == []
-    gorunum = _pano.mudahale_verisi(depo, 1015, "operator", izliyor=False)
+    gorunum = _pano.mudahale_verisi(
+        depo, 1015, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False
+    )
     assert gorunum["komutlar"][0]["durum"] == "iletildi"
     assert gorunum["yoklama_yasi_sn"] == 3
 
@@ -135,15 +137,17 @@ def test_komut_kuyruga_girer_bir_kez_teslim_edilir_sonucu_yazilir():
         depo, [{"id": komut["id"], "durum": "yapildi", "mesaj": "Genel anons: çalındı"}], 1020
     )
     assert alinan == [komut["id"]]
-    son = _pano.mudahale_verisi(depo, 1021, "operator", izliyor=False)["komutlar"][0]
+    son = _pano.mudahale_verisi(depo, 1021, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False)[
+        "komutlar"
+    ][0]
     assert (son["durum"], son["mesaj"]) == ("yapildi", "Genel anons: çalındı")
     # Bitmiş komut yeniden açılmaz; ama kimliği yine onaylanır (program dosyayı silsin)
     assert _pano.sonuclari_yaz(
         depo, [{"id": komut["id"], "durum": "hata", "mesaj": "x"}], 1030
     ) == [komut["id"]]
-    assert _pano.mudahale_verisi(depo, 1031, "operator", izliyor=False)["komutlar"][0]["durum"] == (
-        "yapildi"
-    )
+    assert _pano.mudahale_verisi(depo, 1031, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False)[
+        "komutlar"
+    ][0]["durum"] == ("yapildi")
 
 
 def test_suresi_dolan_komut_fabrikaya_gitmez():
@@ -152,12 +156,14 @@ def test_suresi_dolan_komut_fabrikaya_gitmez():
     assert komut["ozet"] == "Hoparlör denemesi · Sevkiyat hoparlörü (Sevkiyat)"
     gec = 1000 + _pano.KOMUT_GECERLILIK_SN
     # Fabrika sormadan önce de panoda "süresi doldu" görünür
-    assert _pano.mudahale_verisi(depo, gec, "operator", izliyor=False)["komutlar"][0]["durum"] == (
-        "suresi_doldu"
-    )
+    assert _pano.mudahale_verisi(depo, gec, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False)[
+        "komutlar"
+    ][0]["durum"] == ("suresi_doldu")
     teslim, _ = _pano.komutlari_teslim_et(depo, gec)
     assert teslim == []
-    gorunum = _pano.mudahale_verisi(depo, gec + 1, "operator", izliyor=False)["komutlar"][0]
+    gorunum = _pano.mudahale_verisi(
+        depo, gec + 1, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False
+    )["komutlar"][0]
     assert gorunum["durum"] == "suresi_doldu"
     assert gorunum["mesaj"] == _pano.SURESI_DOLDU_METNI
 
@@ -167,9 +173,9 @@ def test_iletilip_sonucu_gelmeyen_komut_adlandirilir():
     _pano.komut_olustur(depo, _veri(), {"tur": "anons", "mesaj_id": 5, "kanal_id": 2}, 1000, KIM)
     _pano.komutlari_teslim_et(depo, 1001)
     gec = 1001 + _pano.SONUC_BEKLEME_SN + 1
-    assert _pano.mudahale_verisi(depo, gec, "operator", izliyor=False)["komutlar"][0]["durum"] == (
-        "sonuc_yok"
-    )
+    assert _pano.mudahale_verisi(depo, gec, _pano.VARSAYILAN_YETKILER["operator"], izliyor=False)[
+        "komutlar"
+    ][0]["durum"] == ("sonuc_yok")
 
 
 @pytest.mark.parametrize(

@@ -453,6 +453,8 @@ def test_iki_adimsiz_hesap_bugunku_gibi_girer(site, saat):  # noqa: F811
         "rol_adi": "Yönetici",
         "kurucu": True,
         "sifre_degismeli": False,
+        # Kurucu tam yetkilidir: ayarla kısıtlanamaz (docs/19 §1)
+        "yetkiler": list(_pano.YETKILER),
     }
     _hesap_ac(kurucu, "ahmet", "operator")
     assert _giris(site, "ahmet", "ahmet-sifresi", "000000")[0] == 200

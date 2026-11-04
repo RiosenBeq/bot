@@ -66,7 +66,9 @@ def _veri(yonetim=None, mudahale_acik=True, isler=("anons", "ses_dene", "olay_in
 
 
 def _bul(depo, simdi, kimlik, rol="yonetici"):
-    for k in _pano.mudahale_verisi(depo, simdi, rol, izliyor=False)["komutlar"]:
+    # mudahale_verisi rol değil YETKİ KÜMESİ alır (ayarlanabilir tanım, docs/19 §1)
+    yetkiler = _pano.VARSAYILAN_YETKILER[rol]
+    for k in _pano.mudahale_verisi(depo, simdi, yetkiler, izliyor=False)["komutlar"]:
         if k["id"] == kimlik:
             return k
     return None
