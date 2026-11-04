@@ -3350,3 +3350,64 @@ a:hover {
   color: var(--tehlike);
   font-weight: 500;
 }
+
+/* Roller ve yetkiler ızgarası (Kullanıcılar › Roller ve yetkiler, docs/19 §1):
+   solda yetkinin adı, sağda rol başına bir kutucuk. Telefonda da yan yana kalır
+   (üç rol dar sütun); satır adı sarılır, yatay kaydırma olmaz. */
+.yetki-izgarasi {
+  display: flex;
+  flex-direction: column;
+  padding: 0 1.25rem 1rem;
+}
+.yetki-satiri {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 3.5rem);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--cizgi);
+}
+.yetki-basligi {
+  border-top: 0;
+  padding-bottom: 0.35rem;
+}
+.yetki-basligi .yetki-rol,
+.yetki-basligi .yetki-ad {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--metin-2);
+}
+.yetki-rol {
+  text-align: center;
+}
+.yetki-ad {
+  font-size: 0.875rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.yetki-grup {
+  padding: 1rem 0 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--metin-3);
+}
+.yetki-hucre {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem; /* dokunmatik hedef */
+}
+.yetki-hucre input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--birincil);
+}
+.yetki-hucre input:disabled {
+  opacity: 0.45;
+}
+@media (max-width: 30rem) {
+  .yetki-satiri {
+    grid-template-columns: minmax(0, 1fr) repeat(3, 2.75rem);
+  }
+}

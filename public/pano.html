@@ -504,6 +504,7 @@
             <div id="kullanici-segmenti" class="segment iri" role="group" aria-label="Bölüm">
               <button type="button" data-bolum="hesaplar" aria-pressed="true">Hesaplar</button>
               <button type="button" data-bolum="kayit" aria-pressed="false">İşlem kaydı</button>
+              <button type="button" data-bolum="yetkiler" aria-pressed="false">Roller ve yetkiler</button>
             </div>
             <button id="ekle-ac" class="dugme birincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-arti"/></svg>Kullanıcı ekle</button>
           </div>
@@ -554,6 +555,25 @@
           </section>
           <section id="kayit-bolumu" class="kart liste-karti" aria-label="İşlem kaydı" hidden>
             <ul id="kayit-tablosu" class="liste"></ul>
+          </section>
+          <section id="yetkiler-bolumu" class="kart" aria-labelledby="yetkiler-baslik" hidden>
+            <div class="kart-basligi">
+              <h2 id="yetkiler-baslik">Roller ve yetkiler</h2>
+              <p class="kart-notu">Hangi rolün neyi yapabileceğini buradan değiştirirsiniz. Değişiklik hemen geçerli olur; kimsenin oturumu kapanmaz.</p>
+            </div>
+            <p id="yetkiler-notu" class="alan-notu"></p>
+            <div id="yetki-izgarasi" class="yetki-izgarasi"></div>
+            <form id="yetki-formu" class="form-alti" novalidate hidden>
+              <div class="alan">
+                <label for="yetki-onay-sifresi">Kendi şifreniz</label>
+                <input id="yetki-onay-sifresi" name="yetki-onay-sifresi" type="password" autocomplete="current-password" maxlength="200">
+              </div>
+              <p id="yetki-hatasi" class="hata tam-satir" role="alert"></p>
+              <div class="form-alti tam-satir">
+                <button id="yetki-kaydet" class="dugme birincil" type="submit"><svg class="simge donus bekleme" aria-hidden="true"><use href="#i-yukleniyor"/></svg><span>Kaydet</span></button>
+                <button id="yetki-geri-al" class="dugme" type="button">Varsayılana dön</button>
+              </div>
+            </form>
           </section>
         </div>
 

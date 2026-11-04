@@ -46,12 +46,15 @@ Panoya artık ortak bir şifreyle değil, **kişiye özel hesapla** girilir. Her
 hesabın bir rolü vardır; rol her istekte hesap kaydından okunur. Yetkisi olmayan
 düğme ekranda gizlenir, istek yine rolle denetlenir.
 
-Yetki tek yerde yazılıdır: rol merdiveni (İzleyici < Operatör < Yönetici), her
-ekranın en az rolü ve her komutun en az rolü `api/_pano.py`'deki üç tablodur
-(`ROL_SIRASI`, `GORUNUM_EN_AZ_ROL`, `KOMUT_EN_AZ_ROL`); `public/pano.js` ilk
-ikisinin aynısını taşır ve `tests/test_yetki.py` iki tarafı karşılaştırır. Bir
-ekranı gizleyip ucu açık bırakmak (ya da tersi) iki tabloyu birden değiştirmeden
-olmaz. Tabloda sınıflanmamış bir iş hiçbir role açılmaz: varsayılan reddir.
+Rolün **neyi yapabileceği ayarlanabilir**: kurucu **Kullanıcılar → Roller ve
+yetkiler**'den tek tek açıp kapatır (aşağıdaki tablo varsayılandır). Yetki rolün
+içine gömülü değildir; her istekte okunur, değişiklik hemen geçerli olur ve
+kimsenin oturumu kapanmaz. Yetki tek yerde yazılıdır: `api/_pano.py`'deki
+`YETKILER` kataloğu ile `EKRAN_YETKISI`; varsayılanlar `GORUNUM_EN_AZ_ROL` ve
+`KOMUT_EN_AZ_ROL`'den türer. `public/pano.js` aynı katalogdan gider ve
+`tests/test_yetki.py` iki tarafı karşılaştırır: bir ekranı gizleyip ucu açık
+bırakmak (ya da tersi) iki tabloyu birden değiştirmeden olmaz. Katalogda
+olmayan bir iş hiçbir role açılmaz: varsayılan reddir.
 
 | İş | İzleyici | Operatör | Yönetici |
 |---|:-:|:-:|:-:|
@@ -70,6 +73,25 @@ olmaz. Tabloda sınıflanmamış bir iş hiçbir role açılmaz: varsayılan red
   olayları İncelendi ya da Yanlış alarm diye işaretler.
 - **Yönetici** - operatöre ek olarak programı yeniden başlatır, günceller, teşhis
   alır, hesapları ve işlem kaydını yönetir.
+
+### Roller ve yetkiler (kurucu ayarlar)
+
+**Kullanıcılar → Roller ve yetkiler**: rol × yetki kutucukları. Örneğin
+operatöre teşhis alma yetkisi verilebilir, izleyiciye Müdahale ekranı
+açılabilir (komut yetkisi vermeden: görür ama gönderemez) ya da bir rolden
+anons alınabilir.
+
+- Değiştiren **yalnız kurucudur** ve kendi şifresiyle onaylar. Gerekçe hesap
+  işleriyle aynı: bu ayar yönetici yetkisini de kapsar, çalınan bir yönetici
+  hesabı kendi rolüne yeni yetki açamasın.
+- **Kilitli iki satır** hiçbir ayarla taşınmaz: *Kullanıcılar ve işlem kaydını
+  görme* ile *hesap açma, rol, şifre, kapatma, silme* yalnız yöneticide kalır.
+  Taşınabilseydi kurucu dışında kimsenin açamayacağı bir site kalırdı.
+- Değişiklik **hemen** geçerlidir; açık oturumlar düşmez. Kuyrukta bekleyen bir
+  komut, sahibinin yetkisi o arada alınırsa gönderilmez ("İsteyen hesabın
+  yetkisi kalmadı").
+- Her değişiklik işlem kaydına girer; **Varsayılana dön** tabloyu yukarıdaki
+  hâline çevirir.
 
 **Kurucu hesap.** Site ilk kurulduğunda tek hesap vardır: kullanıcı adı `kurucu`,
 şifresi Vercel'deki `PANO_SIFRESI`. Kurucu tam yetkilidir, silinemez, düşürülemez;

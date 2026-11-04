@@ -119,6 +119,14 @@ GORUNUM_EN_AZ_ROL = {
     "kullanicilar": "yonetici",
     "tesisler": "yonetici",
 }
+# Yetki isteyen ekranın yetki anahtarı. Listede olmayan ekran (Genel bakış,
+# Kameralar, Olaylar, Sistem) herkese açıktır: yetkisi yoktur, kapatılamaz.
+EKRAN_YETKISI = {
+    "mudahale": "ekran.mudahale",
+    "yonetim": "ekran.yonetim",
+    "kullanicilar": "ekran.kullanicilar",
+    "tesisler": "ekran.tesisler",
+}
 
 # ---- uzaktan müdahale ve yönetim (docs/19 §3.5-§3.7)
 # Pano yalnız bu işleri isteyebilir; fabrika programı da yalnız bunları tanır.
@@ -200,6 +208,55 @@ HESAP_EN_COK = 50  # kurucu hariç
 HESAP_SURUMU = 1
 KULLANICI_ONEKI = "dalsan:kullanici:"
 KULLANICILAR_ANAHTARI = "dalsan:kullanicilar"
+# ---- rol yetkilerinin TANIMI (docs/19 §1): hangi rol neyi yapabilir, kurucu
+# Kullanıcılar ekranından değiştirir. Depoda yalnız varsayılandan FARKLI olan
+# roller durur; anahtar yoksa ya da kaydı bozuksa varsayılan geçerlidir, yani
+# site hiçbir ayar yapılmadan bugünkü gibi çalışır.
+ROL_YETKILERI_ANAHTARI = "dalsan:rol_yetkileri"
+# Yetki anahtarları ve ekrandaki adları. Sıra Kullanıcılar ekranındaki sıradır.
+YETKILER = (
+    "ekran.mudahale",
+    "komut.anons",
+    "komut.ses_dene",
+    "komut.olay_incele",
+    "veri.bilgisayar",
+    "ekran.yonetim",
+    "komut.teshis",
+    "komut.yeniden_baslat",
+    "komut.guncelle",
+    "ekran.tesisler",
+    "ekran.kullanicilar",
+    "hesap.yonet",
+)
+YETKI_ADLARI = {
+    "ekran.mudahale": "Müdahale ekranını görme",
+    "komut.anons": "Hazır anons çaldırma",
+    "komut.ses_dene": "Hoparlör denemesi",
+    "komut.olay_incele": "Olayı İncelendi / Yanlış alarm işaretleme",
+    "veri.bilgisayar": "Bilgisayarın IP adresi, adı ve fabrika adresi",
+    "ekran.yonetim": "Yönetim ekranını görme",
+    "komut.teshis": "Teşhis alma",
+    "komut.yeniden_baslat": "Programı yeniden başlatma",
+    "komut.guncelle": "Programı güncelleme",
+    "ekran.tesisler": "Tesisler ekranını görme",
+    "ekran.kullanicilar": "Kullanıcılar ve işlem kaydını görme",
+    "hesap.yonet": "Hesap açma, rol, şifre, kapatma, silme",
+}
+# Ekrandaki gruplar (başlık, yetkiler): yalnız görünüm.
+YETKI_GRUPLARI = (
+    ("Müdahale", ("ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele")),
+    ("Bilgi", ("veri.bilgisayar", "ekran.tesisler")),
+    ("Yönetim", ("ekran.yonetim", "komut.teshis", "komut.yeniden_baslat", "komut.guncelle")),
+    ("Hesaplar", ("ekran.kullanicilar", "hesap.yonet")),
+)
+# Hiçbir ayarla değişmeyen yetkiler: yalnız yöneticide olur, yöneticiden alınamaz.
+# Hesapları ve işlem kaydını yönetmek bunlara bağlı; ayarla kapatılabilseydi
+# kurucu dışında kimsenin açamayacağı bir site kalırdı (kendini kilitleme).
+KILITLI_YETKILER = frozenset({"ekran.kullanicilar", "hesap.yonet"})
+# /api/mudahale'nin kaba kapısı: hiçbir komut yetkisi olmayan oturum gövde
+# okunmadan 403 alır (docs/19 §3.4 sırası: yetki, sifre_degismeli'den önce).
+# İşe özgü denetim gövde okununca yapılır.
+MUDAHALE_YETKILERI = frozenset("komut." + t for t in KOMUT_TURLERI)
 SON_GIRIS_ONEKI = "dalsan:son_giris:"
 OTURUM_IPTAL_ONEKI = "dalsan:oturum:iptal:"
 # Giriş kilitleri (docs/19 §3.2): adres, ad, genel; hepsi şifreden önce okunur.
@@ -1865,11 +1922,87 @@ def rol_yeterli_mi(rol: object, en_az: str) -> bool:
 
 
 def _rol_yeterli(rol: str, tur: str) -> bool:
-    """Bu rol bu komut türünü isteyebilir mi (KOMUT_EN_AZ_ROL, docs/19 §1).
-    Tabloda olmayan tür: hayır. Eskiden yönetim dışı HER tür operatöre açıktı;
-    sınıflanmamış yeni bir iş kendiliğinden yetki kazanmasın."""
+    """Bu rol bu komut türünü VARSAYILAN tabloda isteyebilir mi (KOMUT_EN_AZ_ROL,
+    docs/19 §1). Tabloda olmayan tür: hayır. Yalnız varsayılanı kurar; çalışma
+    anındaki karar ayarlanmış yetki kümesiyle verilir (yetkili_mi)."""
     en_az = KOMUT_EN_AZ_ROL.get(tur)
     return en_az is not None and rol_yeterli_mi(rol, en_az)
+
+
+def varsayilan_yetkiler() -> dict[str, frozenset[str]]:
+    """Rol başına varsayılan yetki kümesi: hiçbir ayar yapılmamış sitenin
+    bugünkü davranışı. Elle yazılmaz, ekran ve komut tablolarından TÜRER
+    (tests/test_yetki.py bunun bugünkü davranışın aynısı olduğunu denetler)."""
+    tablo: dict[str, frozenset[str]] = {}
+    for rol in ROLLER:
+        kume = set()
+        for ekran, yetki in EKRAN_YETKISI.items():
+            if rol_yeterli_mi(rol, GORUNUM_EN_AZ_ROL[ekran]):
+                kume.add(yetki)
+        for tur in KOMUT_TURLERI:
+            if _rol_yeterli(rol, tur):
+                kume.add("komut." + tur)
+        if rol_yeterli_mi(rol, "operator"):
+            kume.add("veri.bilgisayar")  # izleyici IP, bilgisayar adı ve adresi görmez
+        if rol_yeterli_mi(rol, "yonetici"):
+            kume.add("hesap.yonet")
+        tablo[rol] = frozenset(kume)
+    return tablo
+
+
+VARSAYILAN_YETKILER = varsayilan_yetkiler()
+# Kurucu her zaman tam yetkilidir: ayarla kısıtlanamaz (docs/19 §3.1).
+TUM_YETKILER = frozenset(YETKILER)
+
+
+def yetki_kumesi_duzelt(ham: object, rol: str) -> frozenset[str]:
+    """Bir rol için ayarlanmış yetki listesini güvenli kümeye çevirir: tanınmayan
+    anahtar atılır, kilitli yetkiler role göre zorlanır (yalnız yöneticide, hep
+    onda). Liste değilse varsayılana düşer: bozuk kayıt yetki AÇMAZ, bugünkü
+    davranışa döner."""
+    if not isinstance(ham, list):
+        return VARSAYILAN_YETKILER.get(rol, frozenset())
+    kume = {y for y in ham if isinstance(y, str) and y in TUM_YETKILER}
+    kume -= KILITLI_YETKILER
+    if rol == "yonetici":
+        kume |= KILITLI_YETKILER
+    return frozenset(kume)
+
+
+def rol_yetkileri_coz(ham: object) -> dict[str, frozenset[str]]:
+    """Depodaki tanımı varsayılanla birleştirir. Anahtar yoksa, JSON bozuksa ya
+    da bir rol eksikse o rol varsayılanda kalır."""
+    kayit = _json_sozluk(ham) if isinstance(ham, str) else (ham if isinstance(ham, dict) else None)
+    tablo = dict(VARSAYILAN_YETKILER)
+    if kayit is None:
+        return tablo
+    for rol in ROLLER:
+        if rol in kayit:
+            tablo[rol] = yetki_kumesi_duzelt(kayit[rol], rol)
+    return tablo
+
+
+def rol_yetkileri_oku(depo: UpstashDepo | BellekDepo) -> dict[str, frozenset[str]]:
+    """Tanımı depodan okur (oturumsuz yollar için: komut teslimi)."""
+    (ham,) = depo.al_coklu([ROL_YETKILERI_ANAHTARI])
+    return rol_yetkileri_coz(ham)
+
+
+def yetkileri_kaydet(
+    depo: UpstashDepo | BellekDepo, tablo: dict[str, frozenset[str]]
+) -> dict[str, list[str]]:
+    """Tanımı yazar; varsayılanla aynı olan rol kayda girmez (anahtar boşalırsa
+    silinir). Döner: yazılan hal (ekrana ve işlem kaydına)."""
+    kayit = {
+        rol: [y for y in YETKILER if y in tablo.get(rol, frozenset())]
+        for rol in ROLLER
+        if tablo.get(rol, frozenset()) != VARSAYILAN_YETKILER[rol]
+    }
+    if kayit:
+        depo.yaz_coklu([(ROL_YETKILERI_ANAHTARI, _kayit_metni(kayit), None)])
+    else:
+        depo.sil(ROL_YETKILERI_ANAHTARI)
+    return kayit
 
 
 def _ek_temizle(ham: object) -> str:
@@ -1912,11 +2045,13 @@ def komut_gorunumu(kayit: dict, simdi: float, ek_goster: bool = False) -> dict:
     return gorunum
 
 
-def mudahale_verisi(depo: UpstashDepo | BellekDepo, simdi: float, rol: str, izliyor: bool) -> dict:
+def mudahale_verisi(
+    depo: UpstashDepo | BellekDepo, simdi: float, yetkiler: frozenset[str], izliyor: bool
+) -> dict:
     """Müdahale / Yönetim ekranının verisi: son komutlar ve fabrikanın son
-    sorduğu an. Operatör anons, ses ve inceleme komutlarını görür; yönetici
-    hepsini, teşhis ek metni dahil (docs/19 §3.6). `izliyor`: ekran açık;
-    fabrika bir sonraki raporda sık sormaya başlar."""
+    sorduğu an. Kim hangi komutu isteyebiliyorsa geçmişinde onu görür; teşhis
+    ek metnini yönetim ekranı yetkisi olan görür (docs/19 §3.6). `izliyor`:
+    ekran açık; fabrika bir sonraki raporda sık sormaya başlar."""
     istek = [
         ["LRANGE", KOMUT_SON_ANAHTARI, "0", str(KOMUT_GOSTERILEN - 1)],
         ["GET", YOKLAMA_ANAHTARI],
@@ -1928,14 +2063,15 @@ def mudahale_verisi(depo: UpstashDepo | BellekDepo, simdi: float, rol: str, izli
     kimlikler = [kimlik for kimlik in son if _komut_kimligi_mi(kimlik)]
     kayitlar = depo.al_coklu([KOMUT_KAYIT_ONEKI + k for k in kimlikler]) if kimlikler else []
     yoklama = sonuc[1] if isinstance(sonuc[1], str) and _rakam_mi(sonuc[1]) else None
-    ek_goster = rol_yeterli_mi(rol, "yonetici")
+    ek_goster = "ekran.yonetim" in yetkiler
     komutlar = []
     for kayit in map(_json_sozluk, kayitlar):
         if kayit is None:
             continue
-        # Görünürlük de yetki tablosundan: rol o işi isteyebiliyorsa geçmişini
-        # de görür (ikinci bir "şu rol şunu görür" listesi tutulmaz).
-        if not _rol_yeterli(rol, _secim(kayit.get("tur"), KOMUT_TURLERI)):
+        # Görünürlük de aynı yetkiden: o işi isteyebilen geçmişini de görür
+        # (ikinci bir "şu rol şunu görür" listesi tutulmaz).
+        tur = _secim(kayit.get("tur"), KOMUT_TURLERI)
+        if not tur or ("komut." + tur) not in yetkiler:
             continue
         komutlar.append(komut_gorunumu(kayit, simdi, ek_goster=ek_goster))
     return {
@@ -2126,7 +2262,12 @@ def _grup_siniri(depo: UpstashDepo | BellekDepo, tur: str) -> None:
 
 
 def komut_olustur(
-    depo: UpstashDepo | BellekDepo, veri: dict, istek: dict, simdi: float, kim: dict
+    depo: UpstashDepo | BellekDepo,
+    veri: dict,
+    istek: dict,
+    simdi: float,
+    kim: dict,
+    yetkiler: frozenset[str] | None = None,
 ) -> dict:
     """Panodan gelen isteği doğrular ve kuyruğa koyar. `veri` pano_verisi'dir:
     seçilen mesaj, kanal ve olay fabrikanın son raporunda olmalı. Rolün bu işe
@@ -2185,7 +2326,11 @@ def komut_olustur(
             _set_komutu(IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
         ]
     )
-    return komut_gorunumu(kayit, simdi, ek_goster=rol_yeterli_mi(kim["rol"], "yonetici"))
+    # `ek_goster` yalnız GÖRÜNÜMDÜR (teşhis ek metni cevaba konsun mu); yetki
+    # kapısı mudahale()'dedir. Verilmezse istek sahibinin rolünün varsayılan
+    # kümesi kullanılır: ayarı okumayan çağrılar bugünkü gibi davranır.
+    goster = yetkiler if yetkiler is not None else VARSAYILAN_YETKILER.get(kim["rol"], frozenset())
+    return komut_gorunumu(kayit, simdi, ek_goster=("ekran.yonetim" in goster))
 
 
 def sonuclari_yaz(depo: UpstashDepo | BellekDepo, ham: object, simdi: float) -> list[str]:
@@ -2283,16 +2428,21 @@ def _kim_sakla(ham: object) -> dict:
     }
 
 
-def _teslim_yetkili(kim: dict, tur: str, hesaplar: dict) -> bool:
-    """Teslim anında: istek sahibi hâlâ var, açık ve rolü bu işe yetiyor mu
-    (docs/19 §3.5)."""
+def _teslim_yetkili(kim: dict, tur: str, hesaplar: dict, yetkiler: dict) -> bool:
+    """Teslim anında: istek sahibi hâlâ var, açık ve rolünün yetkisi bu işe
+    yetiyor mu (docs/19 §3.5). Yetki tanımı komut kuyruğa girdikten SONRA
+    değişmiş olabilir: kararı o anki tanım verir, komutun içindeki rol değil."""
+    yetki = "komut." + tur if tur in KOMUT_TURLERI else ""
+    if not yetki:
+        return False
     ad = kim.get("ad")
     if ad == KURUCU_AD:
-        return _rol_yeterli("yonetici", tur)
+        return True  # kurucu tam yetkilidir, ayarla kısıtlanamaz
     hesap = hesaplar.get(ad)
     if hesap is None or hesap.get("acik") is not True:
         return False
-    return _rol_yeterli(_secim(hesap.get("rol"), ROLLER), tur)
+    rol = _secim(hesap.get("rol"), ROLLER)
+    return bool(rol) and yetki in yetkiler.get(rol, frozenset())
 
 
 def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[list[dict], bool]:
@@ -2315,8 +2465,11 @@ def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[l
     adlar = sorted(
         {yuk["kim"]["ad"] for yuk in yukler if yuk["kim"]["ad"] and yuk["kim"]["ad"] != KURUCU_AD}
     )
-    hesap_ham = depo.al_coklu([KULLANICI_ONEKI + ad for ad in adlar]) if adlar else []
-    hesaplar = {ad: _json_sozluk(h) for ad, h in zip(adlar, hesap_ham, strict=True)}
+    # Hesaplar ve yetki tanımı tek okumada (ek istek yok): tanım komut kuyruğa
+    # girdikten sonra değişmiş olabilir, teslim o anki tanıma bakar
+    okunan = depo.al_coklu([KULLANICI_ONEKI + ad for ad in adlar] + [ROL_YETKILERI_ANAHTARI])
+    yetkiler = rol_yetkileri_coz(okunan.pop())
+    hesaplar = {ad: _json_sozluk(h) for ad, h in zip(adlar, okunan, strict=True)}
     teslim, yazilacak, dusen = [], [], []
     for yuk, ham_kayit in zip(yukler, kayitlar, strict=True):
         kayit = _json_sozluk(ham_kayit)
@@ -2324,7 +2477,7 @@ def komutlari_teslim_et(depo: UpstashDepo | BellekDepo, simdi: float) -> tuple[l
             continue  # kaydı olmayan ya da bitmiş komut yürütülmez
         if simdi >= yuk["son_gecerlilik"]:
             kayit.update(durum="suresi_doldu", mesaj=SURESI_DOLDU_METNI, guncellendi=int(simdi))
-        elif not _teslim_yetkili(yuk["kim"], yuk["tur"], hesaplar):
+        elif not _teslim_yetkili(yuk["kim"], yuk["tur"], hesaplar, yetkiler):
             kayit.update(
                 durum="hata",
                 mesaj="İsteyen hesabın yetkisi kalmadı; gönderilmedi.",
@@ -2665,6 +2818,13 @@ class Oturum:
     imza: str
     bitis: int
     iki_adim: bool = False  # iki adımlı doğrulama açık mı (öneri 6)
+    # Bu oturumun yetkileri: rolün AYARLANMIŞ kümesi (kurucuda hepsi). Rol gibi
+    # her istekte okunur; çerezde taşınmaz, eski çerez eski yetkiyi getirmez.
+    yetkiler: frozenset[str] = frozenset()
+
+    def yetkili(self, yetki: str) -> bool:
+        """Bu oturum bu işi yapabilir mi (docs/19 §1). Tanınmayan anahtar: hayır."""
+        return yetki in self.yetkiler
 
 
 def oturum_ozeti(oturum: Oturum) -> dict:
@@ -2676,6 +2836,9 @@ def oturum_ozeti(oturum: Oturum) -> dict:
         "rol_adi": ROL_ADLARI.get(oturum.rol, ""),
         "kurucu": oturum.kurucu,
         "sifre_degismeli": oturum.sifre_degismeli,
+        # Ekranın neyi göstereceği: rolün adı değil, bu oturumun yetkileri
+        # (ayarlanmış tanım; docs/19 §1). Gizleme kolaylıktır, kapı sunucudadır.
+        "yetkiler": [y for y in YETKILER if y in oturum.yetkiler],
     }
     if oturum.iki_adim:
         ozet["iki_adim"] = True
@@ -2707,8 +2870,14 @@ def oturum_coz(depo: UpstashDepo | BellekDepo, ayar: Ayar, deger: str, simdi: fl
         if iptal or kimlik != "kurucu" or surum != 0:
             raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
         acik = _json_sozluk(iki_adim) is not None
-        return Oturum(KURUCU_AD, "yonetici", "kurucu", 0, True, False, imza, bitis, acik)
-    hesap_ham, iptal = depo.al_coklu([KULLANICI_ONEKI + ad, iptal_anahtari])
+        # Kurucu tam yetkilidir: yetki tanımı okunmaz, ayarla kısıtlanamaz
+        return Oturum(
+            KURUCU_AD, "yonetici", "kurucu", 0, True, False, imza, bitis, acik, TUM_YETKILER
+        )
+    # Yetki tanımı hesapla AYNI okumada: rol gibi her istekte tazedir, ek istek yok
+    hesap_ham, iptal, yetki_ham = depo.al_coklu(
+        [KULLANICI_ONEKI + ad, iptal_anahtari, ROL_YETKILERI_ANAHTARI]
+    )
     hesap = _json_sozluk(hesap_ham)
     if (
         hesap is None
@@ -2721,7 +2890,8 @@ def oturum_coz(depo: UpstashDepo | BellekDepo, ayar: Ayar, deger: str, simdi: fl
     rol = _secim(hesap.get("rol"), ROLLER) or "izleyici"
     degismeli = hesap.get("sifre_degismeli") is True
     acik = _iki_adim_siri(hesap) is not None
-    return Oturum(ad, rol, kimlik, surum, False, degismeli, imza, bitis, acik)
+    yetkiler = rol_yetkileri_coz(yetki_ham).get(rol, frozenset())
+    return Oturum(ad, rol, kimlik, surum, False, degismeli, imza, bitis, acik, yetkiler)
 
 
 # ------------------------------------------------------------------ kilit, giriş
@@ -3204,28 +3374,29 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     veri["oturum"] = oturum_ozeti(oturum)
     veri["onizleme"] = onizleme_mi()
     rapor = veri.get("rapor")
-    yonetici = rol_yeterli_mi(oturum.rol, GORUNUM_EN_AZ_ROL["yonetim"])
-    mudahaleci = rol_yeterli_mi(oturum.rol, GORUNUM_EN_AZ_ROL["mudahale"])
+    yonetici = oturum.yetkili("ekran.yonetim")
+    mudahaleci = oturum.yetkili("ekran.mudahale")
     if not yonetici and isinstance(rapor, dict):
-        rapor.pop("yonetim", None)  # yönetim bloğunu yalnız yönetici görür
-    if not mudahaleci:
+        rapor.pop("yonetim", None)  # yönetim bloğunu yalnız yetkisi olan görür
+    if not oturum.yetkili("veri.bilgisayar"):
         veri["fabrika_adresi"] = ""
         if isinstance(rapor, dict) and isinstance(rapor.get("bilgisayar"), dict):
             for alan in ("ip", "bilgisayar_adi"):
                 rapor["bilgisayar"].pop(alan, None)
-        # İzleyici Müdahale ekranını hiç açamaz: kullanamayacağı seçenekler
-        # (hazır anons metinleri, hoparlör kanalları ve bölümleri) tele de
-        # çıkmaz. Blok biçimi aynı kalır, listeler boşalır: ekran kodu ve
-        # sözleşme bozulmaz (en az yetki).
+    if not mudahaleci:
+        # Müdahale ekranını açamayan kullanamayacağı seçenekleri hiç almaz:
+        # hazır anons metinleri, hoparlör kanalları ve bölümleri tele de çıkmaz.
+        # Blok biçimi aynı kalır, listeler boşalır: ekran kodu ve sözleşme
+        # bozulmaz (en az yetki).
         if isinstance(rapor, dict) and isinstance(rapor.get("mudahale"), dict):
             rapor["mudahale"].update(mesajlar=[], kanallar=[])
     istiyor_mudahale = istek.sorgu("mudahale") == "1" and mudahaleci
     istiyor_yonetim = istek.sorgu("yonetim") == "1" and yonetici
     if istiyor_mudahale or istiyor_yonetim:
-        veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.rol, izliyor=True)
+        veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.yetkiler, izliyor=True)
     if istek.sorgu("kare") == "1":
         veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"))
-    if istek.sorgu("filo") == "1" and rol_yeterli_mi(oturum.rol, GORUNUM_EN_AZ_ROL["tesisler"]):
+    if istek.sorgu("filo") == "1" and oturum.yetkili("ekran.tesisler"):
         veri["filo"] = filo_verisi(depo, ayar, simdi, veri)
     return 200, veri, None
 
@@ -3286,15 +3457,19 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
 
 
 def _durum_degistiren(
-    istek: Isleyici, en_az_rol: str, is_adi: str
+    istek: Isleyici, yetkiler: frozenset[str] | None, is_adi: str
 ) -> tuple[Ayar, float, Oturum, dict]:
     """Durum değiştiren POST'ların ortak sırası (docs/19 §3.4): oturum (401) ->
-    en az rol (403 yetki) -> köken (403 koken) -> JSON (415). Rolü yetmeyen
+    yetki (403 yetki) -> köken (403 koken) -> JSON (415). Yetkisi yetmeyen
     deneme reddedilmeden önce işlem kaydına komut_red olarak yazılır (docs/19
-    §3.3; `is_adi` özete girer, sınırı _komut_red_yaz'dadır). JSON gövdeyi döner;
-    sifre_degismeli, önizleme ve işe özgü denetimler çağırana bırakılır."""
+    §3.3; `is_adi` özete girer, sınırı _komut_red_yaz'dadır).
+
+    `yetkiler`: bunlardan EN AZ BİRİ gerekir (kaba kapı; işe özgü denetim ucun
+    kendisinde). None ise kapı yoktur: ucun her oturuma açık bir işi vardır
+    (kendi şifresi, kendi iki adımı). JSON gövdeyi döner; sifre_degismeli,
+    önizleme ve işe özgü denetimler çağırana bırakılır."""
     ayar, simdi, oturum = _oturumlu(istek)
-    if not rol_yeterli_mi(oturum.rol, en_az_rol):
+    if yetkiler is not None and not (oturum.yetkiler & yetkiler):
         _komut_red_yaz(depo_al(ayar), oturum, f"Yetki yetmedi: {is_adi}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yetkiniz yok.")
     istek.koken_dogrula()
@@ -3305,22 +3480,25 @@ def _durum_degistiren(
 def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/mudahale - anons, ses_dene, olay_incele (operatör+); teshis,
     yeniden_baslat, guncelle (yönetici). Ağır işler onay şifresi ister."""
-    ayar, simdi, oturum, govde = _durum_degistiren(istek, "operator", "müdahale")
+    # Kaba kapı: hiç komut yetkisi olmayan oturum gövde okunmadan 403 alır
+    # (sıra docs/19 §3.4). İşe özgü yetki gövde okununca aşağıda denetlenir.
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, MUDAHALE_YETKILERI, "müdahale")
     if oturum.sifre_degismeli:
         raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)
     if onizleme_mi():
         raise PanoHatasi(409, "onizleme", ONIZLEME_METNI)
     depo = depo_al(ayar)
     tur = _secim(govde.get("tur"), KOMUT_TURLERI)
-    # İşe özgü rol KOMUT_EN_AZ_ROL'den: bilinmeyen tür aşağıda 400 alır.
-    if tur and not _rol_yeterli(oturum.rol, tur):
+    if not tur:
+        _komut_red_yaz(depo, oturum, "Yetki yetmedi: müdahale", simdi)
+        raise PanoHatasi(400, "tur", "Bilinmeyen müdahale.")
+    if not oturum.yetkili("komut." + tur):
         _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {tur}", simdi)
-        en_az = ROL_ADLARI.get(KOMUT_EN_AZ_ROL.get(tur, ""), "yönetici").lower()
-        raise PanoHatasi(403, "yetki", f"Bu iş için {en_az} yetkisi gerekir.")
+        raise PanoHatasi(403, "yetki", "Bu iş için yetkiniz yok.")
     if tur in AGIR_TURLERI:
         onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
     kim = {"ad": oturum.ad, "rol": oturum.rol}
-    komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi, kim)
+    komut = komut_olustur(depo, pano_verisi(depo, ayar, simdi), govde, simdi, kim, oturum.yetkiler)
     return 200, {"tamam": True, "komut": komut}, None
 
 
@@ -3381,9 +3559,32 @@ def _kayit_birlesik(depo: UpstashDepo | BellekDepo) -> list[dict]:
     return satirlar[:KAYIT_BIRLESIK_EN_COK]
 
 
+def yetki_gorunumu(depo: UpstashDepo | BellekDepo) -> dict:
+    """Roller ve yetkiler ekranının verisi (docs/19 §1): yetki kataloğu, rol
+    başına ayarlanmış küme ve hangi yetkilerin kilitli olduğu."""
+    tablo = rol_yetkileri_oku(depo)
+    return {
+        "gruplar": [
+            {"ad": ad, "yetkiler": [{"id": y, "ad": YETKI_ADLARI[y]} for y in yetkiler]}
+            for ad, yetkiler in YETKI_GRUPLARI
+        ],
+        "kilitli": sorted(KILITLI_YETKILER),
+        "roller": [
+            {
+                "id": rol,
+                "ad": ROL_ADLARI[rol],
+                "yetkiler": [y for y in YETKILER if y in tablo.get(rol, frozenset())],
+                "varsayilan": [y for y in YETKILER if y in VARSAYILAN_YETKILER[rol]],
+            }
+            for rol in ROLLER
+        ],
+    }
+
+
 def hesap_verisi(depo: UpstashDepo | BellekDepo, simdi: float) -> dict:
-    """Kullanıcı listesi (kurucu başta) ve işlem kaydı. Dizinde kaydı olmayan
-    adlar onarılır (yarım oluşturma / yarım silme; docs/19 §3.1)."""
+    """Kullanıcı listesi (kurucu başta), işlem kaydı ve rol yetkileri tanımı.
+    Dizinde kaydı olmayan adlar onarılır (yarım oluşturma / yarım silme;
+    docs/19 §3.1)."""
     ham_adlar = depo.komut("LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2))
     adlar = [a for a in ham_adlar if isinstance(a, str)] if isinstance(ham_adlar, list) else []
     kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar] + [IKI_ADIM_KURUCU_ANAHTARI])
@@ -3410,7 +3611,11 @@ def hesap_verisi(depo: UpstashDepo | BellekDepo, simdi: float) -> dict:
     }
     if kurucu_iki_adim:
         kurucu["iki_adim"] = True
-    return {"kullanicilar": [kurucu, *satirlar], "kayit": _kayit_birlesik(depo)}
+    return {
+        "kullanicilar": [kurucu, *satirlar],
+        "kayit": _kayit_birlesik(depo),
+        "yetki": yetki_gorunumu(depo),
+    }
 
 
 def hesap_getir(istek: Isleyici) -> tuple[int, dict, str | None]:
@@ -3420,7 +3625,7 @@ def hesap_getir(istek: Isleyici) -> tuple[int, dict, str | None]:
     işlem kaydını döken bu ucu iz bırakmadan yoklayamaz."""
     ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
-    if not rol_yeterli_mi(oturum.rol, GORUNUM_EN_AZ_ROL["kullanicilar"]):
+    if not oturum.yetkili("ekran.kullanicilar"):
         _komut_red_yaz(depo, oturum, "Yetki yetmedi: hesap listesi", simdi)
         raise PanoHatasi(403, "yetki", "Bu sayfa için yönetici yetkisi gerekir.")
     return 200, hesap_verisi(depo, simdi), None
@@ -3832,12 +4037,73 @@ def _iki_adim_kapat(
     return 200, {"tamam": True}, cerez
 
 
+def _rol_yetkileri_yaz(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    oturum: Oturum,
+    govde: dict,
+    simdi: float,
+    istek: Isleyici,
+) -> tuple[int, dict, str | None]:
+    """POST /api/hesap {"eylem": "rol_yetkileri", "yetkiler": {rol: [...]}, "sifre"}.
+
+    Hangi rolün neyi yapabildiğini değiştirir (docs/19 §1). YALNIZ KURUCU: bu
+    ayar yönetici yetkisini de kapsar, çalınan bir yönetici hesabı kendi rolüne
+    yeni yetki açamasın (yönetici hesaplarına yalnız kurucunun dokunması
+    kuralıyla aynı gerekçe). Kendi şifresiyle onaylanır ve işlem kaydına geçer.
+    Yazılan tanım bir sonraki istekte geçerlidir: yetki rol gibi her istekte
+    okunur, açık oturumlar düşürülmez.
+
+    Kilitli yetkiler (Kullanıcılar ekranı, hesap yönetimi) gönderilse de
+    yalnız yöneticide kalır: site kendini kilitleyemez."""
+    if not oturum.kurucu:
+        _komut_red_yaz(depo, oturum, "Yalnız kurucu: rol_yetkileri", simdi)
+        raise PanoHatasi(
+            403, "yalniz_kurucu", "Rol yetkilerini yalnız kurucu hesabı değiştirebilir."
+        )
+    ham = govde.get("yetkiler")
+    if not isinstance(ham, dict) or not ham:
+        raise PanoHatasi(400, "yetkiler", "Değiştirilecek rol yetkisi gelmedi.")
+    bilinmeyen = [r for r in ham if r not in ROLLER]
+    if bilinmeyen:
+        raise PanoHatasi(400, "rol", "Bilinmeyen rol.")
+    onay_sifresi_dogrula(depo, ayar, oturum, istek, govde.get("sifre"))
+    if depo.say(HESAP_ISLEM_SAYAC_ONEKI + oturum.ad, HESAP_ISLEM_PENCERESI_SN) > HESAP_ISLEM_SINIRI:
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            "Kısa sürede çok fazla hesap işlemi yaptınız; 15 dakika sonra yeniden deneyin.",
+        )
+    onceki = rol_yetkileri_oku(depo)
+    tablo = dict(onceki)
+    for rol in ROLLER:
+        if rol in ham:
+            tablo[rol] = yetki_kumesi_duzelt(ham[rol], rol)
+    degisen = []
+    for rol in ROLLER:
+        eklenen = sorted(tablo[rol] - onceki.get(rol, frozenset()))
+        kalkan = sorted(onceki.get(rol, frozenset()) - tablo[rol])
+        if eklenen or kalkan:
+            parcalar = [f"+{len(eklenen)}" if eklenen else "", f"-{len(kalkan)}" if kalkan else ""]
+            degisen.append(f"{ROL_ADLARI[rol]} ({' '.join(p for p in parcalar if p)})")
+    if not degisen:
+        return 200, {"tamam": True, "degisti": False, "yetki": yetki_gorunumu(depo)}, None
+    yetkileri_kaydet(depo, tablo)
+    kayit_yaz(
+        depo,
+        KAYIT_ANAHTARI,
+        _islem_satiri(simdi, oturum.ad, oturum.rol, "rol_yetkileri", ", ".join(degisen), "tamam"),
+        KAYIT_EN_COK,
+    )
+    return 200, {"tamam": True, "degisti": True, "yetki": yetki_gorunumu(depo)}, None
+
+
 def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/hesap - {"eylem", ...}; sifre_degistir ve kendi iki adımı
     (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) herkese, ötekiler
     yönetici (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON ->
     sifre_degismeli -> önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
-    ayar, simdi, oturum, govde = _durum_degistiren(istek, "izleyici", "hesap")
+    ayar, simdi, oturum, govde = _durum_degistiren(istek, None, "hesap")
     eylem = govde.get("eylem")
     if oturum.sifre_degismeli and eylem != "sifre_degistir":
         raise PanoHatasi(403, "sifre_degismeli", SIFRE_DEGISMELI_METNI)
@@ -3848,9 +4114,11 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
         return _hesap_sifre_degistir(depo, ayar, oturum, govde, simdi, istek)
     if eylem in IKI_ADIM_KENDI_EYLEMLERI:
         return _iki_adim_kendi(depo, ayar, oturum, eylem, govde, simdi, istek)
-    if not rol_yeterli_mi(oturum.rol, GORUNUM_EN_AZ_ROL["kullanicilar"]):
+    if not oturum.yetkili("hesap.yonet"):
         _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {_metin(eylem, 40)}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
+    if eylem == "rol_yetkileri":
+        return _rol_yetkileri_yaz(depo, ayar, oturum, govde, simdi, istek)
     if eylem not in ("ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"):
         raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
     return _hesap_yonet(depo, ayar, oturum, eylem, govde, simdi, istek)

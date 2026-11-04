@@ -28,6 +28,85 @@
   const ACILIS = Date.now();
 
   const ROL_ADLARI = { izleyici: "İzleyici", operator: "Operatör", yonetici: "Yönetici" };
+  /* Rol yetkileri (api/_pano.py YETKILER / VARSAYILAN_YETKILER / KILITLI_YETKILER'in
+     aynısı, docs/19 §1): demo da gerçek pano gibi yetkiden gider, böylece rol
+     değiştirince menüler aynı kuralla açılıp kapanır. Demoda değiştirilebilir:
+     değişiklik yalnız bu sekmede yaşar. */
+  const YETKILER = [
+    "ekran.mudahale",
+    "komut.anons",
+    "komut.ses_dene",
+    "komut.olay_incele",
+    "veri.bilgisayar",
+    "ekran.yonetim",
+    "komut.teshis",
+    "komut.yeniden_baslat",
+    "komut.guncelle",
+    "ekran.tesisler",
+    "ekran.kullanicilar",
+    "hesap.yonet",
+  ];
+  const YETKI_ADLARI = {
+    "ekran.mudahale": "Müdahale ekranını görme",
+    "komut.anons": "Hazır anons çaldırma",
+    "komut.ses_dene": "Hoparlör denemesi",
+    "komut.olay_incele": "Olayı İncelendi / Yanlış alarm işaretleme",
+    "veri.bilgisayar": "Bilgisayarın IP adresi, adı ve fabrika adresi",
+    "ekran.yonetim": "Yönetim ekranını görme",
+    "komut.teshis": "Teşhis alma",
+    "komut.yeniden_baslat": "Programı yeniden başlatma",
+    "komut.guncelle": "Programı güncelleme",
+    "ekran.tesisler": "Tesisler ekranını görme",
+    "ekran.kullanicilar": "Kullanıcılar ve işlem kaydını görme",
+    "hesap.yonet": "Hesap açma, rol, şifre, kapatma, silme",
+  };
+  const YETKI_GRUPLARI = [
+    ["Müdahale", ["ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele"]],
+    ["Bilgi", ["veri.bilgisayar", "ekran.tesisler"]],
+    ["Yönetim", ["ekran.yonetim", "komut.teshis", "komut.yeniden_baslat", "komut.guncelle"]],
+    ["Hesaplar", ["ekran.kullanicilar", "hesap.yonet"]],
+  ];
+  const KILITLI_YETKILER = ["ekran.kullanicilar", "hesap.yonet"];
+  const VARSAYILAN_YETKILER = {
+    izleyici: [],
+    operator: ["ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele", "veri.bilgisayar"],
+    yonetici: [...YETKILER],
+  };
+  /* Demoda ayarlanmış tanım (rol -> yetki listesi); başlangıçta varsayılan */
+  const rolYetkileri = {
+    izleyici: [...VARSAYILAN_YETKILER.izleyici],
+    operator: [...VARSAYILAN_YETKILER.operator],
+    yonetici: [...VARSAYILAN_YETKILER.yonetici],
+  };
+
+  /* Kilitli yetkiler yalnız yöneticide olur, yöneticiden alınamaz (sunucunun
+     yetki_kumesi_duzelt'i) */
+  function yetkiKumesiDuzelt(liste, rol) {
+    if (!Array.isArray(liste)) return [...VARSAYILAN_YETKILER[rol]];
+    const kume = new Set(liste.filter((y) => YETKILER.includes(y) && !KILITLI_YETKILER.includes(y)));
+    if (rol === "yonetici") for (const y of KILITLI_YETKILER) kume.add(y);
+    return YETKILER.filter((y) => kume.has(y));
+  }
+
+  function yetkiliMi(yetki) {
+    return rolYetkileri[durum.rol].includes(yetki);
+  }
+
+  function yetkiGorunumu() {
+    return {
+      gruplar: YETKI_GRUPLARI.map(([ad, yetkiler]) => ({
+        ad: ad,
+        yetkiler: yetkiler.map((y) => ({ id: y, ad: YETKI_ADLARI[y] })),
+      })),
+      kilitli: [...KILITLI_YETKILER],
+      roller: Object.keys(ROL_ADLARI).map((rol) => ({
+        id: rol,
+        ad: ROL_ADLARI[rol],
+        yetkiler: [...rolYetkileri[rol]],
+        varsayilan: [...VARSAYILAN_YETKILER[rol]],
+      })),
+    };
+  }
   // Demo bandından seçilen role göre kim giriş yapmış görünür
   const ROL_HESABI = { izleyici: "fabrika.muduru", operator: "vardiya.amiri", yonetici: "isg.uzmani" };
 
@@ -590,7 +669,7 @@
         ozet: r.ozet,
         sonuc: r.sonuc,
       }));
-    return { kullanicilar: [kurucu, ...satirlar], kayit: liste };
+    return { kullanicilar: [kurucu, ...satirlar], kayit: liste, yetki: yetkiGorunumu() };
   }
 
   // ----------------------------------------------------------------- rapor
@@ -762,14 +841,15 @@
         kurucu: false,
         sifre_degismeli: false,
         ...(oturumHesabi() && oturumHesabi().iki_adim ? { iki_adim: true } : {}),
+        yetkiler: [...rolYetkileri[durum.rol]],
       },
       onizleme: false,
     };
     // Rol süzgeci api/_pano.py durum() ile aynı (docs/19 §1)
-    const yoneticiMi = rolSirasi(durum.rol) >= rolSirasi("yonetici");
-    const mudahaleciMi = rolSirasi(durum.rol) >= rolSirasi("operator");
+    const yoneticiMi = yetkiliMi("ekran.yonetim");
+    const mudahaleciMi = yetkiliMi("ekran.mudahale");
     if (!yoneticiMi) delete r.yonetim;
-    if (!mudahaleciMi) {
+    if (!yetkiliMi("veri.bilgisayar")) {
       delete r.bilgisayar.ip;
       delete r.bilgisayar.bilgisayar_adi;
       // İzleyici hazır anons metinlerini ve hoparlör kanallarını görmez; blok
@@ -780,7 +860,7 @@
     const mudahaleIster = sorgu.get("mudahale") === "1" && mudahaleciMi;
     const yonetimIster = sorgu.get("yonetim") === "1" && yoneticiMi;
     if (mudahaleIster || yonetimIster) {
-      const gorunur = yoneticiMi ? [...MUDAHALE, ...YONETIM] : MUDAHALE;
+      const gorunur = [...MUDAHALE, ...YONETIM].filter((t) => yetkiliMi("komut." + t));
       const yoklama = veri.baglanti === "canli" ? simdi - 2 * SN : null;
       veri.mudahale = {
         komutlar: komutlar
@@ -804,7 +884,7 @@
     }
     // Tesisler ekranı (yalnız yönetici; filo_verisi): ana tesis bu panonun
     // fabrikası, öbür ikisi yalnız izlenir (biri canlı, biri haber vermiyor)
-    if (sorgu.get("filo") === "1" && yoneticiMi) {
+    if (sorgu.get("filo") === "1" && yetkiliMi("ekran.tesisler")) {
       const paketlemeSon = ACILIS - 135 * DK;
       veri.filo = {
         ana_tesis: "merkez",
@@ -887,14 +967,15 @@
   }
 
   function mudahaleIstegi(govde, simdi) {
-    if (rolSirasi(durum.rol) < rolSirasi("operator")) {
+    // Kaba kapı: hiç komut yetkisi yoksa gövde okunmadan 403 (sunucunun sırası)
+    if (![...MUDAHALE, ...YONETIM].some((t) => yetkiliMi("komut." + t))) {
       throw new DemoHatasi(403, "yetki", "Bu iş için yetkiniz yok.");
     }
     const tur = govde.tur;
     if (![...MUDAHALE, ...YONETIM].includes(tur)) throw new DemoHatasi(400, "tur", "Bilinmeyen müdahale.");
-    if (YONETIM.includes(tur) && durum.rol !== "yonetici") {
+    if (!yetkiliMi("komut." + tur)) {
       kayitYaz(simdi, durum.ad, durum.rol, "komut_red", "Yetki yetmedi: " + tur, "red");
-      throw new DemoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.");
+      throw new DemoHatasi(403, "yetki", "Bu iş için yetkiniz yok.");
     }
     if (AGIR.includes(tur) && !govde.sifre) {
       throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
@@ -1043,7 +1124,31 @@
       kayitYaz(simdi, durum.ad, durum.rol, "sifre_degistir", "", "tamam");
       return { tamam: true };
     }
-    if (durum.rol !== "yonetici") {
+    // Rol yetkilerinin tanımı: demoda kurucu yok, yönetici değiştirebilir
+    // (gerçek sitede yalnız kurucu; docs/19 §1)
+    if (eylem === "rol_yetkileri") {
+      if (!yetkiliMi("hesap.yonet")) {
+        kayitYaz(simdi, durum.ad, durum.rol, "komut_red", "Yalnız kurucu: rol_yetkileri", "red");
+        throw new DemoHatasi(403, "yalniz_kurucu", "Rol yetkilerini yalnız kurucu hesabı değiştirebilir.");
+      }
+      const gelen = govde.yetkiler;
+      if (!gelen || typeof gelen !== "object" || !Object.keys(gelen).length) {
+        throw new DemoHatasi(400, "yetkiler", "Değiştirilecek rol yetkisi gelmedi.");
+      }
+      if (!govde.sifre) throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
+      let degisti = false;
+      for (const rol of Object.keys(ROL_ADLARI)) {
+        if (!(rol in gelen)) continue;
+        const yeni = yetkiKumesiDuzelt(gelen[rol], rol);
+        if (yeni.join("|") !== rolYetkileri[rol].join("|")) degisti = true;
+        rolYetkileri[rol] = yeni;
+      }
+      if (degisti) {
+        kayitYaz(simdi, durum.ad, durum.rol, "rol_yetkileri", "Yetkiler güncellendi", "tamam");
+      }
+      return { tamam: true, degisti: degisti, yetki: yetkiGorunumu() };
+    }
+    if (!yetkiliMi("hesap.yonet")) {
       kayitYaz(simdi, durum.ad, durum.rol, "komut_red", "Yetki yetmedi: " + eylem, "red");
       throw new DemoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.");
     }
@@ -1189,7 +1294,7 @@
       if (yol === "mudahale" && yontem === "POST") return yanit(200, mudahaleIstegi(govde, simdi));
       if (yol === "hesap" && yontem === "POST") return yanit(200, hesapIstegi(govde, simdi));
       if (yol === "hesap") {
-        if (durum.rol !== "yonetici")
+        if (!yetkiliMi("ekran.kullanicilar"))
           throw new DemoHatasi(403, "yetki", "Bu sayfa için yönetici yetkisi gerekir.");
         return yanit(200, hesapVerisi());
       }

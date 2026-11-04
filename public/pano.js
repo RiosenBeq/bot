@@ -61,21 +61,21 @@
     tesisler: ["Tesisler", "Komut yalnız ana tesise gider"],
     sistem: ["Sistem", "Bağlantı, bilgisayar ve hesabınız"],
   };
-  /* Yetki merdiveni ve hangi görünümün hangi rolü istediği (docs/19 §1).
-     api/_pano.py'deki ROL_SIRASI ve GORUNUM_EN_AZ_ROL tablolarının AYNISIDIR;
-     tests/test_yetki.py iki tarafı karşılaştırır: ekranı gizleyip ucu açık
-     bırakmak (ya da tersi) iki tabloyu birden değiştirmeden olmaz.
-     İzleyici yalnız izler. */
-  const ROL_SIRASI = { izleyici: 0, operator: 1, yonetici: 2 };
-  const GORUNUM_ROLU = {
-    genel: "izleyici",
-    kameralar: "izleyici",
-    olaylar: "izleyici",
-    sistem: "izleyici",
-    mudahale: "operator",
-    yonetim: "yonetici",
-    kullanicilar: "yonetici",
-    tesisler: "yonetici",
+  /* Hangi görünüm hangi YETKİYİ ister (docs/19 §1). api/_pano.py'deki
+     EKRAN_YETKISI'nin AYNISIDIR; tests/test_yetki.py iki tarafı karşılaştırır:
+     ekranı gizleyip ucu açık bırakmak (ya da tersi) iki tabloyu birden
+     değiştirmeden olmaz. Listede olmayan görünüm (Genel bakış, Kameralar,
+     Olaylar, Sistem) herkese açıktır.
+
+     Yetki artık role GÖMÜLÜ DEĞİL: kurucu Kullanıcılar ekranından hangi rolün
+     neyi yapabildiğini değiştirir, sunucu oturumun kümesini /api/durum'da
+     `oturum.yetkiler` olarak gönderir. Ekran onu okur; gizleme kolaylıktır,
+     kapı sunucudadır. */
+  const GORUNUM_YETKISI = {
+    mudahale: "ekran.mudahale",
+    yonetim: "ekran.yonetim",
+    kullanicilar: "ekran.kullanicilar",
+    tesisler: "ekran.tesisler",
   };
   // Telefonda sekme değil, Sistem'den açılan görünümler (üstte geri düğmesi)
   const SISTEM_ALTI = ["yonetim", "kullanicilar", "tesisler"];
@@ -448,17 +448,16 @@
     return oturum ? oturum.rol : "izleyici";
   }
 
-  /* Rol merdiveni (api/_pano.py rol_yeterli_mi'nin aynısı): tanınmayan rol ve
-     tanınmayan eşik yetmez. `rol` verilmezse oturumun rolü kullanılır. */
-  function rolYeter(enAz, rol) {
-    const esik = ROL_SIRASI[enAz];
-    if (esik === undefined) return false;
-    const sira = ROL_SIRASI[rol === undefined ? rolu() : rol];
-    return sira !== undefined && sira >= esik;
+  /* Bu oturumun yetkisi var mı (api/_pano.py Oturum.yetkili'nin aynısı).
+     Oturum daha bilinmiyorsa (ilk yükleme) yetki yoktur: ekran boş açılır,
+     /api/durum gelince dolar. */
+  function yetkili(yetki) {
+    return !!(oturum && Array.isArray(oturum.yetkiler) && oturum.yetkiler.includes(yetki));
   }
 
-  function operatorMu() {
-    return rolYeter("operator");
+  /* Olayı İncelendi / Yanlış alarm işaretleyebilir mi (eski operatorMu) */
+  function inceleyebilir() {
+    return yetkili("komut.olay_incele");
   }
 
   /* Menüdeki ve sekme çubuğundaki FABRİKA bağlantılarını role göre gösterir;
@@ -466,20 +465,20 @@
   function rolUygula() {
     // Yalnız gezinme öğelerini (menü + sekme) gizle; görünüm kutularını
     // gorunumuUygula yönetir (data-gorunum görünüm div'inde de var). Hangi
-    // öğenin gizleneceği GORUNUM_ROLU'ndan okunur: elle sayılan seçici listesi
+    // öğenin gizleneceği GORUNUM_YETKISI'nden okunur: elle sayılan seçici listesi
     // yok, yeni bir ekran tabloya girince kendiliğinden doğru gizlenir.
     // (Yönetim, Kullanıcılar ve Tesisler'in telefon sekmesi yoktur; seçici boş
     // döner. Müdahale'nin hem kenar menüsü hem sekmesi vardır.)
-    for (const ad of Object.keys(GORUNUM_ROLU)) {
-      const yetkili = rolYeter(GORUNUM_ROLU[ad]);
+    for (const ad of Object.keys(GORUNUM_YETKISI)) {
+      const acik = yetkili(GORUNUM_YETKISI[ad]);
       for (const oge of document.querySelectorAll(
         '.menu-ogesi[data-gorunum="' + ad + '"], .sekme[data-gorunum="' + ad + '"]'
       )) {
-        oge.hidden = !yetkili;
+        oge.hidden = !acik;
       }
     }
-    $("fabrika-grubu").hidden = !rolYeter("operator");
-    $("fabrika-yonetim-karti").hidden = !rolYeter("yonetici");
+    $("fabrika-grubu").hidden = !yetkili("ekran.mudahale");
+    $("fabrika-yonetim-karti").hidden = !yetkili("ekran.yonetim");
     // Yetkisiz görünümdeysek (ör. rol düşürüldü) genel bakışa dön
     if (!gorunumYetkili(aktifGorunum) && location.hash.replace("#", "") !== "genel") {
       location.hash = "genel";
@@ -762,9 +761,9 @@
   /* Rolü bu görünüme yetiyor mu (docs/19 §1). Rol daha bilinmiyorsa (ilk
      yükleme) izin verilir; /api/durum gelince yetkisiz görünümden çıkılır. */
   function gorunumYetkili(ad) {
-    const gereken = GORUNUM_ROLU[ad];
+    const gereken = GORUNUM_YETKISI[ad];
     if (!gereken || !oturum) return true;
-    return rolYeter(gereken);
+    return yetkili(gereken);
   }
 
   function bugunMetni() {
@@ -1053,7 +1052,7 @@
     $("k-bekleyen").classList.toggle("dikkat", s.bekleyen > 0);
     $("k-bekleyen-ref").textContent = !s.bekleyen
       ? "kuyruk boş"
-      : operatorMu()
+      : inceleyebilir()
         ? "incelemek için dokunun"
         : "fabrika ekranında incelenir";
 
@@ -1700,7 +1699,7 @@
      yalnız operatör/yönetici hesaplarında ve bağlantı canlıyken çıkar
      (docs/19 §3.5, §3.9). */
   function inceleGosterilsin(o) {
-    return o.tur === "ihlal" && o.id && o.durum === "new" && operatorMu() && canliMi();
+    return o.tur === "ihlal" && o.id && o.durum === "new" && inceleyebilir() && canliMi();
   }
 
   /* Gönderilen işaretin durumu ve çift dokunuş hali tazelemede silinmesin diye
@@ -2631,7 +2630,7 @@
   }
 
   function yonetilebilir(k) {
-    return !k.kurucu && rolYeter("yonetici") && oturum && k.ad !== oturum.ad;
+    return !k.kurucu && yetkili("hesap.yonet") && oturum && k.ad !== oturum.ad;
   }
 
   function kullaniciSonucu(metin) {
@@ -2693,7 +2692,7 @@
       let yeniSifre = null;
       if (is === "rol") {
         rolSecici = el("select", "secici");
-        for (const deger of Object.keys(ROL_SIRASI)) {
+        for (const deger of Object.keys(ROL_ADLARI)) {
           const o = el("option", "", ROL_ADLARI[deger]);
           o.value = deger;
           if (deger === k.rol) o.selected = true;
@@ -2853,7 +2852,107 @@
     for (const k of kullanicilar) liste.appendChild(kullaniciSatiri(k));
     $("hesaplar-bolumu").setAttribute("aria-label", "Hesaplar: " + kullanicilar.length + " hesap (kurucu dahil)");
     kayitTablosu(veri.kayit || []);
+    yetkileriCiz(veri.yetki);
   }
+
+  /* Roller ve yetkiler (docs/19 §1): rol × yetki kutucukları. Yalnız kurucu
+     değiştirir; ötekine salt okunur görünür. Kilitli yetkiler (Kullanıcılar
+     ekranı, hesap yönetimi) her zaman yöneticide ve kapalıdır: site kendini
+     kilitleyemesin. Sunucu aynı kuralı yeniden uygular (yetki_kumesi_duzelt). */
+  let yetkiTaslagi = null;
+  let yetkiTanimi = null;
+
+  function yetkileriCiz(tanim) {
+    if (!tanim || !Array.isArray(tanim.roller)) return;
+    yetkiTanimi = tanim;
+    if (!yetkiTaslagi) yetkiTaslagi = taslaktanKur(tanim);
+    const kurucu = !!(oturum && oturum.kurucu);
+    $("yetkiler-notu").textContent = kurucu
+      ? "Kilitli satırlar değişmez: hesap yönetimi ve Kullanıcılar ekranı yalnız yöneticide kalır."
+      : "Rol yetkilerini yalnız kurucu hesabı değiştirebilir; burası salt okunur.";
+    $("yetki-formu").hidden = !kurucu;
+    const izgara = $("yetki-izgarasi");
+    temizle(izgara);
+    const kilitli = new Set(tanim.kilitli || []);
+
+    const bas = el("div", "yetki-satiri yetki-basligi");
+    bas.appendChild(el("span", "yetki-ad", "Yetki"));
+    for (const r of tanim.roller) bas.appendChild(el("span", "yetki-rol", r.ad));
+    izgara.appendChild(bas);
+
+    for (const grup of tanim.gruplar || []) {
+      izgara.appendChild(el("div", "yetki-grup", grup.ad));
+      for (const y of grup.yetkiler) {
+        const satir = el("div", "yetki-satiri");
+        satir.appendChild(el("span", "yetki-ad", y.ad));
+        for (const r of tanim.roller) {
+          const hucre = el("label", "yetki-hucre");
+          const kutu = el("input");
+          kutu.type = "checkbox";
+          kutu.checked = yetkiTaslagi[r.id].has(y.id);
+          kutu.disabled = !kurucu || kilitli.has(y.id);
+          kutu.setAttribute("aria-label", r.ad + ": " + y.ad);
+          kutu.addEventListener("change", function () {
+            if (this.checked) yetkiTaslagi[r.id].add(y.id);
+            else yetkiTaslagi[r.id].delete(y.id);
+            $("yetki-hatasi").textContent = "";
+          });
+          hucre.appendChild(kutu);
+          satir.appendChild(hucre);
+        }
+        izgara.appendChild(satir);
+      }
+    }
+  }
+
+  function taslaktanKur(tanim) {
+    const taslak = {};
+    for (const r of tanim.roller) taslak[r.id] = new Set(r.yetkiler);
+    return taslak;
+  }
+
+  function yetkiGovdesi() {
+    const yetkiler = {};
+    for (const r of yetkiTanimi.roller) yetkiler[r.id] = [...yetkiTaslagi[r.id]];
+    return yetkiler;
+  }
+
+  $("yetki-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    if (!yetkiTanimi) return;
+    const sifre = $("yetki-onay-sifresi").value;
+    if (!sifre) {
+      $("yetki-hatasi").textContent = "Kendi şifrenizi yazın.";
+      return;
+    }
+    $("yetki-hatasi").textContent = "";
+    const dugme = $("yetki-kaydet");
+    dugme.disabled = true;
+    dugme.setAttribute("aria-busy", "true");
+    try {
+      const sonuc = await hesapIslem({
+        eylem: "rol_yetkileri",
+        yetkiler: yetkiGovdesi(),
+        sifre: sifre,
+      });
+      $("yetki-onay-sifresi").value = "";
+      yetkiTaslagi = null; // sunucunun düzelttiği hâl yeniden okunur (kilitli yetkiler)
+      kullaniciSonucu(sonuc.degisti ? "Rol yetkileri kaydedildi." : "Değişiklik yoktu.");
+      await hesaplariYukle();
+      yukle(); // kendi menün de değişmiş olabilir: oturumun yetkileri tazelenir
+    } catch (hata) {
+      $("yetki-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+      dugme.removeAttribute("aria-busy");
+    }
+  });
+
+  $("yetki-geri-al").addEventListener("click", function () {
+    if (!yetkiTanimi) return;
+    for (const r of yetkiTanimi.roller) yetkiTaslagi[r.id] = new Set(r.varsayilan);
+    yetkileriCiz(yetkiTanimi);
+  });
 
   for (const dugme of document.querySelectorAll("#kullanici-segmenti button")) {
     dugme.addEventListener("click", function () {
@@ -2863,6 +2962,8 @@
       }
       $("hesaplar-bolumu").hidden = kullaniciBolumu !== "hesaplar";
       $("kayit-bolumu").hidden = kullaniciBolumu !== "kayit";
+      $("yetkiler-bolumu").hidden = kullaniciBolumu !== "yetkiler";
+      $("ekle-ac").hidden = kullaniciBolumu !== "hesaplar" || !$("ekle-karti").hidden;
     });
   }
 
@@ -3110,7 +3211,7 @@
     kareleriCiz(veri);
     sistemiCiz(veri);
     mudahaleyiCiz(veri);
-    if (rolYeter("yonetici")) yonetimiCiz(veri);
+    if (yetkili("ekran.yonetim")) yonetimiCiz(veri);
     if (veri.filo) tesisleriCiz(veri.filo);
     bildirimleriCiz();
   }
