@@ -61,8 +61,17 @@
     tesisler: ["Tesisler", "Komut yalnız ana tesise gider"],
     sistem: ["Sistem", "Bağlantı, bilgisayar ve hesabınız"],
   };
-  // Hangi görünüm hangi rolü ister (docs/19 §1). İzleyici yalnız izler.
+  /* Yetki merdiveni ve hangi görünümün hangi rolü istediği (docs/19 §1).
+     api/_pano.py'deki ROL_SIRASI ve GORUNUM_EN_AZ_ROL tablolarının AYNISIDIR;
+     tests/test_yetki.py iki tarafı karşılaştırır: ekranı gizleyip ucu açık
+     bırakmak (ya da tersi) iki tabloyu birden değiştirmeden olmaz.
+     İzleyici yalnız izler. */
+  const ROL_SIRASI = { izleyici: 0, operator: 1, yonetici: 2 };
   const GORUNUM_ROLU = {
+    genel: "izleyici",
+    kameralar: "izleyici",
+    olaylar: "izleyici",
+    sistem: "izleyici",
     mudahale: "operator",
     yonetim: "yonetici",
     kullanicilar: "yonetici",
@@ -439,34 +448,38 @@
     return oturum ? oturum.rol : "izleyici";
   }
 
+  /* Rol merdiveni (api/_pano.py rol_yeterli_mi'nin aynısı): tanınmayan rol ve
+     tanınmayan eşik yetmez. `rol` verilmezse oturumun rolü kullanılır. */
+  function rolYeter(enAz, rol) {
+    const esik = ROL_SIRASI[enAz];
+    if (esik === undefined) return false;
+    const sira = ROL_SIRASI[rol === undefined ? rolu() : rol];
+    return sira !== undefined && sira >= esik;
+  }
+
   function operatorMu() {
-    const rol = rolu();
-    return rol === "operator" || rol === "yonetici";
+    return rolYeter("operator");
   }
 
   /* Menüdeki ve sekme çubuğundaki FABRİKA bağlantılarını role göre gösterir;
      yetkisi olmayan görünümden çıkar (docs/19 §1). */
   function rolUygula() {
-    const rol = rolu();
-    const mudahale = rol === "operator" || rol === "yonetici";
-    const yonetici = rol === "yonetici";
     // Yalnız gezinme öğelerini (menü + sekme) gizle; görünüm kutularını
-    // gorunumuUygula yönetir (data-gorunum görünüm div'inde de var).
-    // Müdahale: hem kenar menüsü hem telefon sekmesi (izleyicide yok)
-    for (const oge of document.querySelectorAll(
-      '.menu-ogesi[data-gorunum="mudahale"], .sekme[data-gorunum="mudahale"]'
-    )) {
-      oge.hidden = !mudahale;
+    // gorunumuUygula yönetir (data-gorunum görünüm div'inde de var). Hangi
+    // öğenin gizleneceği GORUNUM_ROLU'ndan okunur: elle sayılan seçici listesi
+    // yok, yeni bir ekran tabloya girince kendiliğinden doğru gizlenir.
+    // (Yönetim, Kullanıcılar ve Tesisler'in telefon sekmesi yoktur; seçici boş
+    // döner. Müdahale'nin hem kenar menüsü hem sekmesi vardır.)
+    for (const ad of Object.keys(GORUNUM_ROLU)) {
+      const yetkili = rolYeter(GORUNUM_ROLU[ad]);
+      for (const oge of document.querySelectorAll(
+        '.menu-ogesi[data-gorunum="' + ad + '"], .sekme[data-gorunum="' + ad + '"]'
+      )) {
+        oge.hidden = !yetkili;
+      }
     }
-    // Yönetim, Kullanıcılar ve Tesisler: yalnız kenar menüsünde (telefonda Sistem'den açılır)
-    for (const oge of document.querySelectorAll(
-      '.menu-ogesi[data-gorunum="yonetim"], .menu-ogesi[data-gorunum="kullanicilar"], ' +
-        '.menu-ogesi[data-gorunum="tesisler"]'
-    )) {
-      oge.hidden = !yonetici;
-    }
-    $("fabrika-grubu").hidden = !mudahale;
-    $("fabrika-yonetim-karti").hidden = !yonetici;
+    $("fabrika-grubu").hidden = !rolYeter("operator");
+    $("fabrika-yonetim-karti").hidden = !rolYeter("yonetici");
     // Yetkisiz görünümdeysek (ör. rol düşürüldü) genel bakışa dön
     if (!gorunumYetkili(aktifGorunum) && location.hash.replace("#", "") !== "genel") {
       location.hash = "genel";
@@ -751,8 +764,7 @@
   function gorunumYetkili(ad) {
     const gereken = GORUNUM_ROLU[ad];
     if (!gereken || !oturum) return true;
-    if (gereken === "yonetici") return oturum.rol === "yonetici";
-    return oturum.rol === "operator" || oturum.rol === "yonetici";
+    return rolYeter(gereken);
   }
 
   function bugunMetni() {
@@ -2619,7 +2631,7 @@
   }
 
   function yonetilebilir(k) {
-    return !k.kurucu && rolu() === "yonetici" && oturum && k.ad !== oturum.ad;
+    return !k.kurucu && rolYeter("yonetici") && oturum && k.ad !== oturum.ad;
   }
 
   function kullaniciSonucu(metin) {
@@ -2681,7 +2693,7 @@
       let yeniSifre = null;
       if (is === "rol") {
         rolSecici = el("select", "secici");
-        for (const deger of ["izleyici", "operator", "yonetici"]) {
+        for (const deger of Object.keys(ROL_SIRASI)) {
           const o = el("option", "", ROL_ADLARI[deger]);
           o.value = deger;
           if (deger === k.rol) o.selected = true;
@@ -3098,7 +3110,7 @@
     kareleriCiz(veri);
     sistemiCiz(veri);
     mudahaleyiCiz(veri);
-    if (rolu() === "yonetici") yonetimiCiz(veri);
+    if (rolYeter("yonetici")) yonetimiCiz(veri);
     if (veri.filo) tesisleriCiz(veri.filo);
     bildirimleriCiz();
   }

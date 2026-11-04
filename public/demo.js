@@ -765,21 +765,28 @@
       },
       onizleme: false,
     };
-    if (durum.rol !== "yonetici") delete r.yonetim;
-    if (durum.rol === "izleyici") {
+    // Rol süzgeci api/_pano.py durum() ile aynı (docs/19 §1)
+    const yoneticiMi = rolSirasi(durum.rol) >= rolSirasi("yonetici");
+    const mudahaleciMi = rolSirasi(durum.rol) >= rolSirasi("operator");
+    if (!yoneticiMi) delete r.yonetim;
+    if (!mudahaleciMi) {
       delete r.bilgisayar.ip;
       delete r.bilgisayar.bilgisayar_adi;
+      // İzleyici hazır anons metinlerini ve hoparlör kanallarını görmez; blok
+      // biçimi aynı kalır, listeler boşalır (en az yetki). Sabit diziler
+      // paylaşıldığı için yeni nesne kurulur.
+      r.mudahale = { ...r.mudahale, mesajlar: [], kanallar: [] };
     }
-    const mudahaleIster = sorgu.get("mudahale") === "1" && durum.rol !== "izleyici";
-    const yonetimIster = sorgu.get("yonetim") === "1" && durum.rol === "yonetici";
+    const mudahaleIster = sorgu.get("mudahale") === "1" && mudahaleciMi;
+    const yonetimIster = sorgu.get("yonetim") === "1" && yoneticiMi;
     if (mudahaleIster || yonetimIster) {
-      const gorunur = durum.rol === "yonetici" ? [...MUDAHALE, ...YONETIM] : MUDAHALE;
+      const gorunur = yoneticiMi ? [...MUDAHALE, ...YONETIM] : MUDAHALE;
       const yoklama = veri.baglanti === "canli" ? simdi - 2 * SN : null;
       veri.mudahale = {
         komutlar: komutlar
           .filter((k) => gorunur.includes(k.tur))
           .slice(0, 20)
-          .map((k) => komutGorunumu(k, durum.rol === "yonetici")),
+          .map((k) => komutGorunumu(k, yoneticiMi)),
         son_yoklama: yoklama ? iso(yoklama) : null,
         yoklama_yasi_sn: yoklama ? 2 : null,
       };
@@ -797,7 +804,7 @@
     }
     // Tesisler ekranı (yalnız yönetici; filo_verisi): ana tesis bu panonun
     // fabrikası, öbür ikisi yalnız izlenir (biri canlı, biri haber vermiyor)
-    if (sorgu.get("filo") === "1" && durum.rol === "yonetici") {
+    if (sorgu.get("filo") === "1" && yoneticiMi) {
       const paketlemeSon = ACILIS - 135 * DK;
       veri.filo = {
         ana_tesis: "merkez",
@@ -854,8 +861,10 @@
     }
   }
 
+  /* api/_pano.py ROL_SIRASI'nın aynısı; tanınmayan rol -1 (hiçbir eşiği geçmez). */
   function rolSirasi(rol) {
-    return { izleyici: 0, operator: 1, yonetici: 2 }[rol];
+    const sira = { izleyici: 0, operator: 1, yonetici: 2 }[rol];
+    return sira === undefined ? -1 : sira;
   }
 
   function komutKaydet(simdi, tur, ozet, sonucMesaji, ek) {
@@ -878,7 +887,9 @@
   }
 
   function mudahaleIstegi(govde, simdi) {
-    if (rolSirasi(durum.rol) < 1) throw new DemoHatasi(403, "yetki", "Bu iş için yetkiniz yok.");
+    if (rolSirasi(durum.rol) < rolSirasi("operator")) {
+      throw new DemoHatasi(403, "yetki", "Bu iş için yetkiniz yok.");
+    }
     const tur = govde.tur;
     if (![...MUDAHALE, ...YONETIM].includes(tur)) throw new DemoHatasi(400, "tur", "Bilinmeyen müdahale.");
     if (YONETIM.includes(tur) && durum.rol !== "yonetici") {
