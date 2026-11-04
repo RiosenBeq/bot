@@ -85,13 +85,15 @@ def test_calisma_her_role_gider(site):  # noqa: F811
 
 
 def test_sistem_ekraninda_tek_satir_yalniz_varsa():
+    """2. tasarım: Bağlantı kartında "Bu ay çalışma" sayısı; yalnız program
+    gönderiyorsa çıkar, ayrıntısı (kameralar, ölçülen saat) üstüne gelince."""
     gorunum = re.search(
         r'<div class="gorunum" data-gorunum="sistem" hidden>.*?<!-- YÖNETİM', PANO_HTML, re.S
     ).group(0)
-    assert '<p id="calisma-satiri" class="kart-dipnot" hidden></p>' in gorunum
+    assert 'id="sistem-bilgisi"' in gorunum
     ciz = re.search(r"function sistemiCiz\(veri\) \{.*?\n  \}", PANO_JS, re.S).group(0)
-    assert "r.calisma" in ciz
-    assert '$("calisma-satiri").textContent = ' in ciz and '$("calisma-satiri").hidden = ' in ciz
+    assert "if (r.calisma)" in ciz
+    assert '"Bu ay çalışma"' in ciz and "calismaMetni(r.calisma)" in ciz
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")

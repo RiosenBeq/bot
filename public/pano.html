@@ -7,216 +7,242 @@
   <title>Uzak izleme panosu · NextGen Detector</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="/logo-kucuk.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/stil.css">
+  <link rel="stylesheet" href="/pano.css">
   <!-- demo.js yalnız /demo adresinde çalışır (örnek veri); pano.js'ten önce yüklenmeli -->
   <script src="/demo.js" defer></script>
   <script src="/pano.js" defer></script>
 </head>
 <body>
-  <svg class="gorsel-gizli" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><symbol id="i-genel" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/> <rect width="7" height="5" x="14" y="3" rx="1"/> <rect width="7" height="9" x="14" y="12" rx="1"/> <rect width="7" height="5" x="3" y="16" rx="1"/></symbol><symbol id="i-kamera" viewBox="0 0 24 24"><path d="M16.75 12h3.632a1 1 0 0 1 .894 1.447l-2.034 4.069a1 1 0 0 1-1.708.134l-2.124-2.97"/> <path d="M17.106 9.053a1 1 0 0 1 .447 1.341l-3.106 6.211a1 1 0 0 1-1.342.447L3.61 12.3a2.92 2.92 0 0 1-1.3-3.91L3.69 5.6a2.92 2.92 0 0 1 3.92-1.3z"/> <path d="M2 19h3.76a2 2 0 0 0 1.8-1.1L9 15"/> <path d="M2 21v-4"/> <path d="M7 9h.01"/></symbol><symbol id="i-olay" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/> <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol><symbol id="i-ekran" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/> <line x1="8" x2="16" y1="21" y2="21"/> <line x1="12" x2="12" y1="17" y2="21"/></symbol><symbol id="i-cikis" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"/> <path d="M21 12H9"/> <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></symbol><symbol id="i-ana" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/> <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol><symbol id="i-uyari" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/> <path d="M12 9v4"/> <path d="M12 17h.01"/></symbol><symbol id="i-tamam" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m16 9-5.5 5.5L8 12"/></symbol><symbol id="i-hata" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="m15 9-6 6"/> <path d="m9 9 6 6"/></symbol><symbol id="i-sistem" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-kural" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/> <path d="M12 8v4"/> <path d="M12 16h.01"/></symbol><symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 1 1 10 0v6"/> <path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/> <path d="M21 12h1"/> <path d="M18.5 4.5 18 5"/> <path d="M2 12h1"/> <path d="M12 2v1"/> <path d="m4.929 4.929.707.707"/> <path d="M12 12v6"/></symbol><symbol id="i-inceleme" viewBox="0 0 24 24"><path d="m8 11 2 2 4-4"/> <circle cx="11" cy="11" r="8"/> <path d="m21 21-4.3-4.3"/></symbol><symbol id="i-kopuk" viewBox="0 0 24 24"><path d="M12 20h.01"/> <path d="M8.5 16.429a5 5 0 0 1 7 0"/> <path d="M5 12.859a10 10 0 0 1 5.17-2.69"/> <path d="M19 12.859a10 10 0 0 0-2.007-1.523"/> <path d="M2 8.82a15 15 0 0 1 4.177-2.643"/> <path d="M22 8.82a15 15 0 0 0-11.288-3.764"/> <path d="m2 2 20 20"/></symbol><symbol id="i-kilavuz" viewBox="0 0 24 24"><path d="M12 5v16"/> <path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol><symbol id="i-yenile" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol><symbol id="i-dis" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol><symbol id="i-ileri" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol><symbol id="i-saat" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol><symbol id="i-kilit" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol><symbol id="i-yasak" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/> <path d="M4.929 4.929 19.07 19.071"/></symbol><symbol id="i-mesafe" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/> <path d="M4 7h16"/> <path d="m16 21 4-4-4-4"/> <path d="M20 17H4"/></symbol><symbol id="i-kkd" viewBox="0 0 24 24"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/> <path d="M14 6a6 6 0 0 1 6 6v3"/> <path d="M4 15v-3a6 6 0 0 1 6-6"/> <rect x="2" y="15" width="20" height="4" rx="1"/></symbol><symbol id="i-hiz" viewBox="0 0 24 24"><path d="m12 14 4-4"/> <path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol><symbol id="i-anons" viewBox="0 0 24 24"><path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/> <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14"/> <path d="M8 6v8"/></symbol><symbol id="i-rapor" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/> <path d="M14 2v5a1 1 0 0 0 1 1h5"/> <path d="M10 9H8"/> <path d="M16 13H8"/> <path d="M16 17H8"/></symbol><symbol id="i-kullanicilar" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/> <path d="M16 3.128a4 4 0 0 1 0 7.744"/> <path d="M22 21v-2a4 4 0 0 0-3-3.87"/> <circle cx="9" cy="7" r="4"/></symbol><symbol id="i-anahtar" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/> <circle cx="16.5" cy="7.5" r="1"/></symbol><symbol id="i-guc" viewBox="0 0 24 24"><path d="M12 2v10"/> <path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol><symbol id="i-indir" viewBox="0 0 24 24"><path d="M12 15V3"/> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/> <path d="m7 10 5 5 5-5"/></symbol><symbol id="i-teshis" viewBox="0 0 24 24"><path d="M11 2v2"/> <path d="M5 2v2"/> <path d="M5 3H4a2 2 0 0 0-2 2v4a6 6 0 0 0 12 0V5a2 2 0 0 0-2-2h-1"/> <path d="M8 15a6 6 0 0 0 12 0v-3"/> <circle cx="20" cy="10" r="2"/></symbol><symbol id="i-tesis" viewBox="0 0 24 24"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M17 18h1"/><path d="M12 18h1"/><path d="M7 18h1"/></symbol></svg>
+  <!-- Simgeler bu proje için elle çizildi (2. sürüm): 24 birimlik ızgara, 1,75
+       çizgi, yuvarlak uç ve köşe; renk currentColor (çizgi ayarları pano.css .simge). -->
+  <svg class="gorsel-gizli" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg"><symbol id="i-genel" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M3.5 10h17M10 10v10.5"/></symbol><symbol id="i-kamera" viewBox="0 0 24 24"><path d="M4 7.5h10.5a2 2 0 0 1 2 2V12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12.5" cy="10.75" r="1.25"/><path d="M16.5 9.5l3-1.5v5l-3-1.5"/><path d="M8 14v3.5H4.5M4.5 15.5v4.5"/></symbol><symbol id="i-olay" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol><symbol id="i-anons" viewBox="0 0 24 24"><path d="M3.5 10.5v3a1 1 0 0 0 1 1H7l9.5 5V4.5L7 9.5H4.5a1 1 0 0 0-1 1z"/><path d="M7 14.5l1.2 5h2.3l-1-4.5"/><path d="M19.5 9.5v5"/></symbol><symbol id="i-hoparlor" viewBox="0 0 24 24"><path d="M5 9.5h3l4.5-4v13L8 14.5H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a7.5 7.5 0 0 1 0 11"/></symbol><symbol id="i-guc" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.3a7.5 7.5 0 1 0 9.6 0"/></symbol><symbol id="i-kullanicilar" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.5"/><path d="M3 19.5a6 6 0 0 1 12 0"/><path d="M15.5 5.2a3.5 3.5 0 0 1 0 6.6"/><path d="M17.5 14.2a6 6 0 0 1 3.5 5.3"/></symbol><symbol id="i-tesis" viewBox="0 0 24 24"><path d="M3.5 20.5V10l5 3V10l5 3V5.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v15z"/><path d="M2 20.5h20"/><path d="M7.5 17h2M12.5 17h2"/></symbol><symbol id="i-sistem" viewBox="0 0 24 24"><path d="M2.5 12h4l2.5-6 4 12 2.5-6h6"/></symbol><symbol id="i-ileri" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol><symbol id="i-geri" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol><symbol id="i-acilir" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol><symbol id="i-yenile" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4v4.5H15"/></symbol><symbol id="i-tamam" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.3 12.3l2.5 2.5 5-5"/></symbol><symbol id="i-onay" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol><symbol id="i-uyari" viewBox="0 0 24 24"><path d="M10.3 4.3a2 2 0 0 1 3.4 0l7.3 12.7a2 2 0 0 1-1.7 3H4.7a2 2 0 0 1-1.7-3z"/><path d="M12 9.5v4"/><path d="M12 16.8v.01"/></symbol><symbol id="i-hata" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.3 9.3l5.4 5.4M14.7 9.3l-5.4 5.4"/></symbol><symbol id="i-kapat" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol><symbol id="i-kopuk" viewBox="0 0 24 24"><path d="M4 9.5a12 12 0 0 1 16 0"/><path d="M7 12.8a7.5 7.5 0 0 1 10 0"/><path d="M10 16a3 3 0 0 1 4 0"/><path d="M12 19.2v.01"/><path d="M4.5 4.5l15 15"/></symbol><symbol id="i-saat" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol><symbol id="i-kilit" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.5v2"/></symbol><symbol id="i-anahtar" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="4"/><path d="M11 12.5l8-8"/><path d="M16 7.5l2.5 2.5M14 9.5l1.5 1.5"/></symbol><symbol id="i-cikis" viewBox="0 0 24 24"><path d="M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10"/><path d="M14.5 8l4 4-4 4"/><path d="M18.5 12h-9"/></symbol><symbol id="i-dis" viewBox="0 0 24 24"><path d="M13.5 4.5h6v6"/><path d="M19.5 4.5l-8 8"/><path d="M18 14v4a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2H10"/></symbol><symbol id="i-kural" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.2c0 4.3-3 7.4-7 9-4-1.6-7-4.7-7-9V6.3z"/><path d="M9 12l2 2 4-4"/></symbol><symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 17v-4.5a5 5 0 0 1 10 0V17"/><rect x="4.5" y="17" width="15" height="3.5" rx="1.5"/><path d="M12 3.5V5M4.8 6.3l1 1M19.2 6.3l-1 1M3 12h1.5M19.5 12H21"/></symbol><symbol id="i-inceleme" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5l4.5 4.5"/><path d="M8 10.7l1.7 1.7 3.2-3.2"/></symbol><symbol id="i-rapor" viewBox="0 0 24 24"><path d="M6.5 3.5h7l4 4v13h-11A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5z"/><path d="M13.5 3.5v4h4"/><path d="M8.5 17v-2.5M11.5 17v-4.5M14.5 17v-3"/></symbol><symbol id="i-teshis" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2.5"/><path d="M9 4.5v-1h6v1"/><path d="M7.5 13h2.2l1.3-3 2 6 1.3-3h2.2"/></symbol><symbol id="i-indir" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7.5 10.5L12 15l4.5-4.5"/><path d="M4.5 16.5V18a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-1.5"/></symbol><symbol id="i-goz" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol><symbol id="i-goz-kapali" viewBox="0 0 24 24"><path d="M4.5 4.5l15 15"/><path d="M9.9 5.8A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.6 3.4"/><path d="M6.3 7.7C3.9 9.4 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.1-1"/></symbol><symbol id="i-kopyala" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol><symbol id="i-yukleniyor" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/></symbol><symbol id="i-yukari" viewBox="0 0 24 24"><path d="M12 19V5.5"/><path d="M6.5 11L12 5.5 17.5 11"/></symbol><symbol id="i-asagi" viewBox="0 0 24 24"><path d="M12 5v13.5"/><path d="M6.5 13L12 18.5 17.5 13"/></symbol><symbol id="i-posta" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M4 7.5l8 6 8-6"/></symbol><symbol id="i-bilgi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 7.9v.01"/></symbol><symbol id="i-ana" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-4v-5h-5v5h-4A1.5 1.5 0 0 1 4 19z"/></symbol><symbol id="i-foto" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.75"/><path d="M4 17l5-4.5 3.5 3 2.5-2 5 4"/></symbol><symbol id="i-arti" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol><symbol id="i-daha" viewBox="0 0 24 24"><path d="M6 12v.01M12 12v.01M18 12v.01"/></symbol></svg>
   <a class="atlama" href="#icerik">İçeriğe geç</a>
 
   <!-- Ekran okuyucuya yalnız durum DEĞİŞİNCE söylenir (her tazelemede değil). -->
   <p id="duyuru" class="gorsel-gizli" role="status" aria-live="polite"></p>
 
-  <!-- Tek kartlık ekranlar: yükleniyor, kurulum eksik, giriş (Innex kayıt kartı) -->
-  <main id="tek-ekran" class="tek-ekran">
-    <section id="yukleniyor" class="tek-kart" aria-busy="true">
-      <a class="logo-satiri" href="/">
-        <img src="/logo.svg" alt="" width="32" height="32">
-        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
-      </a>
-      <p id="yukleniyor-metni" class="ikincil-metin">Yükleniyor...</p>
-    </section>
-
-    <section id="kurulum" class="tek-kart genis" hidden aria-labelledby="kurulum-baslik">
-      <a class="logo-satiri" href="/">
-        <img src="/logo.svg" alt="" width="32" height="32">
-        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
-      </a>
-      <div>
-        <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
-        <p class="aciklama">Vercel'de şu ayarlar eksik:</p>
+  <!-- Tek ekranlar: yükleniyor, kurulum eksik, giriş. Solda (telefonda üstte)
+       koyu marka paneli: Eşik logosunun görüş alanı ve eşikteki kişi. -->
+  <div id="tek-ekran" class="tek-ekran">
+    <aside class="marka-paneli" aria-hidden="true">
+      <span class="halka halka-alan"></span>
+      <span class="halka halka-cizgi"></span>
+      <span class="halka halka-ic"></span>
+      <span class="halka halka-dis"></span>
+      <span class="halka halka-en-dis"></span>
+      <span class="esik"></span>
+      <span class="esik esik-nefes"></span>
+      <span class="marka-adi"><img src="/logo.svg" alt="" width="36" height="36"><span><b>NextGen Detector</b><small>DALSAN İSG</small></span></span>
+      <div class="marka-metni">
+        <p class="marka-ust">Uzak izleme panosu</p>
+        <h2>Fabrikadaki güvenliği, uzaktan da bir bakışta görün.</h2>
+        <p>Görüntü fabrikada işlenir; buraya yalnız imzalı durum özeti ve kanıt fotoğrafı gelir.</p>
       </div>
-      <ul id="eksik-listesi" class="satirlar"></ul>
-      <ol class="adimlar">
-        <li><span>Vercel'de projeyi açın. <b>Storage</b> sekmesinden <b>Upstash</b> (Redis) veritabanı oluşturup bu projeye bağlayın.</span></li>
-        <li><span><b>Settings → Environment Variables</b> bölümüne iki ayar ekleyin: <code>PANO_SIFRESI</code> (panoya giriş şifresi, en az 10 karakter) ve <code>RAPOR_ANAHTARI</code> (aşağıdaki anahtar).</span></li>
-        <li><span><b>Deployments</b> sekmesinde son yayının menüsünden <b>Redeploy</b> deyin.</span></li>
-      </ol>
-      <div>
-        <p class="not">Önerilen rapor anahtarı (bu tarayıcıda üretildi, hiçbir yere gönderilmedi):</p>
-        <div class="anahtar-kutusu">
-          <code id="onerilen-anahtar"></code>
-          <button id="anahtar-kopyala" class="dugme ikincil" type="button">Kopyala</button>
-        </div>
-      </div>
-      <p class="not">Aynı anahtarı fabrika programında <b>Ayarlar → Uzak izleme panosu</b> bölümündeki <b>Uzak pano anahtarı</b> kutusuna da yazacaksınız.</p>
-    </section>
+    </aside>
 
-    <section id="giris" class="tek-kart" hidden aria-labelledby="giris-baslik">
-      <a class="logo-satiri" href="/">
-        <img src="/logo.svg" alt="" width="32" height="32">
-        <span><b>NextGen Detector</b><small>Uzak izleme panosu</small></span>
-      </a>
-      <div>
-        <h1 id="giris-baslik">Panoya giriş</h1>
-        <p class="aciklama">Fabrikadaki sistemin durumunu buradan izlersiniz.</p>
-      </div>
-      <form id="giris-formu" class="form" novalidate>
-        <label for="ad">Kullanıcı adı</label>
-        <input id="ad" name="ad" type="text" autocomplete="username" required maxlength="32" placeholder="Kullanıcı adınız" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi">
-        <label for="sifre">Şifre</label>
-        <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200" placeholder="Şifreniz" aria-describedby="giris-hatasi">
-        <!-- İki adımlı doğrulama açık hesapta sunucu "iki_adim_gerekli" deyince açılır -->
-        <div id="giris-kod-alani" class="form" hidden>
-          <label for="giris-kod">Doğrulama kodu</label>
-          <input id="giris-kod" name="kod" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi giris-kod-notu">
-          <p id="giris-kod-notu" class="not">Bu hesapta iki adımlı doğrulama açık. Telefonunuzdaki doğrulama uygulamasında (Google Authenticator ya da Microsoft Authenticator) DALSAN satırının gösterdiği kodu yazın.</p>
-        </div>
-        <p id="giris-hatasi" class="hata" role="alert"></p>
-        <button id="giris-dugmesi" class="dugme birincil tam" type="submit">Giriş yap <svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>
-      </form>
-      <p class="not">Hesabınızı yöneticiniz açar. Site ilk kurulduğunda tek hesap vardır: kullanıcı adı <code>kurucu</code>, şifresi Vercel'deki <code>PANO_SIFRESI</code>. Aynı adresten 5 yanlış denemede giriş 5 dakika kilitlenir.</p>
-    </section>
-  </main>
+    <main class="tek-tabaka">
+      <div class="tek-kutu">
+        <section id="yukleniyor" class="tek-adim" aria-busy="true" aria-labelledby="yukleniyor-baslik">
+          <span class="bekleme-kutusu"><svg class="simge donus" aria-hidden="true"><use href="#i-yukleniyor"/></svg></span>
+          <div class="tek-basligi">
+            <h1 id="yukleniyor-baslik">Pano açılıyor…</h1>
+            <p id="yukleniyor-metni">Fabrikadan gelen son durum okunuyor.</p>
+          </div>
+        </section>
 
-  <!-- Pano: masaüstünde kenar çubuğu + sayfa kartı (Innex), telefonda beyaz
-       sayfa + yüzen cam sekme çubuğu (lafmobil). -->
+        <section id="kurulum" class="tek-adim" hidden aria-labelledby="kurulum-baslik">
+          <div class="tek-basligi">
+            <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
+            <p id="kurulum-alt">Vercel'de iki ayar eksik. Üç adımda biter.</p>
+          </div>
+          <ol class="adimlar">
+            <li><span class="adim-no">1</span><span><b>Storage</b> sekmesinden Upstash (Redis) bağlayın.</span></li>
+            <li><span class="adim-no">2</span><span><b>PANO_SIFRESI</b> ve <b>RAPOR_ANAHTARI</b> ayarlarını ekleyin.</span></li>
+            <li><span class="adim-no">3</span><span>Son yayını <b>Redeploy</b> edin. İlk girişte kullanıcı adı <code>kurucu</code>, şifre <b>PANO_SIFRESI</b>.</span></li>
+          </ol>
+          <div class="anahtar-alani">
+            <span class="not">Önerilen rapor anahtarı</span>
+            <div class="anahtar-kutusu">
+              <code id="onerilen-anahtar"></code>
+              <button id="anahtar-kopyala" class="dugme kopya-dugmesi" type="button"><svg class="simge" aria-hidden="true"><use href="#i-kopyala"/></svg><span>Kopyala</span></button>
+            </div>
+            <span class="alan-notu">Aynı anahtar fabrika programına da yazılır.</span>
+          </div>
+        </section>
+
+        <section id="giris" class="tek-adim" hidden aria-labelledby="giris-baslik">
+          <form id="giris-formu" class="giris-formu" novalidate>
+            <div id="giris-sifre-adimi" class="giris-adimi">
+              <div class="tek-basligi">
+                <h1 id="giris-baslik">Giriş yap</h1>
+                <p>Kişisel hesabınızla devam edin.</p>
+              </div>
+              <p id="oturum-bandi" class="oturum-bandi" role="status" hidden><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg><span>Oturumunuzun süresi doldu. Girişten sonra kaldığınız yere dönersiniz.</span></p>
+              <div class="alan">
+                <label for="ad">Kullanıcı adı</label>
+                <input id="ad" name="ad" type="text" autocomplete="username" required maxlength="32" placeholder="ör. ahmet.yilmaz" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi">
+              </div>
+              <div class="alan">
+                <label for="sifre">Şifre</label>
+                <div class="sifre-kutusu">
+                  <input id="sifre" name="sifre" type="password" autocomplete="current-password" required maxlength="200" placeholder="Şifreniz" aria-describedby="giris-hatasi">
+                  <button id="sifre-goster" class="goz-dugmesi" type="button" aria-label="Şifreyi göster" aria-pressed="false"><svg class="simge" aria-hidden="true"><use href="#i-goz"/></svg></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- İki adımlı doğrulama açık hesapta sunucu "iki_adim_gerekli" deyince açılır -->
+            <div id="giris-kod-alani" class="giris-adimi" hidden>
+              <button id="kod-geri" class="geri-bag" type="button"><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg><span id="kod-hesap"></span></button>
+              <div class="tek-basligi">
+                <h1>Doğrulama kodu</h1>
+                <p id="giris-kod-notu">Telefonunuzdaki doğrulama uygulamasında DALSAN satırının gösterdiği 6 haneli kod.</p>
+              </div>
+              <div class="kod-kutulari">
+                <label for="giris-kod" class="gorsel-gizli">Doğrulama kodu</label>
+                <div id="kod-haneleri" class="kod-haneleri" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                <input id="giris-kod" name="kod" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi giris-kod-notu">
+              </div>
+            </div>
+
+            <div id="giris-hata-kutusu" class="hata-kutusu" hidden><svg class="simge" aria-hidden="true"><use href="#i-uyari"/></svg><span id="giris-hatasi" role="alert"></span></div>
+            <button id="giris-dugmesi" class="dugme koyu iri tam" type="submit"><svg class="simge donus bekleme" aria-hidden="true"><use href="#i-yukleniyor"/></svg><span id="giris-dugme-metni">Giriş yap</span><svg class="simge ileri" aria-hidden="true"><use href="#i-ileri"/></svg></button>
+          </form>
+          <p id="giris-notu" class="tek-notu"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg><span>Hesabınızı yöneticiniz açar.</span></p>
+          <p id="kod-notu" class="tek-notu" hidden><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg><span>Kod 30 saniyede bir değişir.</span></p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Pano: masaüstünde kenar çubuğu + sayfa kartı, telefonda (1024 px altı)
+       beyaz sayfa + yapışkan cam üst çubuk + yüzen cam sekme çubuğu. -->
   <div id="kabuk" class="kabuk" hidden>
     <aside class="kenar">
       <a class="logo-satiri" href="/">
         <img src="/logo.svg" alt="" width="32" height="32">
-        <span><b>NextGen Detector</b><small>DALSAN İSG · Uzak izleme</small></span>
+        <span><b>NextGen Detector</b><small>Uzak izleme</small></span>
       </a>
-      <nav aria-label="Ana menü">
+      <nav class="menu" aria-label="Ana menü">
         <p class="grup-basligi">İZLEME</p>
         <a class="menu-ogesi" href="#genel" data-gorunum="genel"><svg class="simge" aria-hidden="true"><use href="#i-genel"/></svg>Genel bakış</a>
         <a class="menu-ogesi" href="#kameralar" data-gorunum="kameralar"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg>Kameralar<span class="sayac" data-sayac="kamera" hidden></span></a>
         <a class="menu-ogesi" href="#olaylar" data-gorunum="olaylar"><svg class="simge" aria-hidden="true"><use href="#i-olay"/></svg>Olaylar<span class="sayac" data-sayac="olay" hidden></span></a>
-        <p class="grup-basligi">FABRİKA</p>
+        <p id="fabrika-grubu" class="grup-basligi" hidden>FABRİKA</p>
         <a class="menu-ogesi" href="#mudahale" data-gorunum="mudahale" hidden><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Müdahale</a>
         <a class="menu-ogesi" href="#yonetim" data-gorunum="yonetim" hidden><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg>Yönetim</a>
         <a class="menu-ogesi" href="#kullanicilar" data-gorunum="kullanicilar" hidden><svg class="simge" aria-hidden="true"><use href="#i-kullanicilar"/></svg>Kullanıcılar</a>
         <a class="menu-ogesi" href="#tesisler" data-gorunum="tesisler" hidden><svg class="simge" aria-hidden="true"><use href="#i-tesis"/></svg>Tesisler</a>
-        <a class="menu-ogesi" href="#sistem" data-gorunum="sistem"><svg class="simge" aria-hidden="true"><use href="#i-sistem"/></svg>Sistem</a>
-        <a class="menu-ogesi" id="kenar-fabrika" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrika ekranı<svg class="simge" aria-hidden="true"><use href="#i-dis"/></svg></a>
       </nav>
       <div class="kenar-alt">
-        <a class="menu-ogesi" href="/"><svg class="simge" aria-hidden="true"><use href="#i-ana"/></svg>Tanıtım sayfası</a>
-        <button class="menu-ogesi" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
+        <a class="hesap-bagi" href="#sistem" data-gorunum="sistem">
+          <span id="kenar-bas" class="bas" aria-hidden="true"></span>
+          <span class="hesap-adi"><b id="kenar-ad"></b><small id="kenar-rol"></small></span>
+        </a>
+        <button class="ikon-dugme" type="button" data-cikis aria-label="Çıkış" title="Çıkış"><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg></button>
       </div>
     </aside>
 
     <div class="sayfa-karti">
       <header class="ust-cubuk">
-        <a class="mobil-logo" href="/"><img src="/logo.svg" alt="" width="26" height="26">NextGen Detector</a>
-        <div class="yol"><span>Uzak izleme</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg><b id="yol-adi">Genel bakış</b></div>
+        <div class="ust-sol">
+          <a id="geri-dugmesi" class="ikon-dugme geri-dugmesi" href="#sistem" aria-label="Sistem ekranına dön" hidden><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg></a>
+          <img id="mobil-logo" class="mobil-logo" src="/logo.svg" alt="" width="28" height="28">
+          <div class="baslik-metni">
+            <h1 id="gorunum-basligi">Genel bakış</h1>
+            <p id="gorunum-aciklamasi"></p>
+          </div>
+        </div>
         <div class="ust-sag">
-          <span id="son-rapor" class="not saat"></span>
-          <span id="baglanti-hapi" class="rozet"></span>
+          <span id="baglanti-hapi" class="hap" role="status"><span class="nokta"></span><span id="hap-metni" class="hap-metni"></span><span id="son-rapor" class="hap-saat"></span><span id="hap-kisa" class="hap-kisa"></span></span>
+          <button id="yenile" class="ikon-dugme kenarli" type="button" aria-label="Yenile" title="Yenile"><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg></button>
         </div>
       </header>
 
-      <div class="baslik-seridi">
-        <div>
-          <h1 id="gorunum-basligi">Genel bakış</h1>
-          <p id="gorunum-aciklamasi"></p>
-        </div>
-        <div class="baslik-eylemleri">
-          <button id="yenile" class="dugme ikincil" type="button" aria-label="Yenile"><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg><span class="metinli">Yenile</span></button>
-          <a id="fabrika-dugmesi" class="dugme birincil" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg><span class="metinli">Fabrika ekranı</span></a>
-        </div>
-      </div>
-
-      <main id="icerik" class="icerik">
+      <main id="icerik" class="icerik" tabindex="-1">
         <p id="onizleme-bandi" class="pano-bandi onizleme-bandi" role="status" hidden></p>
         <p id="kurucu-bandi" class="pano-bandi kurucu-bandi" role="status" hidden></p>
         <p id="sifre-bandi" class="pano-bandi sifre-bandi" role="status" hidden></p>
-        <p id="site-uyarisi" class="site-uyarisi" hidden></p>
+        <p id="site-uyarisi" class="site-uyarisi" role="alert" hidden></p>
 
-        <section id="durum-bandi" class="durum-bandi" aria-labelledby="durum-baslik">
-          <span class="ikon-kutu"><svg class="simge buyuk" aria-hidden="true"><use id="durum-simgesi" href="#i-sistem"/></svg></span>
-          <div>
+        <!-- Tek uyarı: bağlantı yoksa (kırmızı), program bilerek kapatıldıysa
+             (nötr), Genel bakışta da kamera ya da sistem sorunu varsa (turuncu).
+             Her şey yolundaysa hiç çıkmaz; üst çubuktaki hap yeter. -->
+        <section id="durum-bandi" class="uyari-bandi" role="status" hidden aria-labelledby="durum-baslik">
+          <span class="uyari-diski"><svg class="simge" aria-hidden="true"><use id="durum-simgesi" href="#i-kopuk"/></svg></span>
+          <div class="uyari-govde">
             <h2 id="durum-baslik"></h2>
             <p id="durum-alt"></p>
+            <ol id="durum-listesi" class="uyari-listesi" hidden></ol>
           </div>
+          <a id="durum-eylemi" class="uyari-eylemi" href="#kameralar" hidden><span id="durum-eylem-metni">Kameraları gör</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
         </section>
 
         <!-- GENEL BAKIŞ -->
         <div class="gorunum" data-gorunum="genel">
-          <section id="sorunlar" class="kart sorunlar" hidden aria-labelledby="sorunlar-baslik">
-            <div class="kart-basligi"><h2 id="sorunlar-baslik">Dikkat gereken sorunlar</h2></div>
-            <ul id="sorun-listesi"></ul>
-          </section>
-
-          <section id="ozet" class="kart ozet veri" aria-labelledby="ozet-baslik">
-            <div class="kart-basligi"><div><h2 id="ozet-baslik">Bugünün özeti</h2><p id="ozet-alt">Fabrikadan gelen son rapora göre</p></div></div>
-            <ul id="ozet-listesi" class="ozet-listesi"></ul>
-          </section>
-
           <section class="kpi veri" aria-label="Bugünün sayıları">
-            <div class="kpi-hucre">
-              <span class="kpi-etiket"><span class="ikon-kutu gul"><svg class="simge" aria-hidden="true"><use href="#i-siren"/></svg></span>Bugünkü ihlal</span>
-              <span class="kpi-satir"><span class="kpi-deger" id="k-ihlal">-</span><span class="degisim notr" id="k-ihlal-degisim" hidden></span></span>
+            <button id="kpi-ihlal" class="kpi-hucre" type="button">
+              <span class="kpi-etiket">Bugün ihlal</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-ihlal">-</span><span class="degisim" id="k-ihlal-degisim" hidden><svg class="simge" aria-hidden="true"><use href="#i-yukari"/></svg><span></span></span></span>
               <span class="kpi-referans" id="k-ihlal-ref"></span>
-            </div>
-            <div class="kpi-hucre">
-              <span class="kpi-etiket"><span class="ikon-kutu bal"><svg class="simge" aria-hidden="true"><use href="#i-inceleme"/></svg></span>İncelenmeyi bekleyen</span>
+            </button>
+            <button id="kpi-hafta" class="kpi-hucre" type="button">
+              <span class="kpi-etiket">Son 7 gün</span>
+              <span class="kpi-satir"><span class="kpi-deger" id="k-hafta">-</span><span class="degisim" id="k-hafta-degisim" hidden><svg class="simge" aria-hidden="true"><use href="#i-yukari"/></svg><span></span></span></span>
+              <span class="kpi-referans" id="k-hafta-ref"></span>
+            </button>
+            <button id="kpi-bekleyen" class="kpi-hucre" type="button">
+              <span class="kpi-etiket">İnceleme bekleyen</span>
               <span class="kpi-satir"><span class="kpi-deger" id="k-bekleyen">-</span></span>
               <span class="kpi-referans" id="k-bekleyen-ref"></span>
-            </div>
-            <div class="kpi-hucre">
-              <span class="kpi-etiket"><span class="ikon-kutu"><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg></span>Canlı kamera</span>
+            </button>
+            <button id="kpi-kamera" class="kpi-hucre" type="button">
+              <span class="kpi-etiket">Canlı kamera</span>
               <span class="kpi-satir"><span class="kpi-deger" id="k-kamera">-</span></span>
               <span class="kpi-referans" id="k-kamera-ref"></span>
-            </div>
-            <div class="kpi-hucre">
-              <span class="kpi-etiket"><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-kural"/></svg></span>Aktif kural</span>
-              <span class="kpi-satir"><span class="kpi-deger" id="k-kural">-</span></span>
-              <span class="kpi-referans" id="k-kural-ref"></span>
-            </div>
+            </button>
           </section>
 
-          <div class="izgara-23 veri">
+          <div class="izgara-ana veri">
             <div class="sutun">
-              <section id="gunluk-kart" class="kart" aria-labelledby="gunluk-baslik" hidden>
+              <section class="kart" aria-labelledby="grafik-baslik">
                 <div class="kart-basligi">
-                  <div><h2 id="gunluk-baslik">Son 14 gün</h2><p id="gunluk-ozet"></p></div>
-                  <span id="hafta-degisim" class="degisim notr"></span>
+                  <div><h2 id="grafik-baslik">İhlaller</h2><p id="grafik-ozet"></p></div>
+                  <div id="grafik-segmenti" class="segment" role="group" aria-label="Dönem">
+                    <button type="button" data-grafik="bugun" aria-pressed="true">Bugün</button>
+                    <button type="button" data-grafik="gun14" aria-pressed="false">14 gün</button>
+                  </div>
                 </div>
-                <div id="gunluk" class="saatlik gunluk" role="img"></div>
-                <div id="gun-etiketleri" class="saat-etiketleri gunluk" aria-hidden="true"></div>
-                <p id="inceleme-ozeti" class="kart-dipnot"></p>
-              </section>
-              <section class="kart" aria-labelledby="saatlik-baslik">
-                <div class="kart-basligi">
-                  <div><h2 id="saatlik-baslik">Bugün saat saat ihlal</h2><p id="saatlik-ozet"></p></div>
-                </div>
-                <div id="saatlik" class="saatlik" role="img"></div>
-                <div id="saat-etiketleri" class="saat-etiketleri" aria-hidden="true"></div>
+                <div id="grafik" class="grafik saatlik" role="img"></div>
+                <div id="grafik-etiketleri" class="grafik-etiketleri saatlik" aria-hidden="true"></div>
               </section>
               <section class="kart" aria-labelledby="genel-olay-baslik">
-                <div class="kart-basligi">
-                  <div><h2 id="genel-olay-baslik">Son olaylar</h2><p>Fotoğrafa dokununca büyür</p></div>
+                <div class="kart-basligi tek-satir">
+                  <h2 id="genel-olay-baslik">Son olaylar</h2>
+                  <a class="bag" href="#olaylar">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
                 </div>
-                <ul id="genel-olaylar" class="cizelge"></ul>
-                <div class="kart-alt"><a class="bag" href="#olaylar">Tüm olaylar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
+                <ul id="genel-olaylar" class="liste"></ul>
               </section>
             </div>
             <div class="sutun">
               <section class="kart" aria-labelledby="genel-kamera-baslik">
-                <div class="kart-basligi"><h2 id="genel-kamera-baslik">Kameralar</h2></div>
-                <ul id="genel-kameralar" class="satirlar"></ul>
-                <div class="kart-alt"><a class="bag" href="#kameralar">Tüm kameralar<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a></div>
+                <div class="kart-basligi tek-satir">
+                  <h2 id="genel-kamera-baslik">Kameralar</h2>
+                  <a class="bag" href="#kameralar">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+                </div>
+                <div id="kamera-seridi" class="kamera-seridi" role="img"></div>
+                <p id="kamera-ozeti" class="kamera-ozeti"></p>
+                <ul id="genel-kameralar" class="liste"></ul>
               </section>
-              <section id="yerler-kart" class="kart" aria-labelledby="yerler-baslik" hidden>
-                <div class="kart-basligi"><div><h2 id="yerler-baslik">En çok ihlal görülen yerler</h2><p>Son 7 gün, kamera başına</p></div></div>
-                <ul id="yerler" class="lejant"></ul>
-              </section>
-              <section class="kart" aria-labelledby="oge-baslik">
-                <div class="kart-basligi"><div><h2 id="oge-baslik">İhlal türleri</h2><p>Son 7 gün</p></div></div>
-                <ul id="ogeler" class="lejant"></ul>
+              <section class="kart" aria-labelledby="encok-baslik">
+                <div class="kart-basligi">
+                  <div><h2 id="encok-baslik">En çok ihlal</h2><p>Son 7 gün</p></div>
+                  <div id="encok-segmenti" class="segment" role="group" aria-label="Gruplama">
+                    <button type="button" data-encok="yer" aria-pressed="true">Yer</button>
+                    <button type="button" data-encok="tur" aria-pressed="false">Tür</button>
+                  </div>
+                </div>
+                <ul id="encok" class="cubuk-listesi"></ul>
               </section>
             </div>
           </div>
@@ -224,321 +250,317 @@
 
         <!-- KAMERALAR -->
         <div class="gorunum" data-gorunum="kameralar" hidden>
-          <section id="kare-bolumu" class="kart" aria-labelledby="kare-baslik" hidden>
-            <div class="kart-basligi">
-              <div><h2 id="kare-baslik">Anlık görüntü</h2><p id="kare-alt"></p></div>
-              <button id="kare-surdur" class="dugme ikincil" type="button" hidden><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg>Sürdür</button>
+          <div class="arac-satiri">
+            <div id="kamera-cipleri" class="cipler" role="group" aria-label="Kamera süzgeci">
+              <button class="cip" type="button" data-suzgec="hepsi" aria-pressed="true">Tümü<span class="cip-sayi" data-cip="hepsi">0</span></button>
+              <button class="cip" type="button" data-suzgec="sorunlu" aria-pressed="false">Sorunlu<span class="cip-sayi" data-cip="sorunlu">0</span></button>
+              <button class="cip" type="button" data-suzgec="canli" aria-pressed="false">Canlı<span class="cip-sayi" data-cip="canli">0</span></button>
             </div>
-            <div id="kare-izgarasi" class="kare-izgarasi"></div>
-          </section>
-          <div class="araclar">
-            <div class="cipler" id="kamera-cipleri" role="group" aria-label="Kamera süzgeci">
-              <button class="cip" type="button" data-suzgec="hepsi" aria-pressed="true">Tümü <span class="sayac" data-cip="hepsi">0</span></button>
-              <button class="cip" type="button" data-suzgec="canli" aria-pressed="false">Canlı <span class="sayac" data-cip="canli">0</span></button>
-              <button class="cip" type="button" data-suzgec="sorunlu" aria-pressed="false">Sorunlu <span class="sayac" data-cip="sorunlu">0</span></button>
-              <button class="cip" type="button" data-suzgec="pasif" aria-pressed="false">Pasif <span class="sayac" data-cip="pasif">0</span></button>
-            </div>
+            <button id="kare-surdur" class="dugme ikincil" type="button" hidden><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg>Görüntüyü sürdür</button>
           </div>
-          <div class="tablo-kap mobil-gizle">
-            <table class="tablo">
-              <thead><tr><th>Kamera</th><th>Durum</th><th class="sag">İşlenen kare</th><th class="sag">Okunan kare</th><th class="sag">Son görüntü</th></tr></thead>
-              <tbody id="kamera-tablosu"></tbody>
-            </table>
+          <div id="kare-izgarasi" class="kare-izgarasi"></div>
+          <div id="kamera-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-kamera"/></svg><b id="kamera-bos-baslik">Bu süzgeçte kamera yok</b></div>
+          <div class="dipnot-satiri">
+            <p id="kare-alt" class="not"></p>
+            <a id="fabrika-dugmesi" class="bag" href="/" target="_blank" rel="noopener noreferrer" hidden>Fabrika ekranını aç<svg class="simge" aria-hidden="true"><use href="#i-dis"/></svg></a>
           </div>
-          <section class="kart yalniz-mobil" aria-label="Kameralar">
-            <ul id="kamera-listesi" class="satirlar"></ul>
-          </section>
-          <p class="not">Kare hızları saniyedeki karedir: "işlenen" analizin yetiştirdiği, "okunan" kameranın gönderdiği.</p>
         </div>
 
         <!-- OLAYLAR -->
         <div class="gorunum" data-gorunum="olaylar" hidden>
-          <div class="araclar">
-            <div class="segment" id="olay-segmenti" role="group" aria-label="Olay türü">
+          <div class="arac-satiri">
+            <div id="olay-segmenti" class="segment iri" role="group" aria-label="Olay türü">
               <button type="button" data-tur="hepsi" aria-pressed="true">Tümü</button>
               <button type="button" data-tur="ihlal" aria-pressed="false">İhlal</button>
               <button type="button" data-tur="sistem" aria-pressed="false">Sistem</button>
             </div>
+            <button id="bekleyen-cipi" class="cip bekleyen-cipi" type="button" aria-pressed="false">Bekleyenler<span id="bekleyen-sayisi" class="sayac uyari">0</span></button>
           </div>
-          <section class="kart" aria-label="Olay listesi">
-            <ul id="olay-cizelgesi" class="cizelge"></ul>
-          </section>
-          <p class="not">Son 20 olay. Fotoğrafa dokununca büyür; kanıt fotoğrafları 7 gün sonra bu siteden silinir, asılları fabrikadaki bilgisayarda kalır.</p>
+          <div id="olay-gruplari" class="olay-gruplari"></div>
+          <div id="olay-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg><b id="olay-bos-baslik"></b><span id="olay-bos-metni"></span></div>
+          <p class="not">Son 20 olay. Kanıt fotoğrafları bu sitede 7 gün durur; asılları fabrikadadır.</p>
         </div>
 
         <!-- MÜDAHALE -->
         <div class="gorunum" data-gorunum="mudahale" hidden>
-          <section id="mudahale-durumu" class="durum-bandi" aria-live="polite" aria-labelledby="mudahale-baslik">
-            <span class="ikon-kutu"><svg class="simge buyuk" aria-hidden="true"><use id="mudahale-simgesi" href="#i-anons"/></svg></span>
-            <div>
-              <h2 id="mudahale-baslik">Durum okunuyor</h2>
-              <p id="mudahale-alt"></p>
-            </div>
-            <button id="dinlemeyi-surdur" class="dugme ikincil" type="button" hidden>Sürdür</button>
-          </section>
-          <div class="izgara-23">
-            <div class="sutun">
-              <section class="kart" aria-labelledby="anons-baslik">
-                <div class="kart-basligi"><div><h2 id="anons-baslik">Anons yap</h2><p>Fabrikanın Anons sayfasındaki hazır mesajlardan biri çalar</p></div></div>
-                <form id="anons-formu" class="mudahale-formu" novalidate>
-                  <fieldset>
-                    <legend>Mesaj</legend>
-                    <div id="mesaj-secenekleri" class="secim-listesi"></div>
-                  </fieldset>
-                  <label for="anons-kanali">Nereden çalsın</label>
-                  <select id="anons-kanali"></select>
-                  <div id="anons-onayi" class="onay-kutusu" hidden>
-                    <p id="anons-onay-metni"></p>
-                    <div class="dugmeler">
-                      <button id="anons-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
-                      <button id="anons-gonder" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Evet, çal</button>
-                    </div>
+          <div class="izgara-ana">
+            <section class="kart" aria-labelledby="anons-baslik">
+              <div class="kart-basligi tek-satir">
+                <h2 id="anons-baslik">Anons yap</h2>
+                <span id="dinleme-hapi" class="hap kucuk"><span class="nokta"></span><span id="dinleme-metni">Durum okunuyor</span></span>
+              </div>
+              <div id="mudahale-durumu" class="durum-notu" aria-live="polite" hidden>
+                <p id="mudahale-alt"></p>
+                <button id="dinlemeyi-surdur" class="dugme ikincil" type="button" hidden>Sürdür</button>
+              </div>
+              <form id="anons-formu" class="anons-formu" novalidate>
+                <fieldset>
+                  <legend><span class="adim-no">1</span>Mesaj</legend>
+                  <div id="mesaj-secenekleri" class="secim-listesi"></div>
+                </fieldset>
+                <fieldset>
+                  <legend><span class="adim-no">2</span>Nerede çalsın</legend>
+                  <div id="kanal-cipleri" class="cipler" role="group" aria-label="Kanal"></div>
+                </fieldset>
+                <div id="anons-onayi" class="onay-kutusu" hidden>
+                  <p id="anons-onay-metni"></p>
+                  <div class="dugmeler">
+                    <button id="anons-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                    <button id="anons-gonder" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Evet, çal</button>
                   </div>
-                  <button id="anons-dugmesi" class="dugme birincil tam" type="button"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Anonsu çal</button>
+                </div>
+                <div id="anons-alt" class="anons-alt">
+                  <button id="anons-dugmesi" class="dugme birincil iri tam" type="button"><svg class="simge" aria-hidden="true"><use href="#i-anons"/></svg>Anonsu çal</button>
                   <p id="anons-hatasi" class="hata" role="alert"></p>
-                </form>
-              </section>
-            </div>
+                </div>
+              </form>
+            </section>
             <div class="sutun">
               <section class="kart" aria-labelledby="deneme-baslik">
-                <div class="kart-basligi"><div><h2 id="deneme-baslik">Hoparlör denemesi</h2><p>Seçilen kanaldan kısa bir deneme sesi</p></div></div>
-                <ul id="kanal-listesi" class="satirlar"></ul>
+                <div class="kart-basligi"><div><h2 id="deneme-baslik">Hoparlör denemesi</h2><p>Kısa bir deneme sesi; iki dokunuşla</p></div></div>
+                <ul id="kanal-listesi" class="liste"></ul>
                 <p id="deneme-hatasi" class="hata" role="alert"></p>
               </section>
               <section class="kart" aria-labelledby="gecmis-baslik">
-                <div class="kart-basligi"><div><h2 id="gecmis-baslik">Son müdahaleler</h2><p>Sonuç fabrikadan gelince kendiliğinden güncellenir</p></div></div>
-                <ul id="komut-listesi" class="cizelge"></ul>
+                <div class="kart-basligi"><h2 id="gecmis-baslik">Son müdahaleler</h2></div>
+                <ul id="komut-listesi" class="liste"></ul>
               </section>
             </div>
           </div>
-          <p class="not">Gerçek bir uyarı her zaman önce çalar. Her müdahale fabrikadaki Olaylar'a yazılır ve izleme ekranlarında görünür.</p>
         </div>
 
         <!-- SİSTEM -->
         <div class="gorunum" data-gorunum="sistem" hidden>
-          <div class="izgara-23">
+          <div class="izgara-ana">
             <div class="sutun">
               <section class="kart" aria-labelledby="sistem-baslik">
-                <div class="kart-basligi"><h2 id="sistem-baslik">Bağlantı ve program</h2></div>
-                <dl id="sistem-bilgisi" class="ozellikler-listesi"></dl>
-                <p id="calisma-satiri" class="kart-dipnot" hidden></p>
-              </section>
+                <div class="kart-basligi tek-satir">
+                  <h2 id="sistem-baslik">Bağlantı</h2>
+                  <span id="sistem-hapi" class="hap kucuk"><span class="nokta"></span><span id="sistem-hap-metni"></span></span>
+                </div>
+                <dl id="sistem-bilgisi" class="sayi-izgarasi"></dl>
+                              </section>
               <section class="kart" aria-labelledby="bilgisayar-baslik">
-                <div class="kart-basligi"><div><h2 id="bilgisayar-baslik">Kurulu olduğu bilgisayar</h2><p id="bilgisayar-alt">Programın çalıştığı makine</p></div></div>
-                <dl id="bilgisayar-bilgisi" class="ozellikler-listesi"></dl>
+                <div class="kart-basligi tek-satir">
+                  <div><h2 id="bilgisayar-baslik">Bilgisayar</h2><p id="bilgisayar-alt">Programın çalıştığı makine</p></div>
+                  <button id="bilgisayar-ac" class="dugme gri kucuk" type="button" aria-expanded="false" aria-controls="bilgisayar-bilgisi"><span id="bilgisayar-ac-metni">Ayrıntılar</span><svg class="simge acilir" aria-hidden="true"><use href="#i-acilir"/></svg></button>
+                </div>
+                <dl id="bilgisayar-bilgisi" class="ozellikler-listesi" hidden></dl>
                 <p id="bilgisayar-yok" class="ikincil-metin" hidden>Fabrika programı bu bilgiyi henüz göndermiyor. Programın uzak pano bağlantısı güncellenince burada bilgisayarın adı, işletim sistemi, işlemcisi, belleği ve ekran kartı görünür.</p>
-              </section>
-              <section class="kart" aria-labelledby="canli-baslik">
-                <div class="kart-basligi"><h2 id="canli-baslik">Canlı görüntü</h2></div>
-                <p id="canli-metni" class="ikincil-metin"></p>
-                <div class="dugmeler"><a id="fabrika-baglantisi" class="dugme birincil" href="/" target="_blank" rel="noopener noreferrer" hidden><svg class="simge" aria-hidden="true"><use href="#i-ekran"/></svg>Fabrika ekranını aç</a></div>
               </section>
             </div>
             <div class="sutun">
-              <section class="kart" aria-labelledby="gizlilik-baslik">
-                <div class="kart-basligi"><div><h2 id="gizlilik-baslik">Bu siteye ne gelir</h2><p>Yalnız hesabıyla giren görür</p></div></div>
-                <ul class="gizlilik-listesi">
-                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Durum, sayılar ve son olaylar</li>
-                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Kanıt fotoğrafları: 7 gün sonra silinir</li>
-                  <li><span class="ikon-kutu yesil"><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg></span>Anlık görüntü: yalnız Kameralar açıkken, 2 dakikada silinir</li>
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Gelmez: kamera ve hoparlör şifreleri</li>
-                  <li><span class="ikon-kutu gri"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg></span>Gelmez: video kayıtları</li>
-                </ul>
-              </section>
-              <section class="kart" aria-labelledby="hesabim-baslik">
-                <div class="kart-basligi"><div><h2 id="hesabim-baslik">Hesabım</h2><p>Giriş yapan hesap</p></div></div>
-                <dl class="ozellikler-listesi">
-                  <div><dt>Kullanıcı</dt><dd id="hesabim-ad">-</dd></div>
-                  <div><dt>Rol</dt><dd id="hesabim-rol">-</dd></div>
-                </dl>
-                <form id="hesabim-formu" class="form" novalidate>
-                  <label for="eski-sifre">Şu anki şifreniz</label>
-                  <input id="eski-sifre" name="eski-sifre" type="password" autocomplete="current-password" maxlength="200" placeholder="Şu anki şifreniz" aria-describedby="hesabim-hatasi">
-                  <label for="yeni-sifre">Yeni şifre</label>
-                  <input id="yeni-sifre" name="yeni-sifre" type="password" autocomplete="new-password" maxlength="200" placeholder="En az 10 karakter">
-                  <p id="hesabim-hatasi" class="hata" role="alert"></p>
-                  <button id="hesabim-dugmesi" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-anahtar"/></svg>Şifreyi değiştir</button>
-                </form>
-                <p id="hesabim-kurucu" class="ikincil-metin" hidden></p>
-                <div class="dugmeler">
-                  <a class="dugme ikincil" href="/"><svg class="simge" aria-hidden="true"><use href="#i-ana"/></svg>Tanıtım sayfası</a>
-                  <button class="dugme ikincil" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
+              <div class="kart hesap-karti">
+                <div class="hesap-basligi">
+                  <span id="hesabim-bas" class="bas iri" aria-hidden="true"></span>
+                  <div class="hesap-adi"><h2 id="hesabim-ad">-</h2><p id="hesabim-rol">-</p></div>
+                  <button class="dugme ikincil kucuk" type="button" data-cikis><svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>Çıkış</button>
                 </div>
-              </section>
-              <section id="iki-adim-karti" class="kart" aria-labelledby="iki-adim-baslik">
-                <div class="kart-basligi"><div><h2 id="iki-adim-baslik">İki adımlı doğrulama</h2><p>Girişte şifreye ek olarak telefondaki 6 haneli kod</p></div><div id="iki-adim-durumu" class="rozetler"></div></div>
-                <p id="iki-adim-aciklama" class="ikincil-metin iki-adim-aciklama"></p>
-                <form id="iki-adim-ac-formu" class="form" novalidate hidden>
-                  <label for="iki-adim-ac-sifre">Açmak için şu anki şifreniz</label>
-                  <input id="iki-adim-ac-sifre" name="iki-adim-ac-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
-                  <button id="iki-adim-ac-dugmesi" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>Aç</button>
+                <div class="ayar-satiri">
+                  <svg class="simge" aria-hidden="true"><use href="#i-anahtar"/></svg>
+                  <span class="ayar-adi">Şifre</span>
+                  <button id="sifre-ac" class="dugme ikincil kucuk" type="button">Değiştir</button>
+                </div>
+                <p id="hesabim-sonuc" class="sonuc-satiri" role="status" hidden></p>
+                <p id="hesabim-kurucu" class="ikincil-metin ayar-notu" hidden></p>
+                <form id="hesabim-formu" class="ic-form" novalidate hidden>
+                  <div class="alan">
+                    <label for="eski-sifre">Şu anki şifre</label>
+                    <input id="eski-sifre" name="eski-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="hesabim-hatasi">
+                  </div>
+                  <div class="alan">
+                    <label for="yeni-sifre">Yeni şifre</label>
+                    <input id="yeni-sifre" name="yeni-sifre" type="password" autocomplete="new-password" maxlength="200" placeholder="En az 10 karakter" aria-describedby="hesabim-hatasi">
+                  </div>
+                  <p id="hesabim-hatasi" class="hata" role="alert"></p>
+                  <div class="dugmeler">
+                    <button id="sifre-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                    <button id="hesabim-dugmesi" class="dugme birincil" type="submit">Kaydet</button>
+                  </div>
                 </form>
-                <div id="iki-adim-kurulum" class="form" hidden>
-                  <ol class="adimlar">
-                    <li><span>Telefonunuza <b>Google Authenticator</b> ya da <b>Microsoft Authenticator</b> uygulamasını kurun.</span></li>
-                    <li><span>Uygulamada hesap ekleyin ve <b>anahtarı elle gir</b> seçeneğini seçin (Google: "Kurulum anahtarı girin", Microsoft: "Kodu elle girin"). Hesap adına <b>DALSAN</b>, anahtar olarak aşağıdaki anahtarı yazın; tür <b>zamana dayalı</b> kalsın.</span></li>
-                    <li><span>Uygulamanın gösterdiği 6 haneli kodu aşağıya yazıp <b>Onayla</b>'ya basın.</span></li>
-                  </ol>
-                  <p class="not">Anahtar</p>
-                  <div class="anahtar-kutusu"><code id="iki-adim-sir"></code><button id="iki-adim-sir-kopyala" class="dugme ikincil" type="button">Kopyala</button></div>
-                  <p class="not">Aynı anahtarın bağlantısı (bazı uygulamalar bunu da kabul eder)</p>
-                  <div class="anahtar-kutusu"><code id="iki-adim-uri"></code><button id="iki-adim-uri-kopyala" class="dugme ikincil" type="button">Kopyala</button></div>
-                  <form id="iki-adim-onay-formu" class="form" novalidate>
-                    <label for="iki-adim-onay-kodu">Uygulamadaki 6 haneli kod</label>
-                    <input id="iki-adim-onay-kodu" name="iki-adim-onay-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" aria-describedby="iki-adim-hatasi">
+                <section id="iki-adim-karti" class="iki-adim" aria-labelledby="iki-adim-baslik">
+                  <div class="ayar-satiri">
+                    <svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg>
+                    <h3 id="iki-adim-baslik" class="ayar-adi">İki adımlı doğrulama</h3>
+                    <span id="iki-adim-durumu" class="rozetler"></span>
+                    <button id="iki-adim-baslat" class="dugme ikincil kucuk" type="button" hidden>Aç</button>
+                    <button id="iki-adim-kapat-ac" class="dugme ikincil kucuk" type="button" hidden>Kapat</button>
+                  </div>
+                  <form id="iki-adim-ac-formu" class="ic-form" novalidate hidden>
+                    <div class="alan">
+                      <label for="iki-adim-ac-sifre">Açmak için şu anki şifreniz</label>
+                      <input id="iki-adim-ac-sifre" name="iki-adim-ac-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
+                    </div>
                     <div class="dugmeler">
-                      <button id="iki-adim-onay-dugmesi" class="dugme birincil" type="submit">Onayla</button>
-                      <button id="iki-adim-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="iki-adim-ac-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="iki-adim-ac-dugmesi" class="dugme birincil" type="submit">Devam</button>
                     </div>
                   </form>
-                  <p class="not">Kurulum 10 dakika içinde tamamlanmalı. Telefonun tarih ve saati otomatik ayarlı olmalı.</p>
-                </div>
-                <form id="iki-adim-kapat-formu" class="form" novalidate hidden>
-                  <label for="iki-adim-kapat-sifre">Kapatmak için şu anki şifreniz</label>
-                  <input id="iki-adim-kapat-sifre" name="iki-adim-kapat-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
-                  <label for="iki-adim-kapat-kodu">Uygulamadaki 6 haneli kod</label>
-                  <input id="iki-adim-kapat-kodu" name="iki-adim-kapat-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6 haneli kod" aria-describedby="iki-adim-hatasi">
-                  <button id="iki-adim-kapat-dugmesi" class="dugme ikincil" type="submit">Kapat</button>
-                </form>
-                <p id="iki-adim-hatasi" class="hata" role="alert"></p>
-                <p id="iki-adim-notu" class="not"></p>
-              </section>
-              <section id="fabrika-yonetim-karti" class="kart yalniz-mobil" aria-label="Fabrika yönetimi" hidden>
-                <div class="kart-basligi"><h2>Fabrika yönetimi</h2></div>
-                <div class="dugmeler">
-                  <a class="dugme ikincil" href="#yonetim"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg>Yönetim</a>
-                  <a class="dugme ikincil" href="#kullanicilar"><svg class="simge" aria-hidden="true"><use href="#i-kullanicilar"/></svg>Kullanıcılar</a>
-                  <a class="dugme ikincil" href="#tesisler"><svg class="simge" aria-hidden="true"><use href="#i-tesis"/></svg>Tesisler</a>
-                </div>
-              </section>
+                  <div id="iki-adim-kurulum" class="ic-form" hidden>
+                    <p class="ikincil-metin">Telefonunuzdaki <b>Google Authenticator</b> ya da <b>Microsoft Authenticator</b> uygulamasında hesap ekleyip <b>anahtarı elle gir</b> seçeneğini seçin. Hesap adı <b>DALSAN</b>, tür <b>zamana dayalı</b>; anahtar aşağıda.</p>
+                    <div class="anahtar-kutusu"><code id="iki-adim-sir"></code><button id="iki-adim-sir-kopyala" class="dugme ikincil kucuk" type="button"><svg class="simge" aria-hidden="true"><use href="#i-kopyala"/></svg><span>Kopyala</span></button></div>
+                    <details class="ek-bilgi">
+                      <summary>Bağlantı olarak (bazı uygulamalar kabul eder)</summary>
+                      <div class="anahtar-kutusu"><code id="iki-adim-uri"></code><button id="iki-adim-uri-kopyala" class="dugme ikincil kucuk" type="button"><svg class="simge" aria-hidden="true"><use href="#i-kopyala"/></svg><span>Kopyala</span></button></div>
+                    </details>
+                    <form id="iki-adim-onay-formu" class="ic-form-govde" novalidate>
+                      <div class="alan">
+                        <label for="iki-adim-onay-kodu">Uygulamadaki 6 haneli kod</label>
+                        <input id="iki-adim-onay-kodu" class="kod-girdisi" name="iki-adim-onay-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" aria-describedby="iki-adim-hatasi">
+                      </div>
+                      <div class="dugmeler">
+                        <button id="iki-adim-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                        <button id="iki-adim-onay-dugmesi" class="dugme birincil" type="submit">Onayla</button>
+                      </div>
+                    </form>
+                    <p class="not">Kurulum 10 dakika içinde bitmeli; telefonun saati otomatik ayarlı olmalı.</p>
+                  </div>
+                  <form id="iki-adim-kapat-formu" class="ic-form" novalidate hidden>
+                    <div class="alan">
+                      <label for="iki-adim-kapat-sifre">Kapatmak için şu anki şifreniz</label>
+                      <input id="iki-adim-kapat-sifre" name="iki-adim-kapat-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="iki-adim-hatasi">
+                    </div>
+                    <div class="alan">
+                      <label for="iki-adim-kapat-kodu">Uygulamadaki 6 haneli kod</label>
+                      <input id="iki-adim-kapat-kodu" class="kod-girdisi" name="iki-adim-kapat-kodu" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" aria-describedby="iki-adim-hatasi">
+                    </div>
+                    <div class="dugmeler">
+                      <button id="iki-adim-kapat-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="iki-adim-kapat-dugmesi" class="dugme tehlike" type="submit">Kapat</button>
+                    </div>
+                  </form>
+                  <p id="iki-adim-hatasi" class="hata" role="alert"></p>
+                  <p id="iki-adim-notu" class="not" hidden></p>
+                </section>
+              </div>
+              <nav id="fabrika-yonetim-karti" class="kart gezinme-karti" aria-label="Fabrika yönetimi" hidden>
+                <a href="#yonetim"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg><span>Yönetim</span><svg class="simge ok" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+                <a href="#kullanicilar"><svg class="simge" aria-hidden="true"><use href="#i-kullanicilar"/></svg><span>Kullanıcılar</span><svg class="simge ok" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+                <a href="#tesisler"><svg class="simge" aria-hidden="true"><use href="#i-tesis"/></svg><span>Tesisler</span><svg class="simge ok" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+              </nav>
             </div>
           </div>
         </div>
 
         <!-- YÖNETİM (yalnız yönetici) -->
         <div class="gorunum" data-gorunum="yonetim" hidden>
-          <section id="yonetim-durumu" class="durum-bandi" aria-live="polite" aria-labelledby="yonetim-baslik">
-            <span class="ikon-kutu"><svg class="simge buyuk" aria-hidden="true"><use id="yonetim-simgesi" href="#i-guc"/></svg></span>
-            <div>
-              <h2 id="yonetim-baslik">Durum okunuyor</h2>
-              <p id="yonetim-alt"></p>
-            </div>
-            <button id="yonetim-surdur" class="dugme ikincil" type="button" hidden>Sürdür</button>
+          <section class="kart program-seridi" aria-label="Program">
+            <img src="/logo.svg" alt="" width="40" height="40">
+            <div class="program-metni"><b id="program-adi">-</b><span id="yonetim-program"></span></div>
+            <span id="yonetim-hapi" class="hap kucuk"><span class="nokta"></span><span id="yonetim-hap-metni">Durum okunuyor</span></span>
           </section>
-          <div class="izgara-23">
-            <div class="sutun">
-              <section class="kart" aria-labelledby="program-baslik">
-                <div class="kart-basligi"><div><h2 id="program-baslik">Program</h2><p>Sürüm, yapı ve kurulum</p></div></div>
-                <dl id="yonetim-program" class="ozellikler-listesi"></dl>
-                <p id="yonetim-program-yok" class="ikincil-metin" hidden>Fabrika programı yapı ve yönetim bilgisini henüz göndermiyor. Programın uzak pano bağlantısı güncellenince burada görünür.</p>
-              </section>
-              <section class="kart" aria-labelledby="yonetim-islem-baslik">
-                <div class="kart-basligi"><div><h2 id="yonetim-islem-baslik">Uzaktan yönetim</h2><p>Her işlem, işlem kaydına kiminle birlikte yazılır</p></div></div>
-                <div class="yonetim-islemleri">
-                  <div class="yonetim-islem">
-                    <div class="satir-govde"><b>Teşhis al</b><span>Programın o anki durumunu metin olarak getirir; fabrikada bir şey değiştirmez.</span></div>
-                    <button id="teshis-dugmesi" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-teshis"/></svg>Teşhis al</button>
-                  </div>
-                  <p id="teshis-hatasi" class="hata" role="alert"></p>
-
-                  <div class="yonetim-islem">
-                    <div class="satir-govde"><b>Yeniden başlat</b><span>Program kapanıp yeniden açılır.</span></div>
-                    <button id="yeniden-dugmesi" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg>Yeniden başlat</button>
-                  </div>
-                  <p id="yeniden-sebep" class="not" hidden></p>
-                  <div id="yeniden-onayi" class="onay-kutusu" hidden>
-                    <p>Program yeniden başlatılsın mı? 1-3 dakika kameralar izlenmez ve uyarı çıkmaz.</p>
-                    <label for="yeniden-sifre">Onaylamak için şifrenizi yazın</label>
-                    <input id="yeniden-sifre" type="password" autocomplete="current-password" maxlength="200">
-                    <div class="dugmeler">
-                      <button id="yeniden-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
-                      <button id="yeniden-gonder" class="dugme birincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg>Evet, yeniden başlat</button>
-                    </div>
-                  </div>
-                  <p id="yeniden-hatasi" class="hata" role="alert"></p>
-
-                  <div class="yonetim-islem">
-                    <div class="satir-govde"><b>Güncelle</b><span>GitHub'daki resmi son sürüme günceller.</span></div>
-                    <button id="guncelle-dugmesi" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg>Güncelle</button>
-                  </div>
-                  <p id="guncelle-sebep" class="not" hidden></p>
-                  <div id="guncelle-onayi" class="onay-kutusu" hidden>
-                    <p>Program GitHub'daki resmi son sürüme güncellensin mi? Önce veritabanı yedeklenir. Program birkaç dakika kapalı kalır, bu sürede kameralar izlenmez ve uyarı çıkmaz. Yeni sürüm açılmazsa eski sürüme dönülür.</p>
-                    <label for="guncelle-sifre">Onaylamak için şifrenizi yazın</label>
-                    <input id="guncelle-sifre" type="password" autocomplete="current-password" maxlength="200">
-                    <div class="dugmeler">
-                      <button id="guncelle-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
-                      <button id="guncelle-gonder" class="dugme birincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg>Evet, güncelle</button>
-                    </div>
-                  </div>
-                  <p id="guncelle-hatasi" class="hata" role="alert"></p>
-                </div>
-              </section>
-            </div>
-            <div class="sutun">
-              <section class="kart" aria-labelledby="yonetim-gecmis-baslik">
-                <div class="kart-basligi"><div><h2 id="yonetim-gecmis-baslik">Son işlemler</h2><p>Teşhis, yeniden başlatma ve güncelleme</p></div></div>
-                <ul id="yonetim-komutlar" class="cizelge"></ul>
-              </section>
-            </div>
+          <div id="yonetim-durumu" class="durum-notu" aria-live="polite" hidden>
+            <p id="yonetim-alt"></p>
+            <button id="yonetim-surdur" class="dugme ikincil" type="button" hidden>Sürdür</button>
           </div>
-          <p class="not">Yeniden başlatma ve güncelleme saatte en çok 3 kez yapılır. Kapalı bir program siteden açılamaz.</p>
+          <div class="islem-kartlari">
+            <section class="kart islem-karti" aria-labelledby="teshis-baslik">
+              <span class="ikon-kutu iri mavi"><svg class="simge" aria-hidden="true"><use href="#i-teshis"/></svg></span>
+              <div><h2 id="teshis-baslik">Teşhis al</h2><p>Programın o anki durumunu metin olarak getirir. Fabrikada bir şey değişmez.</p></div>
+              <button id="teshis-dugmesi" class="dugme ikincil" type="button">Teşhis al</button>
+              <p id="teshis-hatasi" class="hata" role="alert"></p>
+            </section>
+            <section class="kart islem-karti" aria-labelledby="yeniden-baslik">
+              <span class="ikon-kutu iri bal"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg></span>
+              <div><h2 id="yeniden-baslik">Yeniden başlat</h2><p>1-3 dakika kameralar izlenmez ve uyarı çıkmaz.</p></div>
+              <p id="yeniden-sebep" class="not" hidden></p>
+              <div id="yeniden-onayi" class="onay-formu" hidden>
+                <label for="yeniden-sifre">Onaylamak için şifreniz</label>
+                <input id="yeniden-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="yeniden-hatasi">
+                <p id="yeniden-hatasi" class="hata" role="alert"></p>
+                <div class="dugmeler">
+                  <button id="yeniden-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                  <button id="yeniden-gonder" class="dugme birincil" type="button">Evet, başlat</button>
+                </div>
+              </div>
+              <button id="yeniden-dugmesi" class="dugme ikincil" type="button">Yeniden başlat</button>
+            </section>
+            <section class="kart islem-karti" aria-labelledby="guncelle-baslik">
+              <span class="ikon-kutu iri yesil"><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg></span>
+              <div><h2 id="guncelle-baslik">Güncelle</h2><p>Resmi son sürüm kurulur; önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür.</p></div>
+              <p id="guncelle-sebep" class="not" hidden></p>
+              <div id="guncelle-onayi" class="onay-formu" hidden>
+                <label for="guncelle-sifre">Onaylamak için şifreniz</label>
+                <input id="guncelle-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="guncelle-hatasi">
+                <p id="guncelle-hatasi" class="hata" role="alert"></p>
+                <div class="dugmeler">
+                  <button id="guncelle-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                  <button id="guncelle-gonder" class="dugme birincil" type="button">Evet, güncelle</button>
+                </div>
+              </div>
+              <button id="guncelle-dugmesi" class="dugme ikincil" type="button">Güncelle</button>
+            </section>
+          </div>
+          <p id="islem-notu" class="not" hidden>Bir işlem sürüyor; bitince yeniden deneyin.</p>
+          <section class="kart" aria-labelledby="yonetim-gecmis-baslik">
+            <div class="kart-basligi"><h2 id="yonetim-gecmis-baslik">Son işlemler</h2></div>
+            <ul id="yonetim-komutlar" class="liste"></ul>
+          </section>
         </div>
 
         <!-- KULLANICILAR (yalnız yönetici) -->
         <div class="gorunum" data-gorunum="kullanicilar" hidden>
-          <div class="izgara-23">
-            <div class="sutun">
-              <section class="kart" aria-labelledby="kullanici-liste-baslik">
-                <div class="kart-basligi"><div><h2 id="kullanici-liste-baslik">Hesaplar</h2><p id="kullanicilar-ozet"></p></div></div>
-                <p id="kullanicilar-hatasi" class="hata" role="alert"></p>
-                <ul id="kullanici-listesi" class="satirlar"></ul>
-              </section>
-              <section class="kart" aria-labelledby="kayit-baslik">
-                <div class="kart-basligi"><div><h2 id="kayit-baslik">İşlem kaydı</h2><p>En yeni 300 satır</p></div></div>
-                <div class="tablo-kap">
-                  <table class="tablo">
-                    <thead><tr><th>Zaman</th><th>Kim</th><th>İşlem</th><th class="sag">Sonuç</th></tr></thead>
-                    <tbody id="kayit-tablosu"></tbody>
-                  </table>
-                </div>
-              </section>
+          <div class="arac-satiri">
+            <div id="kullanici-segmenti" class="segment iri" role="group" aria-label="Bölüm">
+              <button type="button" data-bolum="hesaplar" aria-pressed="true">Hesaplar</button>
+              <button type="button" data-bolum="kayit" aria-pressed="false">İşlem kaydı</button>
             </div>
-            <div class="sutun">
-              <section class="kart" aria-labelledby="kullanici-ekle-baslik">
-                <div class="kart-basligi"><div><h2 id="kullanici-ekle-baslik">Kullanıcı ekle</h2></div></div>
-                <form id="kullanici-formu" class="form" novalidate>
-                  <label for="yeni-ad">Kullanıcı adı</label>
-                  <input id="yeni-ad" name="yeni-ad" type="text" maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ör. ahmet.yilmaz">
-                  <label for="yeni-rol">Rol</label>
+            <button id="ekle-ac" class="dugme birincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-arti"/></svg>Kullanıcı ekle</button>
+          </div>
+          <p id="kullanici-sonucu" class="sonuc-kutusu" role="status" hidden><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg><span id="kullanici-sonuc-metni"></span></p>
+          <p id="kullanicilar-hatasi" class="hata" role="alert"></p>
+          <section id="ekle-karti" class="kart vurgulu" aria-labelledby="ekle-baslik" hidden>
+            <div class="kart-basligi tek-satir">
+              <h2 id="ekle-baslik">Yeni kullanıcı</h2>
+              <button id="ekle-kapat" class="ikon-dugme" type="button" aria-label="Kapat"><svg class="simge" aria-hidden="true"><use href="#i-kapat"/></svg></button>
+            </div>
+            <form id="kullanici-formu" class="form-izgarasi" novalidate>
+              <div class="alan">
+                <label for="yeni-ad">Kullanıcı adı</label>
+                <input id="yeni-ad" name="yeni-ad" type="text" maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="ör. ahmet.yilmaz" aria-describedby="yeni-ad-hatasi">
+                <span id="yeni-ad-hatasi" class="alan-hatasi"></span>
+              </div>
+              <div class="alan">
+                <label for="yeni-rol">Rol</label>
+                <div class="secici-kap">
                   <select id="yeni-rol" class="secici">
                     <option value="izleyici">İzleyici</option>
                     <option value="operator">Operatör</option>
                     <option value="yonetici">Yönetici</option>
                   </select>
-                  <p id="yeni-rol-aciklama" class="not"></p>
-                  <label for="yeni-ilk-sifre">İlk şifre</label>
-                  <input id="yeni-ilk-sifre" name="yeni-ilk-sifre" type="text" maxlength="200" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="En az 10 karakter">
-                  <label for="yeni-onay-sifresi">Onaylamak için kendi şifreniz</label>
-                  <input id="yeni-onay-sifresi" name="yeni-onay-sifresi" type="password" autocomplete="current-password" maxlength="200">
-                  <p id="kullanici-ekle-hatasi" class="hata" role="alert"></p>
-                  <button id="kullanici-ekle-dugmesi" class="dugme birincil" type="submit"><svg class="simge" aria-hidden="true"><use href="#i-kullanicilar"/></svg>Kullanıcı ekle</button>
-                </form>
-                <p class="not">Yeni hesap ilk girişte şifresini değiştirmek zorundadır. İlk şifreyi kişiye kendiniz iletin.</p>
-              </section>
-            </div>
-          </div>
-          <p class="not">Yönetici hesaplarını yalnız kurucu değiştirebilir. Her işlem için kendi şifreniz sorulur.</p>
+                  <svg class="simge" aria-hidden="true"><use href="#i-acilir"/></svg>
+                </div>
+                <span id="yeni-rol-aciklama" class="alan-notu"></span>
+              </div>
+              <div class="alan">
+                <label for="yeni-ilk-sifre">İlk şifre</label>
+                <input id="yeni-ilk-sifre" name="yeni-ilk-sifre" type="text" maxlength="200" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="En az 10 karakter" aria-describedby="yeni-ilk-hatasi">
+                <span id="yeni-ilk-hatasi" class="alan-hatasi"></span>
+              </div>
+              <div class="alan">
+                <label for="yeni-onay-sifresi">Kendi şifreniz</label>
+                <input id="yeni-onay-sifresi" name="yeni-onay-sifresi" type="password" autocomplete="current-password" maxlength="200" aria-describedby="yeni-onay-hatasi">
+                <span id="yeni-onay-hatasi" class="alan-hatasi"></span>
+              </div>
+              <p id="kullanici-ekle-hatasi" class="hata tam-satir" role="alert"></p>
+              <div class="form-alti tam-satir">
+                <button id="kullanici-ekle-dugmesi" class="dugme birincil" type="submit"><svg class="simge donus bekleme" aria-hidden="true"><use href="#i-yukleniyor"/></svg><span id="kullanici-ekle-metni">Hesabı aç</span></button>
+                <span class="not">Kişi ilk girişte şifresini değiştirir; ilk şifreyi ona kendiniz iletin.</span>
+              </div>
+            </form>
+          </section>
+          <section id="hesaplar-bolumu" class="kart liste-karti" aria-label="Hesaplar">
+            <ul id="kullanici-listesi" class="liste"></ul>
+          </section>
+          <section id="kayit-bolumu" class="kart liste-karti" aria-label="İşlem kaydı" hidden>
+            <ul id="kayit-tablosu" class="liste"></ul>
+          </section>
         </div>
 
         <!-- TESİSLER (yalnız yönetici) -->
         <div class="gorunum" data-gorunum="tesisler" hidden>
           <p id="tesis-uyarisi" class="site-uyarisi" hidden></p>
-          <section class="kart" aria-labelledby="tesis-liste-baslik">
-            <div class="kart-basligi"><div><h2 id="tesis-liste-baslik">Tesisler</h2><p id="tesisler-ozet">Yükleniyor...</p></div></div>
-            <ul id="tesis-listesi" class="satirlar"></ul>
-          </section>
-          <p class="not">Anons, yeniden başlatma ve güncelleme yalnız ana tesise gider; öbür tesisler yalnız izlenir. Ana tesisi değiştirmek için Vercel'de ANA_TESIS ayarına tesisin kimliğini yazıp yeniden yayınlayın.</p>
+          <div id="tesis-listesi" class="tesis-izgarasi"></div>
         </div>
       </main>
     </div>
@@ -552,12 +574,21 @@
     </nav>
   </div>
 
+  <!-- Komut bildirimleri: gönderilen komutun Sırada -> Fabrikada -> Yapıldı
+       ilerleyişi. Masaüstünde sağ altta en çok 2, telefonda sekme çubuğunun
+       üstünde 1 kart; fazlası "+N komut daha" der. -->
+  <div id="bildirimler" class="bildirimler" aria-live="polite">
+    <button id="bildirim-fazla" class="bildirim-fazla" type="button" hidden></button>
+    <div id="bildirim-listesi" class="bildirim-listesi"></div>
+  </div>
+
   <dialog id="foto-penceresi" class="foto-penceresi" aria-labelledby="foto-baslik">
     <div class="ust">
       <div><h2 id="foto-baslik"></h2><p id="foto-alt"></p></div>
-      <button id="foto-kapat" class="dugme ikincil" type="button">Kapat</button>
+      <button id="foto-kapat" class="ikon-dugme gri iri" type="button" aria-label="Kapat"><svg class="simge" aria-hidden="true"><use href="#i-kapat"/></svg></button>
     </div>
-    <img id="foto-buyuk" alt="">
+    <div class="foto-alani"><img id="foto-buyuk" alt=""><span id="foto-bos" class="foto-bos" hidden></span></div>
+    <dl id="foto-detay" class="foto-detay" hidden></dl>
   </dialog>
 </body>
 </html>

@@ -51,17 +51,22 @@ def test_telefonda_guvenli_alan(sayfa):
     assert re.search(r'name="viewport" content="[^"]*viewport-fit=cover', metin)
 
 
-def test_buyuk_harf_css_ile_yazilmaz():
+STILLER = ["stil.css", "pano.css"]
+
+
+@pytest.mark.parametrize("ad", STILLER)
+def test_buyuk_harf_css_ile_yazilmaz(ad):
     """text-transform Türkçe i'yi I yapar (lafmobil kuralı): büyük harf metnin
     kendisiyle yazılır."""
-    css = (PUBLIC / "stil.css").read_text(encoding="utf-8")
+    css = (PUBLIC / ad).read_text(encoding="utf-8")
     assert "uppercase" not in css
 
 
-def test_dokunmatikte_44_px():
+@pytest.mark.parametrize("ad", STILLER)
+def test_dokunmatikte_44_px(ad):
     """Telefonda dokunma hedefi en az 44 px (lafmobil minTouchTarget, Innex
     dokunmatik düğmesi)."""
-    css = (PUBLIC / "stil.css").read_text(encoding="utf-8")
+    css = (PUBLIC / ad).read_text(encoding="utf-8")
     assert re.search(
         r"@media \(pointer: coarse\), \(max-width: 1023\.98px\)\s*{\s*:root\s*{\s*"
         r"--dugme-boyu: 44px;",
