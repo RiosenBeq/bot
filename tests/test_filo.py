@@ -517,7 +517,6 @@ def test_tesisler_gorunumu_yalniz_yoneticide_ve_sekme_degil():
     # Filo verisi yalnız görünüm açıkken istenir
     assert "/api/durum?filo=1" in PANO_JS
     assert 'aktifGorunum === "tesisler"' in PANO_JS
-    assert "ANA_TESIS" in PANO_HTML
 
 
 def test_tesisler_gorunumu_uyarilari_metin_olarak_gosterir():
@@ -686,5 +685,5 @@ def test_cakisma_tesisler_ekraninda_yoneticiye_gorunur(site):  # noqa: F811
 def test_tesis_satirinda_cakisma_rozeti_metin_olarak():
     satir = re.search(r"function tesisSatiri\(t\) \{.*?\n  \}", PANO_JS, re.S).group(0)
     # 2. tasarım: çakışma, ilgili tesisin kartında bilgisayar adlarıyla yazılır
-    assert "t.cakisma" in satir and "Kimlik çakışması" in satir
+    assert "t.cakisma" in satir and "Aynı kimlik iki bilgisayardan geliyor" in satir
     assert "t.cakisma.adlar" in satir and "UZAK_PANO_TESIS_ID" in satir

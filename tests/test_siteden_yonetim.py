@@ -16,7 +16,7 @@ def test_giriste_kullanici_adi_alani_var():
     assert 'id="ad"' in PANO_HTML
     assert 'autocomplete="username"' in PANO_HTML
     assert "{ ad: ad, sifre: sifre }" in PANO_JS
-    # Giriş notu kurucu hesabını anlatır (docs/19 §3.9)
+    # Kurulum ekranı ilk girişteki kurucu hesabını anlatır (docs/19 §3.9)
     assert "kullanıcı adı <code>kurucu</code>" in PANO_HTML
 
 
@@ -51,7 +51,8 @@ def test_yonetim_ekrani_ogeleri():
     ):
         assert f'id="{kimlik}"' in PANO_HTML, kimlik
     # Ağır işlerde onay kutusunda şifre alanı (docs/19 §3.4, O10 S9)
-    assert "Onaylamak için şifrenizi yazın" in PANO_HTML
+    assert "Onaylamak için şifreniz" in PANO_HTML
+    assert "Onaylamak için şifrenizi yazın." in PANO_JS
 
 
 def test_kullanicilar_ekrani_ogeleri():
@@ -91,8 +92,8 @@ def test_o10_rol_aciklamalari():
 def test_o10_onay_metinleri():
     # Yeniden başlat ve güncelle onay metinleri (O10)
     assert "1-3 dakika kameralar izlenmez ve uyarı çıkmaz" in PANO_HTML
-    assert "GitHub'daki resmi son sürüme güncellensin mi" in PANO_HTML
-    assert "Yeni sürüm açılmazsa eski sürüme dönülür" in PANO_HTML
+    # 2. tasarım: güncelleme kartının metni onayı da anlatır (Pano v2)
+    assert "önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür" in PANO_HTML
 
 
 def test_o10_kurucu_metinleri():

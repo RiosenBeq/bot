@@ -45,7 +45,7 @@
         <section id="yukleniyor" class="tek-adim" aria-busy="true" aria-labelledby="yukleniyor-baslik">
           <span class="bekleme-kutusu"><svg class="simge donus" aria-hidden="true"><use href="#i-yukleniyor"/></svg></span>
           <div class="tek-basligi">
-            <h1 id="yukleniyor-baslik">Pano açılıyor...</h1>
+            <h1 id="yukleniyor-baslik">Pano açılıyor…</h1>
             <p id="yukleniyor-metni">Fabrikadan gelen son durum okunuyor.</p>
           </div>
         </section>
@@ -53,21 +53,20 @@
         <section id="kurulum" class="tek-adim" hidden aria-labelledby="kurulum-baslik">
           <div class="tek-basligi">
             <h1 id="kurulum-baslik">Site henüz kurulmadı</h1>
-            <p>Vercel'de şu ayarlar eksik. Üç adımda biter.</p>
+            <p id="kurulum-alt">Vercel'de iki ayar eksik. Üç adımda biter.</p>
           </div>
-          <ul id="eksik-listesi" class="eksik-listesi"></ul>
           <ol class="adimlar">
-            <li><span class="adim-no">1</span><span><b>Storage</b> sekmesinden Upstash (Redis) veritabanı oluşturup bu projeye bağlayın.</span></li>
-            <li><span class="adim-no">2</span><span><b>Settings → Environment Variables</b> bölümüne <code>PANO_SIFRESI</code> (en az 10 karakter) ve <code>RAPOR_ANAHTARI</code> (aşağıdaki anahtar) ayarlarını ekleyin.</span></li>
-            <li><span class="adim-no">3</span><span><b>Deployments</b> sekmesinde son yayını <b>Redeploy</b> edin.</span></li>
+            <li><span class="adim-no">1</span><span><b>Storage</b> sekmesinden Upstash (Redis) bağlayın.</span></li>
+            <li><span class="adim-no">2</span><span><b>PANO_SIFRESI</b> ve <b>RAPOR_ANAHTARI</b> ayarlarını ekleyin.</span></li>
+            <li><span class="adim-no">3</span><span>Son yayını <b>Redeploy</b> edin. İlk girişte kullanıcı adı <code>kurucu</code>, şifre <b>PANO_SIFRESI</b>.</span></li>
           </ol>
           <div class="anahtar-alani">
-            <span class="not">Önerilen rapor anahtarı (bu tarayıcıda üretildi, hiçbir yere gönderilmedi)</span>
+            <span class="not">Önerilen rapor anahtarı</span>
             <div class="anahtar-kutusu">
               <code id="onerilen-anahtar"></code>
-              <button id="anahtar-kopyala" class="dugme ikincil kucuk" type="button"><svg class="simge" aria-hidden="true"><use href="#i-kopyala"/></svg><span>Kopyala</span></button>
+              <button id="anahtar-kopyala" class="dugme kopya-dugmesi" type="button"><svg class="simge" aria-hidden="true"><use href="#i-kopyala"/></svg><span>Kopyala</span></button>
             </div>
-            <span class="not">Aynı anahtar fabrika programında <b>Ayarlar → Uzak izleme panosu → Uzak pano anahtarı</b> kutusuna da yazılır.</span>
+            <span class="alan-notu">Aynı anahtar fabrika programına da yazılır.</span>
           </div>
         </section>
 
@@ -78,7 +77,7 @@
                 <h1 id="giris-baslik">Giriş yap</h1>
                 <p>Kişisel hesabınızla devam edin.</p>
               </div>
-              <p id="oturum-bandi" class="oturum-bandi" role="status" hidden><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg><span>Oturumunuzun süresi doldu. Yeniden giriş yapın; pano kaldığınız ekranda açılır.</span></p>
+              <p id="oturum-bandi" class="oturum-bandi" role="status" hidden><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg><span>Oturumunuzun süresi doldu. Girişten sonra kaldığınız yere dönersiniz.</span></p>
               <div class="alan">
                 <label for="ad">Kullanıcı adı</label>
                 <input id="ad" name="ad" type="text" autocomplete="username" required maxlength="32" placeholder="ör. ahmet.yilmaz" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="giris-hatasi">
@@ -97,7 +96,7 @@
               <button id="kod-geri" class="geri-bag" type="button"><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg><span id="kod-hesap"></span></button>
               <div class="tek-basligi">
                 <h1>Doğrulama kodu</h1>
-                <p id="giris-kod-notu">Telefonunuzdaki doğrulama uygulamasında (Google Authenticator ya da Microsoft Authenticator) DALSAN satırının gösterdiği 6 haneli kod.</p>
+                <p id="giris-kod-notu">Telefonunuzdaki doğrulama uygulamasında DALSAN satırının gösterdiği 6 haneli kod.</p>
               </div>
               <div class="kod-kutulari">
                 <label for="giris-kod" class="gorsel-gizli">Doğrulama kodu</label>
@@ -109,7 +108,7 @@
             <div id="giris-hata-kutusu" class="hata-kutusu" hidden><svg class="simge" aria-hidden="true"><use href="#i-uyari"/></svg><span id="giris-hatasi" role="alert"></span></div>
             <button id="giris-dugmesi" class="dugme koyu iri tam" type="submit"><svg class="simge donus bekleme" aria-hidden="true"><use href="#i-yukleniyor"/></svg><span id="giris-dugme-metni">Giriş yap</span><svg class="simge ileri" aria-hidden="true"><use href="#i-ileri"/></svg></button>
           </form>
-          <p id="giris-notu" class="tek-notu"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg><span>Hesabınızı yöneticiniz açar. İlk kurulumda kullanıcı adı <code>kurucu</code>, şifresi Vercel'deki <code>PANO_SIFRESI</code>.</span></p>
+          <p id="giris-notu" class="tek-notu"><svg class="simge" aria-hidden="true"><use href="#i-kilit"/></svg><span>Hesabınızı yöneticiniz açar.</span></p>
           <p id="kod-notu" class="tek-notu" hidden><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg><span>Kod 30 saniyede bir değişir.</span></p>
         </section>
       </div>
@@ -340,8 +339,7 @@
                   <span id="sistem-hapi" class="hap kucuk"><span class="nokta"></span><span id="sistem-hap-metni"></span></span>
                 </div>
                 <dl id="sistem-bilgisi" class="sayi-izgarasi"></dl>
-                <p id="calisma-satiri" class="kart-dipnot" hidden></p>
-              </section>
+                              </section>
               <section class="kart" aria-labelledby="bilgisayar-baslik">
                 <div class="kart-basligi tek-satir">
                   <div><h2 id="bilgisayar-baslik">Bilgisayar</h2><p id="bilgisayar-alt">Programın çalıştığı makine</p></div>
@@ -467,8 +465,7 @@
               <div><h2 id="yeniden-baslik">Yeniden başlat</h2><p>1-3 dakika kameralar izlenmez ve uyarı çıkmaz.</p></div>
               <p id="yeniden-sebep" class="not" hidden></p>
               <div id="yeniden-onayi" class="onay-formu" hidden>
-                <p class="onay-sorusu">Program yeniden başlatılsın mı?</p>
-                <label for="yeniden-sifre">Onaylamak için şifrenizi yazın</label>
+                <label for="yeniden-sifre">Onaylamak için şifreniz</label>
                 <input id="yeniden-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="yeniden-hatasi">
                 <p id="yeniden-hatasi" class="hata" role="alert"></p>
                 <div class="dugmeler">
@@ -480,11 +477,10 @@
             </section>
             <section class="kart islem-karti" aria-labelledby="guncelle-baslik">
               <span class="ikon-kutu iri yesil"><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg></span>
-              <div><h2 id="guncelle-baslik">Güncelle</h2><p>Resmi son sürüm kurulur; önce veritabanı yedeklenir.</p></div>
+              <div><h2 id="guncelle-baslik">Güncelle</h2><p>Resmi son sürüm kurulur; önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür.</p></div>
               <p id="guncelle-sebep" class="not" hidden></p>
               <div id="guncelle-onayi" class="onay-formu" hidden>
-                <p class="onay-sorusu">Program GitHub'daki resmi son sürüme güncellensin mi? Birkaç dakika kameralar izlenmez. Yeni sürüm açılmazsa eski sürüme dönülür.</p>
-                <label for="guncelle-sifre">Onaylamak için şifrenizi yazın</label>
+                <label for="guncelle-sifre">Onaylamak için şifreniz</label>
                 <input id="guncelle-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="guncelle-hatasi">
                 <p id="guncelle-hatasi" class="hata" role="alert"></p>
                 <div class="dugmeler">
@@ -565,7 +561,6 @@
         <div class="gorunum" data-gorunum="tesisler" hidden>
           <p id="tesis-uyarisi" class="site-uyarisi" hidden></p>
           <div id="tesis-listesi" class="tesis-izgarasi"></div>
-          <p class="not">Anons, yeniden başlatma ve güncelleme yalnız ana tesise gider. Ana tesisi değiştirmek için Vercel'de ANA_TESIS ayarına tesisin kimliğini yazıp yeniden yayınlayın.</p>
         </div>
       </main>
     </div>
