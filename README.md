@@ -24,11 +24,12 @@ sonuçlanır.
 Demo gerçek veriye **dokunmaz**: sayfadaki `/api/...` istekleri tarayıcıda
 `public/demo.js` tarafından karşılanır, siteye ve fabrikaya hiçbir istek gitmez,
 hiçbir şey kaydedilmez (sayfa yenilenince başa döner). Kamera görüntüleri ve
-kanıt fotoğrafları tarayıcıda çizilir. `/pano` adresinde `demo.js` hiçbir şey
-yapmaz. Yönlendirme `vercel.json`'daki `rewrites` satırıdır; demoyu kaldırmak
-için o satırı, `pano.html`'deki `demo.js` etiketini ve tanıtım sayfasındaki
-(`index.html`) iki `/demo` bağlantısını ("Örnek verilerle incele", "Örnek
-pano") silmek yeter.
+kanıt fotoğrafları tarayıcıda çizilir. `demo.js`'i yalnız `/demo` adresinde
+`pano.js` kendisi yükler (dosyanın sonundaki küçük yükleyici); `/pano`'da hiç
+inmez. Yönlendirme `vercel.json`'daki `rewrites` satırıdır; demoyu kaldırmak
+için o satırı, `pano.js`'in sonundaki yükleyiciyi (yalnız `panoyuBaslat()`
+kalsın) ve tanıtım sayfasındaki (`index.html`) iki `/demo` bağlantısını
+("Örnek verilerle incele", "Örnek pano") silmek yeter.
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
 bir durum özeti, ihlallerin kanıt fotoğrafını ve (Kameralar ekranı açıkken)
@@ -425,7 +426,8 @@ adresi ya da görüntü yoktur.
 
 Bildirim kısa bir metindir: tesisin adı, son rapordan bu yana geçen dakika, son
 raporun saati (Türkiye) ve neye bakılacağı (bilgisayar açık mı, program çalışıyor
-mu, internet var mı). Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
+mu, internet var mı). Bütün alıcılara tek SMTP oturumunda (bir bağlanma ve giriş) ayrı
+ileti gider. Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
 gidemezse işaret bırakılır ve sonraki çağrı yeniden dener. Hata Vercel
 günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre yazılmaz.
 Program kapatılıp açılmadıysa (Kapandı) da eşik dolunca uyarır; hiç rapor
@@ -510,6 +512,7 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
    | `PANO_SIFRESI` | **Kurucu hesabının şifresi**, en az 10 karakter (öneri: 16). Geçiş sırasından sonra yalnız kurucu girişinde kullanılır |
    | `RAPOR_ANAHTARI` | En az 32 karakterlik rastgele anahtar. Pano sayfası, site kurulmamışken bir tane önerir |
    | `FABRIKA_ADRESI` | *(isteğe bağlı)* Fabrika ekranının VPN/Tailscale adresi, ör. `http://100.64.0.7:8080` |
+   | `OTURUM_ANAHTARI` | *(isteğe bağlı, önerilir)* En az 32 karakterlik ayrı, rastgele anahtar. Oturum çerezinin imzasına katılır: `RAPOR_ANAHTARI`'nı ve bir çerezi ele geçiren biri kurucu şifresini çevrimdışı deneyemez. İlk eklendiğinde bütün oturumlar bir kez düşer; kısa değer yok sayılır |
 
    Dört ortam değişkeni de (`PANO_SIFRESI`, `RAPOR_ANAHTARI` ve Upstash'in iki
    değeri) yalnız Production'a bağlı kalmalı: önizleme (Preview) yayınından
@@ -582,7 +585,8 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
 | `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `pano.css` (pano), `stil.css` (tanıtım ve 404), `404.html`; `tema.js` açık / koyu tema (her sayfada); `demo.js` yalnız `/demo`'da örnek veri verir |
-| `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması, `/demo` yönlendirmesi |
+| `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması, `/demo` yönlendirmesi, işlev bölgesi (`fra1`), yazı tipi önbelleği |
+| `.github/workflows/testler.yml` | Her gönderimde ve PR'da ruff ve pytest |
 | `yerel_sunucu.py` | Siteyi Vercel'siz, bu bilgisayarda denemek için |
 
 Yalnız Python'un standart kütüphanesi ve sade HTML/CSS/JS kullanılır: kurulacak
@@ -609,6 +613,28 @@ yanıp sönme olmaz) ve tarayıcı çubuğunun rengini de ayarlar. Renkler yaln�
 `pano.css` ve `stil.css`'teki `:root` (açık) ve `:root[data-tema="koyu"]`
 bloklarındadır; her rengin koyu karşılığı olduğunu `tests/test_sayfalar.py`
 denetler. İki temada da yazılar en az 4.5:1 kontrastlıdır.
+
+**Erişilebilirlik ve telefon (denetim 08.11.2026).** Liste ekranları (Kameralar,
+Olaylar, Yönetim, Kullanıcılar) her tazelemede baştan kurulmaz: değişmeyen liste
+hiç dokunulmaz, değişen listede klavye odağı ve açık "Teşhis metni" korunur.
+Ekran değişince odak başlığa gelir; Escape açık onay kutusunu ve hesap menüsünü
+kapatır. Ekran okuyucuya bağlantı durumu yalnız değişince söylenir (hap ve bant
+canlı bölge değildir; duyuru tek kanaldan gider). Windows yüksek karşıtlık
+modunda seçili dilim, çip ve menü öğesi çerçeveyle görünür; çubuklar silinmez.
+Telefonda yapışkan çubuklar odaktaki öğeyi örtmez. Grafikte eksen değeri vardır,
+çubuğa dokununca değeri altında yazar. Kamera kutuları kamerayla aynı orandadır
+(16:9). Pano ana ekrana eklenebilir (`manifest.webmanifest`, `simge-*.png`) ve
+yazdırılabilir. Son rapor bugüne ait değilse (program dün kapandı) sayılar
+"Bugün" değil o günün adıyla etiketlenir; bağlantı yokken sayılar ve grafik
+solgun çizilir. Çıkışta ya da oturum düşünce sayfa yeniden yüklenir: önceki
+kullanıcının verisi gizli sayfada kalmaz. Pano isteği 12 saniyede bitmezse
+bırakılır; panonun olmayan bir cevap (ör. otel ağının giriş sayfası) boş veri
+sayılmaz.
+
+**Yazı tipi.** Inter iki dosyadır: latin altkümesi (48 KB, sayfadan önce
+yüklenir) ve yalnız Türkçenin ondan eksik harflerini (Ğ ğ İ Ş ş, ₺) taşıyan
+3 KB'lık `inter-tr-ek.woff2`. Eskiden 85 KB'lık latin-ext iniyordu. Yazı tipi
+dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`).
 
 ## Güvenlik
 
@@ -646,7 +672,10 @@ denetler. İki temada da yazılar en az 4.5:1 kontrastlıdır.
 - **Giriş kilitleri:** Üç kilidin sayacı şifre denetiminden önce ve tek adımda
   bir artırılır (pay ayrılır); sınırı aşan deneme payını geri verip reddedilir,
   başarılı giriş de payını geri verir. Böylece aynı anda gönderilen denemeler de
-  sınırı aşamaz (02.11.2026). Sınırlar: adres başına
+  sınırı aşamaz (02.11.2026). Pay geri verilirken sayacın süresi korunur
+  (`SET … NX EX` + `DECR`): süresi tam arada dolan sayaç eskiden süresiz
+  kalıyor, yanlışlar birikip genel kilit bütün girişleri kalıcı kapatabiliyordu;
+  süresiz kalmış bir sayaç da ilk reddedişte süre alır (08.11.2026). Sınırlar: adres başına
   5 yanlışta 5 dakika (IPv6'da /64 öneki), ad başına 15 dakikada 10 yanlışta
   15 dakika, bütün adreslerden 15 dakikada 100 yanlışta 15 dakika. Bilinmeyen
   adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
@@ -668,12 +697,15 @@ denetler. İki temada da yazılar en az 4.5:1 kontrastlıdır.
   uzaktan yapılmaz. Asıl kapı sitede değil programdadır (ayar, rol, diskteki
   ağır sınır, `nonce`).
 - **Alan süzme:** Rapordaki alanlar tek tek tip ve uzunluk denetiminden geçer;
-  bilinmeyen alan depoya yazılmaz. Görüntü yalnız kendi imzalı adresinden gelir:
+  bilinmeyen alan depoya yazılmaz. Serbest metin alanlarında (olay açıklaması,
+  sistem sorunları, komut sonucu, teşhis) adres ve dosya yolu site tarafında da
+  maskelenir: `xxx://` adresleri, IP (port, `kullanıcı:şifre@` dahil), Windows,
+  paylaşım ve Unix yolları "(adres)" / "(dosya yolu)" olur. Görüntü yalnız kendi imzalı adresinden gelir:
   base64 sıkı çözülür, boyut sınırı aşılmaz, JPEG olmayan içerik reddedilir.
   Panoya `image/jpeg` ve `nosniff` ile, yalnız oturumla verilir.
 - **Oturum:** Çerez (v2) `HttpOnly`, `Secure`, `SameSite=Strict`, 12 saat;
-  imzası `PANO_SIFRESI` ve `RAPOR_ANAHTARI`'ndan türer, bu yüzden kurucu şifresi
-  değişince bütün oturumlar düşer. Rol, hesap kimliği ve oturum sürümü her
+  imzası `PANO_SIFRESI` ve `RAPOR_ANAHTARI`'ndan (tanımlıysa `OTURUM_ANAHTARI`'ndan
+  da) türer, bu yüzden kurucu şifresi değişince bütün oturumlar düşer. Rol, hesap kimliği ve oturum sürümü her
   istekte kayıtla karşılaştırılır: rolü düşürülen, kapatılan ya da silinen
   hesabın oturumu anında biter.
 - **Sayfa:** sıkı Content-Security-Policy (yalnız sitenin kendi dosyaları),
@@ -706,6 +738,7 @@ yenileyin.
 | Program: "beklenmeyen bir cevap verdi (HTTP 401)" | Önizleme adresi yazılmış; Vercel'in ana (Production) adresini yazın |
 | Program: "Siteye ulaşılamadı" | İnternet yok ya da şirket güvenlik duvarı `vercel.app` adreslerini engelliyor |
 | Pano: "Veri deposuna ulaşılamadı" | Storage sekmesinde Upstash bağlantısını kontrol edin; Vercel → Logs |
+| Pano: "Siteden beklenmeyen bir cevap geldi" | Bağlı olunan ağ (otel, misafir Wi-Fi) önce kendi giriş sayfasını gösteriyor; o sayfada oturum açın ya da mobil veriye geçin |
 | Kameralar: "Fabrika programı anlık görüntü göndermiyor" | Programın uzak pano bağlantısı eski; güncellenince kameralar görüntüsüyle çıkar |
 | Kameralar: "Görüntü beklemede" | Ekrana 10 dakikadır dokunulmadı; Sürdür'e basın |
 | Olaylar: "Fotoğraf alınamadı" | Fotoğraf sitede silinmiş (7 gün, en çok 60) ya da henüz gelmedi; asılları fabrikadaki bilgisayardadır |
@@ -734,7 +767,8 @@ http yalnız bu bilgisayar için kabul edilir). Yerel sunucu Upstash yerine bell
 kullanır; kapatınca her şey silinir. Yerel sunucuda `VERCEL_ENV` yoktur, bu
 yüzden önizleme kilidi çalışmaz: komut ve hesap işleri açıktır.
 
-Testler ve biçim denetimi:
+Testler ve biçim denetimi (GitHub Actions her gönderimde ve PR'da aynısını
+Python 3.12 ile çalıştırır: `.github/workflows/testler.yml`):
 
 ```bash
 python3 -m pip install pytest ruff

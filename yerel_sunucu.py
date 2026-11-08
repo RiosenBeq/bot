@@ -40,6 +40,7 @@ DENEME_ANAHTARI = "yerel-deneme-anahtari-yalniz-bu-bilgisayar-icin"
 
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def _api_modulleri() -> dict[str, ModuleType]:

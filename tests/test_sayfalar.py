@@ -104,12 +104,17 @@ def test_logo_ve_simge_basvurulari_var_olan_dosyayi_gosterir(sayfa):
 DEMO_JS = (PUBLIC / "demo.js").read_text(encoding="utf-8")
 
 
-def test_demo_betigi_panodan_once_yuklenir():
-    """demo.js fetch'i ve resim adreslerini pano.js çalışmadan kurmalı; ikisi de
-    defer olduğu için sayfadaki sıra çalışma sırasıdır."""
+def test_demo_betigi_yalniz_demoda_ve_panodan_once_yuklenir():
+    """demo.js fetch'i ve resim adreslerini pano.js çalışmadan kurmalı. Gerçek
+    panoda hiç inmemeli (denetim 08.11.2026): pano.html yalnız pano.js'i yükler;
+    pano.js adres /demo ise demo.js'i ekler, yüklenince panoyu başlatır."""
     html = (PUBLIC / "pano.html").read_text(encoding="utf-8")
     betikler = re.findall(r'<script src="([^"]+)" defer></script>', html)
-    assert betikler == ["/demo.js", "/pano.js"]
+    assert betikler == ["/pano.js"]
+    pano_js = (PUBLIC / "pano.js").read_text(encoding="utf-8")
+    yukleyici = pano_js.rsplit("function panoyuBaslat()", 1)[1].rsplit("(function () {", 1)[1]
+    assert '!== "/demo"' in yukleyici and 'betik.src = "/demo.js"' in yukleyici
+    assert "betik.onload = betik.onerror = panoyuBaslat" in yukleyici
 
 
 def test_demo_yalniz_demo_adresinde_calisir():

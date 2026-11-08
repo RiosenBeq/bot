@@ -256,9 +256,10 @@ def test_hesap_kilidi_yeniden_girilebilir(monkeypatch):
     _yaz_hesap(depo, _hesap("opr", surum=1))
     kilit = _pano.KULLANICI_KILIT_ONEKI + "opr"
     with _pano._hesap_kilidi(depo, "opr"):
-        assert depo.al_coklu([kilit]) == ["1"]
+        (jeton,) = depo.al_coklu([kilit])  # kilidin değeri bu isteğe özgü jeton
+        assert jeton
         _pano._oturum_surumu_arttir(depo, "opr")  # iç içe: bir şey yapmaz, yazar
-        assert depo.al_coklu([kilit]) == ["1"]  # dıştaki kilit duruyor
+        assert depo.al_coklu([kilit]) == [jeton]  # dıştaki kilit duruyor
     (ham,) = depo.al_coklu([_pano.KULLANICI_ONEKI + "opr"])
     assert json.loads(ham)["oturum_surumu"] == 2
     assert depo.al_coklu([kilit]) == [None]  # yalnız dıştaki `with` bıraktı

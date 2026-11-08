@@ -31,7 +31,6 @@ import binascii
 import contextlib
 import hashlib
 import hmac
-import http.cookies
 import ipaddress
 import json
 import math
@@ -292,7 +291,11 @@ KOMUT_RED_PENCERESI_SN = 60
 # yönetici X'i düşürürken X şifresini değiştirir) birbirini sessizce ezebilir.
 # Kilit CAS yerine geçer: alınamazsa kısa süre denenir, sonra 409 mesgul.
 KULLANICI_KILIT_ONEKI = "dalsan:kullanici:kilit:"
-HESAP_KILIT_SURESI_SN = 5
+# Kilidin ömrü, kilit altındaki işin en kötü süresinden (birkaç Upstash çağrısı,
+# her biri en çok 5 sn, ve scrypt) uzun olmalı; yoksa süresi dolan kilidi başka
+# istek alır. Kilit her durumda finally'de bırakılır; bu süre yalnız çöken
+# isteğin kilidini kaldırır (denetim 08.11.2026; eskiden 5 sn).
+HESAP_KILIT_SURESI_SN = 20
 HESAP_KILIT_DENEME = 5
 HESAP_KILIT_BEKLEME_SN = 0.2
 HESAP_MESGUL_METNI = "Bu hesapta başka bir işlem sürüyor; birkaç saniye sonra yeniden deneyin."
@@ -348,9 +351,43 @@ KARE_SAKLAMA_SN = 120
 KARE_ARALIK_SN = 10  # fabrikaya önerilen gönderme aralığı (README)
 JPEG_BASI = b"\xff\xd8\xff"
 IP_EN_COK = 4
-# Sistem olayının açıklamasında adres olmaz (kamera şifresi adresin içinde
-# durur). Fabrika da çıkarır; bu ikinci kilittir.
-ADRES_DESENI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S*")
+# Adres ve dosya yolu maskesi (docs/19 §3.7). Fabrika programı süzer; site ikinci
+# kat olarak her serbest metin alanında (olay açıklaması, sistem sorunları, komut
+# sonucu, teşhis) yeniden süzer. Eskiden yalnız "xxx://" yakalanıyor ve açgözlü
+# \S* kapanış parantezini yutuyordu (denetim 08.11.2026).
+_ADRES_PARCA = r"[^\s<>\"'()\[\]{}]"
+ADRES_DESENI = re.compile(
+    rf"[A-Za-z][A-Za-z0-9+.-]*://{_ADRES_PARCA}+"  # şemalı adres: rtsp://, http://
+    # IPv4 (önünde kullanıcı:şifre@, arkasında :port ve /yol olabilir)
+    rf"|(?<![\w.])(?:[\w.~%+-]+(?::[^\s@/()]*)?@)?(?:\d{{1,3}}\.){{3}}\d{{1,3}}"
+    rf"(?::\d{{1,5}})?(?:/{_ADRES_PARCA}*)?(?!\.?\w)"
+    r"|(?<![\w:])(?:[0-9A-Fa-f]{1,4}:){5,7}[0-9A-Fa-f]{1,4}(?![\w:])"  # tam IPv6, MAC
+    r"|(?<![\w:])(?:[0-9A-Fa-f]{1,4}:){0,6}:(?::?[0-9A-Fa-f]{1,4}){1,7}(?:%[\w.]+)?(?![\w:])"
+)
+YOL_DESENI = re.compile(
+    r"(?<![\w])[A-Za-z]:(?:\\|/(?!/))[^\s\"'<>|]*"  # Windows yolu: C:\Users\...
+    r"|\\\\[^\s\\/]+[\\/][^\s\"'<>|]*"  # paylaşım: \\sunucu\klasör
+    r"|(?<![\w/.~-])(?:~|/(?:home|Users|root|var|etc|opt|usr|tmp|srv|mnt|media|data|app"
+    r"|private))/[^\s\"'<>()\[\]{},;]*"  # Unix yolu
+)
+_SONDAKI_ISARETLER = ".,;:!?"
+
+
+def adres_maskele(metin: str) -> str:
+    """Metindeki adresleri "(adres)", dosya yollarını "(dosya yolu)" yapar. Sondaki
+    nokta ve virgül cümlenin parçasıdır, maskenin dışında kalır. Fabrikanın kendi
+    maskesi "(...)" içinde gelirse çift parantez teke iner."""
+
+    def yerine(eslesme: re.Match, isaret: str) -> str:
+        parca = eslesme.group(0)
+        govde = parca.rstrip(_SONDAKI_ISARETLER)
+        return isaret + parca[len(govde) :]
+
+    metin = ADRES_DESENI.sub(lambda e: yerine(e, "(adres)"), metin)
+    metin = YOL_DESENI.sub(lambda e: yerine(e, "(dosya yolu)"), metin)
+    return metin.replace("((adres))", "(adres)").replace("((dosya yolu))", "(dosya yolu)")
+
+
 CALISMA_AY_DESENI = re.compile(r"[0-9]{4}-(0[1-9]|1[0-2])")  # bu ayın çalışma oranı
 CALISMA_SAAT_EN_COK = 744  # 31 gün
 
@@ -404,6 +441,11 @@ TESIS_CAKISMA_SN = 3600
 TESIS_CAKISMA_METNI = (
     "Aynı tesis kimliği iki bilgisayardan geliyor: {kimlik} ({ad1}, {ad2}). Her bilgisayara "
     "farklı UZAK_PANO_TESIS_ID yazın."
+)
+# veri.bilgisayar yetkisi olmayan (Tesisler ekranı ayrıca açılmış) role: bilgisayar adı yok
+TESIS_CAKISMA_ADSIZ_METNI = (
+    "Aynı tesis kimliği iki bilgisayardan geliyor: {kimlik}. Her bilgisayara farklı "
+    "UZAK_PANO_TESIS_ID yazın."
 )
 TESIS_EN_COK = 50
 TESIS_ID_DESENI = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}")
@@ -491,6 +533,9 @@ class Ayar:
     ana_tesis: str = ""
     # ANA_TESIS yazılmış ama kimlik olamıyor: yok sayılır, Tesisler ekranı uyarır.
     ana_tesis_gecersiz: bool = False
+    # İsteğe bağlı OTURUM_ANAHTARI (en az 32 karakter): çerez imzasına katılır.
+    # Yoksa imza bugünkü gibi yalnız PANO_SIFRESI ve RAPOR_ANAHTARI'ndan türer.
+    oturum_anahtari: str = field(default="", repr=False)
 
 
 def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
@@ -519,6 +564,13 @@ def _katla(ham: str | None) -> str:
     """Ortam ayarını karşılaştırılabilir yapar: boşluk atılır, Türkçe harfler
     ASCII karşılığına iner, küçük harfe çevrilir ("Açık" -> "acik")."""
     return (ham or "").strip().translate(TURKCE_KATLAMA).lower()
+
+
+def _oturum_anahtari_ortam(ham: str | None) -> str:
+    """OTURUM_ANAHTARI: kısa (32 karakterden az) değer yok sayılır; tahmin
+    edilebilir bir anahtar korumayı zayıflatır, eksik ayar sayılmaz (opt-in)."""
+    deger = (ham or "").strip()
+    return deger if len(deger) >= 32 else ""
 
 
 def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
@@ -558,6 +610,7 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         smtp_kimden=ortam.get("SMTP_KIMDEN", "").strip(),
         ana_tesis=ana_tesis if ana_gecerli else "",
         ana_tesis_gecersiz=bool(ana_tesis) and not ana_gecerli,
+        oturum_anahtari=_oturum_anahtari_ortam(ortam.get("OTURUM_ANAHTARI")),
     )
 
 
@@ -793,6 +846,12 @@ class BellekDepo(_OrtakDepo):
                 return 0
             self._veri[arg[0]] = (self._veri[arg[0]][0], self.saat() + int(arg[1]))
             return 1
+        if ad == "TTL":
+            # Redis: anahtar yoksa -2, süresi yoksa -1, varsa kalan saniye
+            if self._deger(arg[0]) is None:
+                return -2
+            bitis = self._veri[arg[0]][1]
+            return -1 if bitis is None else max(0, round(bitis - self.saat()))
         if ad in ("RPUSH", "LPUSH"):
             liste = list(self._liste(arg[0]))
             for deger in arg[1:]:
@@ -969,7 +1028,7 @@ def _olay(ham: dict) -> dict:
         "id": _kimlik(ham.get("id")),  # kanıt fotoğrafının anahtarı
         "foto": False,  # sitede fotoğrafı var mı: pano_verisi doldurur
         # Sistem olayının açıklaması; adres ve dosya yolu fabrikada çıkarılır
-        "ayrinti": _metin(ADRES_DESENI.sub("(adres)", _metin(ham.get("ayrinti"), 600)), 300),
+        "ayrinti": _metin(adres_maskele(_metin(ham.get("ayrinti"), 600)), 300),
         "zaman": _zaman(ham.get("zaman")),
         "tur": _secim(ham.get("tur"), OLAY_TURLERI) or "ihlal",
         "baslik": _metin(ham.get("baslik"), 160) or "Olay",
@@ -1213,7 +1272,10 @@ def rapor_temizle(ham: object) -> dict:
             "uyari_garantisi": _mantik(sistem.get("uyari_garantisi")),
             "sorunlar": [
                 metin
-                for metin in (_metin(oge, 200) for oge in _liste(sistem.get("sorunlar"), 20))
+                for metin in (
+                    _metin(adres_maskele(_metin(oge, 400)), 200)
+                    for oge in _liste(sistem.get("sorunlar"), 20)
+                )
                 if metin
             ],
             "bos_disk_gb": _sayi(sistem.get("bos_disk_gb"), 0, 10**6),
@@ -1365,14 +1427,25 @@ def pano_verisi(depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float) -> dic
         baglanti = "canli"
     else:
         baglanti = "yok"
+    # Sayılar (bugun_ihlal, dun_ihlal, saatlik, gunluk) raporun gününe aittir. Son
+    # rapor dünden kaldıysa (program cuma kapandı, pazartesi bakılıyor) pano onları
+    # "bugün" diye etiketlememeli (denetim 08.11.2026): günü ve geçerliliği söylenir.
+    rapor_gunu = _turkiye_gunu(son) if son is not None else None
     return {
         "baglanti": baglanti,
         "son_rapor": _iso(son) if son is not None else None,
         "gecikme_sn": max(0, round(simdi - son)) if son is not None else None,
         "sunucu_zamani": _iso(simdi),
+        "rapor_gunu": rapor_gunu,
+        "bugun_gecerli": rapor_gunu is not None and rapor_gunu == _turkiye_gunu(simdi),
         "rapor": rapor if isinstance(rapor, dict) else None,
         "fabrika_adresi": ayar.fabrika_adresi,
     }
+
+
+def _turkiye_gunu(zaman: float) -> str:
+    """Türkiye günü, "YYYY-AA-GG"."""
+    return datetime.fromtimestamp(zaman, TURKIYE_SAATI).strftime("%Y-%m-%d")
 
 
 # ------------------------------------------------- çoklu fabrika / filo (öneri 10)
@@ -1592,7 +1665,11 @@ def tesis_ozeti(depo: UpstashDepo | BellekDepo, simdi: float) -> list[dict]:
 
 
 def filo_verisi(
-    depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float, veri: dict | None = None
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    simdi: float,
+    veri: dict | None = None,
+    bilgisayar_gorur: bool = True,
 ) -> dict:
     """/api/durum?filo=1 (yalnız yönetici): her tesisin özeti, ana tesis ve
     yöneticiye uyarılar. Komut alan satır tektir ve komutu gerçekten alanı
@@ -1602,7 +1679,10 @@ def filo_verisi(
     Uyarılar: tesis kullanılırken eski program canlı; ANA_TESIS geçersiz;
     BEKCI_ALICILAR'daki eski tg: girdileri yok sayılıyor; aynı tesis kimliği iki
     bilgisayardan geliyor (satırda `cakisma`).
-    `veri`: aynı istekte okunmuş pano_verisi (ikinci kez okunmasın)."""
+    `veri`: aynı istekte okunmuş pano_verisi (ikinci kez okunmasın).
+    `bilgisayar_gorur`: veri.bilgisayar yetkisi; yoksa çakışma uyarısı ve satırı
+    bilgisayar adlarını taşımaz (Tesisler ekranı bu yetki olmadan da açılabilir;
+    denetim 08.11.2026)."""
     veri = veri if veri is not None else pano_verisi(depo, ayar, simdi)
     rapor = veri.get("rapor")
     eski_canli = (
@@ -1623,8 +1703,17 @@ def filo_verisi(
         uyarilar.append(ESKI_PROGRAM_METNI)
     for satir in tesisler:  # aynı tesis kimliği iki bilgisayardan (kopyalanan .env)
         if "cakisma" in satir:
-            ad1, ad2 = satir["cakisma"]["adlar"]
-            uyarilar.append(TESIS_CAKISMA_METNI.format(kimlik=satir["id"], ad1=ad1, ad2=ad2))
+            if bilgisayar_gorur:
+                ad1, ad2 = satir["cakisma"]["adlar"]
+                metin = TESIS_CAKISMA_METNI.format(kimlik=satir["id"], ad1=ad1, ad2=ad2)
+            else:
+                metin = TESIS_CAKISMA_ADSIZ_METNI.format(kimlik=satir["id"])
+            uyarilar.append(metin)
+    if not bilgisayar_gorur:
+        satirlar = [
+            {**satir, "cakisma": {**satir["cakisma"], "adlar": []}} if "cakisma" in satir else satir
+            for satir in satirlar
+        ]
     satirlar.sort(key=lambda satir: (not satir["ana"], satir["ad"].casefold()))
     return {"tesisler": satirlar, "ana_tesis": ana, "uyarilar": uyarilar}
 
@@ -1647,41 +1736,95 @@ def bekci_karari(hedef: dict, esik_dk: int) -> bool:
     return isinstance(gecikme, int | float) and gecikme >= esik_dk * 60
 
 
-def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str) -> None:
-    """Düz metin e-posta (yalnız stdlib: smtplib + ssl). 465 ise doğrudan TLS,
-    öbür portlarda STARTTLS; şifre hiçbir zaman şifresiz bağlantıda gitmez."""
-    if not ayar.smtp_sunucu:
-        raise BildirimHatasi("SMTP sunucusu tanımlı değil (SMTP_SUNUCU)")
-    if not EPOSTA_DESENI.fullmatch(alici):
-        raise BildirimHatasi("E-posta adresi geçersiz")
-    mesaj = EmailMessage()
-    mesaj["From"] = ayar.smtp_kimden or ayar.smtp_kullanici or alici
-    mesaj["To"] = alici
-    mesaj["Subject"] = konu
-    mesaj.set_content(govde)
-    baglam = ssl.create_default_context()
-    if ayar.smtp_port == 465:
-        sunucu = smtplib.SMTP_SSL(
-            ayar.smtp_sunucu, 465, context=baglam, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
-        )
-    else:
-        sunucu = smtplib.SMTP(
-            ayar.smtp_sunucu, ayar.smtp_port, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
-        )
-    gitti = False
-    try:
-        with sunucu:
+class _SmtpOturumu:
+    """Bekçi bildirimleri için tek SMTP oturumu (yalnız stdlib: smtplib + ssl).
+    Bağlanma, TLS ve giriş bir kez yapılır; her alıcıya ayrı ileti gider (alıcılar
+    birbirini görmez). Bağlantı koparsa sıradaki alıcıda yeniden kurulur; alıcıya
+    özgü ret (bozuk adres) oturumu kapatmaz. Eskiden her alıcıya ayrı bağlantı ve
+    giriş açılıyordu: 20 alıcıda 10'ar saniyelik zaman aşımları işlevin süresini
+    aşabilirdi (denetim 08.11.2026). 465 ise doğrudan TLS, öbür portlarda STARTTLS;
+    şifre hiçbir zaman şifresiz bağlantıda gitmez."""
+
+    # Bu hatalar yalnız o iletiyi ilgilendirir; oturum sürer
+    ILETI_HATALARI = (
+        smtplib.SMTPRecipientsRefused,
+        smtplib.SMTPSenderRefused,
+        smtplib.SMTPDataError,
+    )
+
+    def __init__(self) -> None:
+        self._yigin: contextlib.ExitStack | None = None
+        self._sunucu: smtplib.SMTP | None = None
+
+    def _ac(self, ayar: Ayar) -> smtplib.SMTP:
+        baglam = ssl.create_default_context()
+        if ayar.smtp_port == 465:
+            sunucu = smtplib.SMTP_SSL(
+                ayar.smtp_sunucu, 465, context=baglam, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
+            )
+        else:
+            sunucu = smtplib.SMTP(
+                ayar.smtp_sunucu, ayar.smtp_port, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN
+            )
+        yigin = contextlib.ExitStack()
+        try:
+            yigin.enter_context(sunucu)
             if ayar.smtp_port != 465:
                 sunucu.starttls(context=baglam)
             if ayar.smtp_kullanici:
                 sunucu.login(ayar.smtp_kullanici, ayar.smtp_sifresi)
-            sunucu.send_message(mesaj)
-            gitti = True
-    except (smtplib.SMTPException, OSError):
-        # İleti gittikten sonraki kapanış (QUIT) hatası başarısızlık sayılmaz:
-        # sayılsaydı işaret bırakılır, aynı bildirim her çağrıda yeniden giderdi.
-        if not gitti:
+        except BaseException:
+            with contextlib.suppress(smtplib.SMTPException, OSError):
+                yigin.close()
             raise
+        self._yigin, self._sunucu = yigin, sunucu
+        return sunucu
+
+    def gonder(self, ayar: Ayar, alici: str, konu: str, govde: str) -> None:
+        if not ayar.smtp_sunucu:
+            raise BildirimHatasi("SMTP sunucusu tanımlı değil (SMTP_SUNUCU)")
+        if not EPOSTA_DESENI.fullmatch(alici):
+            raise BildirimHatasi("E-posta adresi geçersiz")
+        mesaj = EmailMessage()
+        mesaj["From"] = ayar.smtp_kimden or ayar.smtp_kullanici or alici
+        mesaj["To"] = alici
+        mesaj["Subject"] = konu
+        mesaj.set_content(govde)
+        sunucu = self._sunucu or self._ac(ayar)
+        try:
+            sunucu.send_message(mesaj)
+        except self.ILETI_HATALARI:
+            raise
+        except BaseException:
+            self.kapat()
+            raise
+
+    def kapat(self) -> None:
+        """Oturumu kapatır. İleti gittikten sonraki kapanış (QUIT) hatası
+        başarısızlık sayılmaz: sayılsaydı işaret bırakılır, aynı bildirim her
+        çağrıda yeniden giderdi."""
+        yigin, self._yigin, self._sunucu = self._yigin, None, None
+        if yigin is not None:
+            with contextlib.suppress(smtplib.SMTPException, OSError):
+                yigin.close()
+
+
+# bekci_uyari_gonder'in açtığı ortak oturum (istek başına; iş parçacığına özgü)
+_SMTP_OTURUMU = threading.local()
+
+
+def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str) -> None:
+    """Tek alıcıya tek e-posta. bekci_uyari_gonder açık bir oturum bıraktıysa
+    onu kullanır; yoksa kendi oturumunu açıp kapatır."""
+    ortak = getattr(_SMTP_OTURUMU, "acik", None)
+    if ortak is not None:
+        ortak.gonder(ayar, alici, konu, govde)
+        return
+    oturum = _SmtpOturumu()
+    try:
+        oturum.gonder(ayar, alici, konu, govde)
+    finally:
+        oturum.kapat()
 
 
 def _alici_gizle(alici: str) -> str:
@@ -1713,7 +1856,28 @@ def bekci_uyari_gonder(
     500 yapmaz; günlüğe sırsız yazılır. `basarida` ilk başarılı gönderimden
     hemen sonra bir kez çağrılır (bekçi işareti uzatır). Gönderen enjekte
     edilebilir (testte sahte gönderici verilir)."""
-    eposta_gonder = eposta_gonder or _eposta_gonder
+    if eposta_gonder is not None:
+        return _alicilara_gonder(ayar, alicilar, konu, metin, eposta_gonder, basarida)
+    # Gerçek gönderim: bütün alıcılar tek SMTP oturumunda. _eposta_gonder adı çağrı
+    # anında çözülür (testler onu değiştirir); oturum ilk gerçek gönderimde açılır.
+    oturum = _SMTP_OTURUMU.acik = _SmtpOturumu()
+    try:
+        return _alicilara_gonder(
+            ayar, alicilar, konu, metin, lambda *arg: _eposta_gonder(*arg), basarida
+        )
+    finally:
+        _SMTP_OTURUMU.acik = None
+        oturum.kapat()
+
+
+def _alicilara_gonder(
+    ayar: Ayar,
+    alicilar: tuple[str, ...],
+    konu: str,
+    metin: str,
+    eposta_gonder: Callable[[Ayar, str, str, str], None],
+    basarida: Callable[[], object] | None,
+) -> int:
     gonderilen = 0
     for alici in alicilar:
         try:
@@ -2011,7 +2175,7 @@ def _ek_temizle(ham: object) -> str:
     if not isinstance(ham, str) or not ham:
         return ""
     temiz = "".join(h if (h in "\n\t" or h.isprintable()) else " " for h in ham)
-    temiz = ADRES_DESENI.sub("(adres)", temiz)
+    temiz = adres_maskele(temiz)
     kodlu = temiz.encode("utf-8")
     if len(kodlu) > EK_EN_BUYUK_BAYT:
         temiz = kodlu[:EK_EN_BUYUK_BAYT].decode("utf-8", "ignore")
@@ -2345,7 +2509,12 @@ def sonuclari_yaz(depo: UpstashDepo | BellekDepo, ham: object, simdi: float) -> 
         durum = _secim(oge.get("durum"), ("yapildi", "hata", "suruyor"))
         if durum:
             sonuclar.append(
-                (oge["id"], durum, _metin(oge.get("mesaj"), 300), _ek_temizle(oge.get("ek")))
+                (
+                    oge["id"],
+                    durum,
+                    _metin(adres_maskele(_metin(oge.get("mesaj"), 600)), 300),
+                    _ek_temizle(oge.get("ek")),
+                )
             )
     if not sonuclar:
         return []
@@ -2741,8 +2910,11 @@ def _ad_gecerli_mi(ad: object) -> bool:
 
 
 def ad_duzelt(ham: object) -> str:
-    """Baştaki/sondaki boşluk atılır, küçük harfe çevrilir (docs/19 §3.1)."""
-    return ham.strip().lower() if isinstance(ham, str) else ""
+    """Baştaki/sondaki boşluk atılır, Türkçe harfler ASCII karşılığına iner, küçük
+    harfe çevrilir (docs/19 §3.1). Ad yalnız ASCII olabilir (AD_DESENI); eskiden
+    "İsmail".lower() birleşik noktalı "i̇smail" oluyor, giriş tutmuyor ve deneme
+    kilide sayılıyordu (denetim 08.11.2026)."""
+    return _katla(ham) if isinstance(ham, str) else ""
 
 
 def hesap_oku(depo: UpstashDepo | BellekDepo, ad: str) -> dict | None:
@@ -2778,9 +2950,23 @@ def _oturum_anahtari(ayar: Ayar) -> bytes:
     ).digest()
 
 
+def _cerez_anahtari(ayar: Ayar) -> bytes:
+    """Çerez imzasının anahtarı. OTURUM_ANAHTARI tanımlıysa ona da bağlıdır:
+    RAPOR_ANAHTARI'nı ve bir çerezi ele geçiren biri kurucu şifresini artık
+    çevrimdışı deneyemez (SONRA-YAPILACAKLAR güvenlik maddesi 4). Kurucu şifresi
+    değişince bütün oturumların düşmesi sürer (şifre yine anahtardadır). Kurucunun
+    iki adım izi (_kurucu_parmagi) bilerek eski anahtarda kalır: ayarı eklemek o
+    kaydı geçersiz kılıp iki adımı sessizce kapatmasın."""
+    if not ayar.oturum_anahtari:
+        return _oturum_anahtari(ayar)
+    return hashlib.sha256(
+        f"dalsan-pano-cerez|{ayar.pano_sifresi}|{ayar.rapor_anahtari}|{ayar.oturum_anahtari}".encode()
+    ).digest()
+
+
 def _cerez_imzasi(ayar: Ayar, ad: str, kimlik: str, surum: int, bitis: int) -> str:
     govde = f"v2|{ad}|{kimlik}|{surum}|{bitis}"
-    return hmac.new(_oturum_anahtari(ayar), govde.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(_cerez_anahtari(ayar), govde.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def cerez_uret(ayar: Ayar, ad: str, kimlik: str, surum: int, simdi: float) -> str:
@@ -2920,6 +3106,30 @@ def _ad_kilit_anahtari(ad: str) -> str:
     return GIRIS_AD_ONEKI + hashlib.sha256(ad.encode()).hexdigest()[:24]
 
 
+def _pay_geri_ver(sayaclar: tuple[tuple[str, int], ...]) -> list[list[str]]:
+    """Ayrılan payı geri veren komutlar. Pay ayrı bir istekte (başarılı girişte
+    scrypt'ten sonra) geri verilir; sayacın süresi tam arada dolduysa yalnız
+    DECR onu SÜRESİZ ve -1 olarak kurardı (Redis), süresiz sayaçta yanlışlar
+    birikip genel kilidi kalıcı yapardı (denetim 08.11.2026). Önce SET NX EX
+    sayacı süreli kurar (varsa dokunmaz), sonra azaltılır: süre hep korunur."""
+    komutlar: list[list[str]] = []
+    for anahtar, sure in sayaclar:
+        komutlar += [["SET", anahtar, "0", "EX", str(sure), "NX"], ["DECR", anahtar]]
+    return komutlar
+
+
+def _kilit_reddi(
+    depo: UpstashDepo | BellekDepo, geri_ver: list[list[str]], anahtar: str, sure: int
+) -> None:
+    """Kilide takılan deneme payını geri verir ve kilidi tutan sayacın süresine
+    bakar: eski bir yarıştan süresiz kalmış sayaç burada süre alır, kilit en
+    geç bir pencere sonra kalkar (yalnız kilitliyken çalışır, olağan girişe
+    komut eklemez)."""
+    sonuc = depo.boru_hatti([*geri_ver, ["TTL", anahtar]])
+    if sonuc[-1] == -1:
+        depo.boru_hatti([["EXPIRE", anahtar, str(sure)]])
+
+
 def giris_dene(
     depo: UpstashDepo | BellekDepo,
     ayar: Ayar,
@@ -2960,9 +3170,9 @@ def giris_dene(
     sonuc = depo.boru_hatti([*ayir, ["GET", hesap_anahtari]])
     adres_sayisi, ad_sayisi, genel_sayisi = (int(sonuc[i]) for i in (1, 3, 5))
     hesap_ham = sonuc[6] if isinstance(sonuc[6], str) else None
-    geri_ver = [["DECR", anahtar] for anahtar, _ in sayaclar]
+    geri_ver = _pay_geri_ver(sayaclar)
     if adres_sayisi > KILIT_DENEME:
-        depo.boru_hatti(geri_ver)
+        _kilit_reddi(depo, geri_ver, adres_anahtari, KILIT_SURESI_SN)
         raise PanoHatasi(
             429,
             "kilitli",
@@ -2970,14 +3180,14 @@ def giris_dene(
             "sonra yeniden deneyin.",
         )
     if ad_sayisi > AD_KILIT_DENEME:
-        depo.boru_hatti(geri_ver)
+        _kilit_reddi(depo, geri_ver, ad_anahtari, AD_KILIT_SURESI_SN)
         raise PanoHatasi(
             429,
             "ad_kilitli",
             "Bu kullanıcı adıyla çok fazla yanlış deneme yapıldı. 15 dakika sonra yeniden deneyin.",
         )
     if genel_sayisi > GENEL_KILIT_DENEME:
-        depo.boru_hatti(geri_ver)
+        _kilit_reddi(depo, geri_ver, GIRIS_GENEL_ANAHTARI, GENEL_KILIT_SURESI_SN)
         raise PanoHatasi(
             429,
             "genel_kilit",
@@ -3168,12 +3378,18 @@ class Isleyici(BaseHTTPRequestHandler):
         return _sozluk(govde)
 
     def cerez_al(self, ad: str) -> str:
-        cerezler = http.cookies.SimpleCookie()
-        try:
-            cerezler.load(self.headers.get("Cookie") or "")
-        except http.cookies.CookieError:
-            return ""
-        return cerezler[ad].value if ad in cerezler else ""
+        """Cookie başlığından tek çerez. SimpleCookie, önünde bozuk bir çerez
+        (boşluklu ya da JSON değer) olunca bütün başlığı bırakıyordu: aynı alan
+        adındaki başka bir uygulamanın çereziyle oturum görünmez olurdu (denetim
+        08.11.2026). Başlık "; " ile bölünür, ad tam eşleşir, ilk değer alınır."""
+        for parca in (self.headers.get("Cookie") or "").split(";"):
+            anahtar, ayrac, deger = parca.strip().partition("=")
+            if ayrac and anahtar == ad:
+                deger = deger.strip()
+                if len(deger) >= 2 and deger[0] == deger[-1] == '"':
+                    deger = deger[1:-1]
+                return deger
+        return ""
 
     def sorgu(self, ad: str) -> str:
         degerler = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -3397,7 +3613,9 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     if istek.sorgu("kare") == "1":
         veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"))
     if istek.sorgu("filo") == "1" and oturum.yetkili("ekran.tesisler"):
-        veri["filo"] = filo_verisi(depo, ayar, simdi, veri)
+        veri["filo"] = filo_verisi(
+            depo, ayar, simdi, veri, bilgisayar_gorur=oturum.yetkili("veri.bilgisayar")
+        )
     return 200, veri, None
 
 
@@ -3660,8 +3878,12 @@ def _hesap_kilidi(depo: UpstashDepo | BellekDepo, ad: str):
         yield  # dıştaki kilit bu hesabı zaten sırayla işletiyor
         return
     anahtar = KULLANICI_KILIT_ONEKI + ad
+    # Kilidin değeri bu isteğe özgü jetondur: bırakırken yalnız kendi kilidini siler
+    jeton = secrets.token_hex(8)
     for deneme in range(HESAP_KILIT_DENEME):
-        (alindi,) = depo.boru_hatti([["SET", anahtar, "1", "EX", str(HESAP_KILIT_SURESI_SN), "NX"]])
+        (alindi,) = depo.boru_hatti(
+            [["SET", anahtar, jeton, "EX", str(HESAP_KILIT_SURESI_SN), "NX"]]
+        )
         if alindi == "OK":
             break
         if deneme + 1 < HESAP_KILIT_DENEME:
@@ -3673,7 +3895,11 @@ def _hesap_kilidi(depo: UpstashDepo | BellekDepo, ad: str):
         yield
     finally:
         tutulan.discard(ad)
-        depo.sil(anahtar)
+        # Yalnız kendi kilidi silinir: iş kilidin ömrünü aştıysa kilit artık başka
+        # isteğindir (eskiden koşulsuz siliniyordu; GET ile DEL arasındaki pencere,
+        # kilidin ömrü işin süresinin çok üstünde olduğu için ihmal edilir).
+        if depo.komut("GET", anahtar) == jeton:
+            depo.sil(anahtar)
 
 
 def _hesap_sifre_degistir(

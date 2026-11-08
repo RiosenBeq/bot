@@ -6,7 +6,7 @@ durur (CDN yok). İkisi de fabrikadaki izleme ekranındakilerin aynısıdır
 
 | Dosya | Kaynak | Lisans |
 |---|---|---|
-| `yazi/inter-latin.woff2`, `yazi/inter-latin-ext.woff2` | [Inter](https://rsms.me/inter/) (fontsource altkümeleri) | SIL Open Font License 1.1 |
+| `yazi/inter-latin.woff2`, `yazi/inter-tr-ek.woff2` | [Inter](https://rsms.me/inter/) (fontsource latin altkümesi; Türkçe ek, fontsource latin-ext'ten yalnız Ğ ğ İ Ş ş ₺ alınarak fontTools ile) | SIL Open Font License 1.1 |
 | Tanıtım sayfasına gömülü simgeler (`index.html`, `<symbol id="i-...">`) | [Lucide](https://lucide.dev) | ISC |
 
 Lisans metinleri:

@@ -26,11 +26,18 @@
    yok) ve veri. */
 "use strict";
 
-(function () {
+function panoyuBaslat() {
   const TAZELEME_MS = 15000;
   const GORECELI_MS = 5000;
   const HIZLI_TAZELEME_MS = 5000; // Müdahale ve Kameralar ekranı açıkken
   const DINLEME_SURESI_MS = 10 * 60 * 1000;
+  // Pano isteği bu sürede bitmezse bırakılır: asılı kalan bir istek sonraki
+  // tazelemeleri ve Yenile düğmesini kilitliyordu (denetim 08.11.2026)
+  const ISTEK_ZAMAN_ASIMI_MS = 12000;
+  // Sunucu listesinde artık görünmeyen komutun bildirimi bu süre sonra düşer
+  // (komut en çok 2 dakika kuyrukta bekler)
+  const SAHIPSIZ_BILDIRIM_MS = 3 * 60 * 1000;
+  const OTURUM_DUSTU_ISARETI = "pano-oturum-dustu";
   // Fabrika 10 saniyede bir gönderir; bundan eski kare soluk gösterilir
   // (kamera ya da bağlantı durmuş olabilir).
   const KARE_BAYAT_SN = 35;
@@ -340,6 +347,23 @@
     return metin ? metin.charAt(0).toLocaleUpperCase("tr-TR") + metin.slice(1) : "";
   }
 
+  /* Sayılar raporun gününe aittir. Son rapor bugünden değilse (program dün
+     kapandı, internet gece gitti) "Bugün" ve "dün" yanlış olur: sunucu raporun
+     Türkiye gününü (rapor_gunu) ve bugüne ait mi (bugun_gecerli) söyler. Eski
+     sunucu bu alanları göndermez: o zaman bugün sayılır. Döner: raporun günü
+     (Date, o günün öğleni) ya da rapor bugünse null. */
+  function eskiRaporGunu() {
+    const v = sonVeri;
+    if (!v || v.bugun_gecerli !== false || typeof v.rapor_gunu !== "string") return null;
+    const p = v.rapor_gunu.split("-").map(Number);
+    if (p.length !== 3 || p.some(isNaN)) return null;
+    return new Date(Date.UTC(p[0], p[1] - 1, p[2], 12));
+  }
+
+  function raporGunuEtiketi(gun) {
+    return gun ? buyukBasla(gun.toLocaleDateString("tr-TR", { weekday: "long", timeZone: "UTC" })) : "Bugün";
+  }
+
   function gecikmeSn(veri) {
     if (!veri.son_rapor) return null;
     return (simdiMs() - Date.parse(veri.son_rapor)) / 1000;
@@ -363,6 +387,33 @@
     $("duyuru").textContent = metin;
   }
 
+  /* Metni yalnız değişince yazar: ekran okuyucu canlı bölgedeki aynı metni her
+     tazelemede yeniden okumaz (denetim 08.11.2026). */
+  function yaz(kutu, metin) {
+    if (kutu.textContent !== metin) kutu.textContent = metin;
+  }
+
+  /* Liste yeniden çizilirken odak ve açık <details> kaybolmasın. Odaktaki öğe
+     aynı öğe olarak yeni yerine taşındıysa ona, yerine yenisi geldiyse aynı
+     data-odak anahtarını taşıyana geri verilir; data-odak taşıyan açık
+     <details> açık kalır. Eskiden her tazelemede odak <body>'ye düşüyor,
+     "Teşhis metnini göster" kendiliğinden kapanıyordu (denetim 08.11.2026). */
+  function odagiKoru(kap, ciz) {
+    const once = document.activeElement;
+    const icinde = !!once && once !== document.body && kap.contains(once);
+    const anahtar = icinde && once.dataset ? once.dataset.odak || "" : "";
+    const aciklar = Array.from(kap.querySelectorAll("details[open][data-odak]"), (d) => d.dataset.odak);
+    ciz();
+    for (const a of aciklar) {
+      const d = kap.querySelector('details[data-odak="' + CSS.escape(a) + '"]');
+      if (d) d.open = true;
+    }
+    if (!icinde || document.activeElement === once) return;
+    let hedef = once.isConnected && kap.contains(once) ? once : null;
+    if (!hedef && anahtar) hedef = kap.querySelector('[data-odak="' + CSS.escape(anahtar) + '"]');
+    if (hedef) hedef.focus({ preventScroll: true });
+  }
+
   function fabrikaAdresi(veri) {
     const adres = veri && veri.fabrika_adresi;
     return adres && /^https?:\/\//.test(adres) ? adres : "";
@@ -372,7 +423,7 @@
   function hapCiz(kimlik, metinKimlik, sinif, metin) {
     const hap = $(kimlik);
     hap.className = "hap" + (hap.classList.contains("kucuk") ? " kucuk" : "") + (sinif ? " " + sinif : "");
-    $(metinKimlik).textContent = metin;
+    yaz($(metinKimlik), metin);
   }
 
   /* Çift dokunuş: ilk dokunuş sorar (düğme turuncu, altında 4 sn geri sayım),
@@ -422,7 +473,27 @@
 
   /* Oturum düştü (401): giriş ekranı açılır, pano açıktıysa "süresi doldu" der. */
   function oturumuKapat() {
-    oturumDustu = !!sonVeri;
+    // Oturum kullanılırken düştüyse sayfa yeniden yüklenir: önceki kullanıcının
+    // gizli sayfada kalan verisi (kullanıcı listesi, işlem kaydı, teşhis metni,
+    // bildirimler) aynı sekmede giren sonraki kişiye kalmasın (denetim 08.11.2026).
+    // "Oturumunuzun süresi doldu" bandı yüklemeden sonra bu işaretle gösterilir.
+    if (sonVeri) {
+      try {
+        sessionStorage.setItem(OTURUM_DUSTU_ISARETI, "1");
+      } catch (hata) {
+        /* özel pencere: bant çıkmaz, giriş yine açılır */
+      }
+      location.reload();
+      return;
+    }
+    let isaretli = false;
+    try {
+      isaretli = sessionStorage.getItem(OTURUM_DUSTU_ISARETI) === "1";
+      sessionStorage.removeItem(OTURUM_DUSTU_ISARETI);
+    } catch (hata) {
+      /* özel pencere */
+    }
+    oturumDustu = isaretli;
     sonVeri = null;
     oturum = null;
     hesapVerisi = null;
@@ -438,8 +509,9 @@
 
   function siteUyarisi(metin) {
     const kutu = $("site-uyarisi");
-    kutu.textContent = metin;
+    // Önce görünür olur, sonra yazılır: role=alert yeni metni bir kez okur
     kutu.hidden = !metin;
+    yaz(kutu, metin);
   }
 
   // ------------------------------------------------------- rol ve bantlar
@@ -488,13 +560,13 @@
   function bantlariCiz() {
     const onizlemeBant = $("onizleme-bandi");
     onizlemeBant.hidden = !onizleme;
-    if (onizleme) onizlemeBant.textContent = ONIZLEME_BANT;
+    if (onizleme) yaz(onizlemeBant, ONIZLEME_BANT);
     const kurucu = !!(oturum && oturum.kurucu);
     $("kurucu-bandi").hidden = !kurucu;
-    if (kurucu) $("kurucu-bandi").textContent = KURUCU_BANT;
+    if (kurucu) yaz($("kurucu-bandi"), KURUCU_BANT);
     const degismeli = !!(oturum && oturum.sifre_degismeli);
     $("sifre-bandi").hidden = !degismeli;
-    if (degismeli) $("sifre-bandi").textContent = SIFRE_BANT;
+    if (degismeli) yaz($("sifre-bandi"), SIFRE_BANT);
   }
 
   // -------------------------------------------------------------- hesabım
@@ -805,6 +877,8 @@
     if (!gorunumAdi()) return;
     gorunumuUygula();
     window.scrollTo(0, 0);
+    // Ekran değişti: odak menüde kalmasın, okuyucu yeni başlığı duysun
+    $("gorunum-basligi").focus({ preventScroll: true });
     const g = aktifGorunum;
     if ((g === "mudahale" || g === "kameralar" || g === "yonetim") && sonVeri) {
       sonEtkilesim = Date.now();
@@ -970,8 +1044,8 @@
     ]) {
       hapCiz(kimlik, metin, hap.sinif, hap.metin);
     }
-    $("son-rapor").textContent = hap.saat;
-    $("hap-kisa").textContent = hap.kisa;
+    yaz($("son-rapor"), hap.saat);
+    yaz($("hap-kisa"), hap.kisa);
     $("baglanti-hapi").setAttribute("aria-label", "Bağlantı: " + hap.metin + (hap.saat ? ", " + hap.saat : ""));
 
     const uyari = uyariBilgisi(veri);
@@ -983,16 +1057,20 @@
     }
     bant.className = "uyari-bandi" + (uyari.sinif ? " " + uyari.sinif : "");
     $("durum-simgesi").setAttribute("href", "#" + uyari.ikon);
-    $("durum-baslik").textContent = uyari.baslik;
-    $("durum-alt").textContent = uyari.alt;
+    yaz($("durum-baslik"), uyari.baslik);
+    yaz($("durum-alt"), uyari.alt);
     const liste = $("durum-listesi");
-    temizle(liste);
-    (uyari.liste || []).forEach(function (metin, i) {
-      const satir = el("li");
-      satir.appendChild(el("span", "no", String(i + 1)));
-      satir.appendChild(el("span", "", metin));
-      liste.appendChild(satir);
-    });
+    const imza = (uyari.liste || []).join("\n");
+    if (liste.dataset.imza !== imza) {
+      liste.dataset.imza = imza;
+      temizle(liste);
+      (uyari.liste || []).forEach(function (metin, i) {
+        const satir = el("li");
+        satir.appendChild(el("span", "no", String(i + 1)));
+        satir.appendChild(el("span", "", metin));
+        liste.appendChild(satir);
+      });
+    }
     liste.hidden = !(uyari.liste && uyari.liste.length);
     $("durum-eylemi").hidden = !uyari.eylem;
     duyur(uyari.baslik);
@@ -1026,11 +1104,19 @@
 
   function sayilariCiz(rapor) {
     const s = rapor.sayilar;
+    const eskiGun = eskiRaporGunu();
+    const dun = eskiGun ? "önceki gün" : "dün";
+    $("kpi-ihlal").querySelector(".kpi-etiket").textContent = raporGunuEtiketi(eskiGun) + " ihlal";
     $("k-ihlal").textContent = sayiMetni(s.bugun_ihlal);
     $("k-ihlal-ref").textContent =
-      s.dun_ihlal === 0 ? (s.bugun_ihlal ? "dün ihlal yoktu" : "dün de ihlal yoktu") : "dün " + sayiMetni(s.dun_ihlal);
+      s.dun_ihlal === 0 ? (s.bugun_ihlal ? dun + " ihlal yoktu" : dun + " de ihlal yoktu") : dun + " " + sayiMetni(s.dun_ihlal);
     const fark = s.bugun_ihlal - s.dun_ihlal;
-    degisimCiz("k-ihlal-degisim", fark, String(Math.abs(fark)), "düne göre " + (fark > 0 ? fark + " fazla" : -fark + " az"));
+    degisimCiz(
+      "k-ihlal-degisim",
+      fark,
+      String(Math.abs(fark)),
+      (eskiGun ? "önceki güne göre " : "düne göre ") + (fark > 0 ? fark + " fazla" : -fark + " az")
+    );
 
     const hafta = haftalar(rapor);
     $("kpi-hafta").hidden = !hafta;
@@ -1044,7 +1130,7 @@
         $("k-hafta-ref").textContent = "önceki 7 gün " + sayiMetni(hafta.gecen);
         const hf = hafta.bu - hafta.gecen;
         const oran = hafta.gecen ? "%" + Math.round((Math.abs(hf) / hafta.gecen) * 100) : String(Math.abs(hf));
-        degisimCiz("k-hafta-degisim", hf, oran, "önceki haftaya göre " + (hf > 0 ? "arttı" : "azaldı"));
+        degisimCiz("k-hafta-degisim", hf, oran, "önceki haftaya göre " + oran + (hf > 0 ? " arttı" : " azaldı"));
       }
     }
 
@@ -1066,18 +1152,9 @@
     else if (pasif > 0) not = pasif + " kamera pasif";
     $("k-kamera-ref").textContent = not;
 
-    for (const [kimlik, deger, ref] of [
-      ["kpi-ihlal", "k-ihlal", "k-ihlal-ref"],
-      ["kpi-hafta", "k-hafta", "k-hafta-ref"],
-      ["kpi-bekleyen", "k-bekleyen", "k-bekleyen-ref"],
-      ["kpi-kamera", "k-kamera", "k-kamera-ref"],
-    ]) {
-      const hucre = $(kimlik);
-      hucre.setAttribute(
-        "aria-label",
-        hucre.querySelector(".kpi-etiket").textContent + ": " + $(deger).textContent + ", " + $(ref).textContent
-      );
-    }
+    // Kartın erişilebilir adı görünen metninden gelir (etiket, sayı, değişim, not):
+    // ayrı bir aria-label görünen "↑ 18"i içermiyordu, sesli komutla bulunamıyordu.
+    // Değişim rozetinin kendi adı ("düne göre 18 fazla") sayıyı da taşır.
   }
 
   $("kpi-ihlal").addEventListener("click", function () {
@@ -1141,6 +1218,23 @@
 
   /* Tek grafik iki dönem: bugün saat saat (24 çubuk) ya da son 14 gün.
      Şimdiki saat / bugün mor-mavi geçişle; boş çubuk ince bir iz. */
+  /* Çubuğa dokununca (telefonda title ipucu çıkmaz) değeri grafiğin altında
+     yazılır; tazelemede seçim korunur, dönem değişince kalkar. */
+  let grafikSecimi = null; // { donem, i }
+  $("grafik").addEventListener("click", function (olay) {
+    const sutun = olay.target.closest(".sutun-cubuk");
+    if (!sutun) return;
+    const i = Number(sutun.dataset.i);
+    const ayni = grafikSecimi && grafikSecimi.donem === grafikDonemi && grafikSecimi.i === i;
+    grafikSecimi = ayni ? null : { donem: grafikDonemi, i: i };
+    for (const s of this.querySelectorAll(".sutun-cubuk.secili")) s.classList.remove("secili");
+    if (!ayni) {
+      sutun.classList.add("secili");
+      yaz($("grafik-secili"), sutun.title);
+    }
+    $("grafik-secili").hidden = ayni;
+  });
+
   function grafigiCiz(rapor) {
     const gunlukVar = !!rapor.gunluk;
     $("grafik-segmenti").hidden = !gunlukVar;
@@ -1160,7 +1254,11 @@
       Number(
         new Date(simdiMs()).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: SAAT_DILIMI })
       ) % 24;
-    const simdi = bugun ? simdikiSaat : degerler.length - 1;
+    const eskiGun = eskiRaporGunu();
+    // Rapor bugüne ait değilse "şimdi" vurgusu yoktur; 14 gün raporun gününe göre tarihlenir
+    const simdi = eskiGun ? -1 : bugun ? simdikiSaat : degerler.length - 1;
+    const tabanMs = eskiGun ? eskiGun.getTime() : simdiMs();
+    $("grafik-segmenti").querySelector('[data-grafik="bugun"]').textContent = raporGunuEtiketi(eskiGun);
     degerler.forEach(function (n, i) {
       const sutun = el("div", "sutun-cubuk" + (n > 0 ? " dolu" : "") + (i === simdi ? " simdi" : ""));
       let etiket = "";
@@ -1168,7 +1266,7 @@
         sutun.title = String(i).padStart(2, "0") + ":00 · " + n + " ihlal";
         if (i % 6 === 0) etiket = dar ? String(i) : String(i).padStart(2, "0");
       } else {
-        const gun = new Date(simdiMs() - (degerler.length - 1 - i) * 86400000);
+        const gun = new Date(tabanMs - (degerler.length - 1 - i) * 86400000);
         sutun.title =
           gun.toLocaleDateString("tr-TR", { day: "numeric", month: "long", weekday: "long", timeZone: SAAT_DILIMI }) +
           " · " + n + " ihlal";
@@ -1181,16 +1279,38 @@
       // sütun da ince bir iz bırakır: grafik dönemin tamamını gösterir.
       dolgu.style.height = enCok && n ? Math.max(6, Math.round((n / enCok) * 100)) + "%" : "3px";
       sutun.appendChild(dolgu);
+      if (grafikSecimi && grafikSecimi.donem === grafikDonemi && grafikSecimi.i === i) {
+        sutun.classList.add("secili");
+        yaz($("grafik-secili"), sutun.title);
+      }
+      sutun.dataset.i = String(i);
       kutu.appendChild(sutun);
       etiketler.appendChild(el("span", i === simdi ? "simdi" : "", etiket));
     });
+    // Eksen: en yüksek değer üstte, yarısı ortada (çubuklar en yükseğe göre
+    // ölçeklidir). Eskiden eksende sayı yoktu (denetim 08.11.2026).
+    if (enCok > 0) {
+      const olcek = el("div", "grafik-olcek");
+      olcek.setAttribute("aria-hidden", "true");
+      const degerler2 = enCok >= 4 && enCok % 2 === 0 ? [enCok, enCok / 2, 0] : [enCok, 0];
+      for (const d of degerler2) {
+        const yazi = el("span", "", sayiMetni(d));
+        yazi.style.bottom = Math.round((d / enCok) * 100) + "%";
+        olcek.appendChild(yazi);
+      }
+      kutu.appendChild(olcek);
+    }
+    const seciliVar = !!kutu.querySelector(".sutun-cubuk.secili");
+    $("grafik-secili").hidden = !seciliVar;
+    if (!seciliVar) grafikSecimi = null;
     let ozet;
+    const gunAdi = raporGunuEtiketi(eskiGun);
     if (bugun) {
       const toplam = toplamAl(degerler);
-      ozet = "Bugün henüz ihlal yok";
+      ozet = eskiGun ? gunAdi + " ihlal yoktu" : "Bugün henüz ihlal yok";
       if (toplam) {
         const tepe = degerler.indexOf(enCok);
-        ozet = "Bugün " + sayiMetni(toplam) + " · en yoğun saat " + String(tepe).padStart(2, "0") + ":00 (" + enCok + ")";
+        ozet = gunAdi + " " + sayiMetni(toplam) + " · en yoğun saat " + String(tepe).padStart(2, "0") + ":00 (" + enCok + ")";
       }
     } else {
       const bu = toplamAl(degerler.slice(7));
@@ -1199,7 +1319,7 @@
         "Son 7 gün " + sayiMetni(bu) + ", önceki 7 gün " + sayiMetni(gecen) + " · günde ortalama " + ondalik(bu / 7);
     }
     $("grafik-ozet").textContent = ozet;
-    kutu.setAttribute("aria-label", (bugun ? "Bugün saat saat ihlal. " : "Son 14 gün günlük ihlal. ") + ozet);
+    kutu.setAttribute("aria-label", (bugun ? gunAdi + " saat saat ihlal. " : "Son 14 gün günlük ihlal. ") + ozet);
   }
 
   function olayDurumBilgisi(o) {
@@ -1511,6 +1631,7 @@
 
     const izgara = $("kare-izgarasi");
     const gorunenler = new Set();
+    let onceki = null;
     for (const k of kameralar) {
       const anahtar = kameraAnahtari(k);
       let kutu = kareKutulari.get(anahtar);
@@ -1519,8 +1640,11 @@
         kareKutulari.set(anahtar, kutu);
       }
       gorunenler.add(anahtar);
-      // Rapordaki sırayla dizilir; öğe yerinde kalır, yalnız sırası düzelir
-      izgara.appendChild(kutu.dugme);
+      // Rapordaki sırayla dizilir. Yerinde duran kutu taşınmaz: taşınan öğe odağı
+      // kaybederdi (her tazelemede klavye odağı <body>'ye düşüyordu).
+      const beklenen = onceki ? onceki.nextElementSibling : izgara.firstElementChild;
+      if (kutu.dugme !== beklenen) izgara.insertBefore(kutu.dugme, beklenen);
+      onceki = kutu.dugme;
       kareKutusunuGuncelle(veri, kutu, k, k.id ? kareler[String(k.id)] || "" : "", izleniyor);
       kutu.dugme.hidden = !kameraSuz(k);
     }
@@ -1796,12 +1920,41 @@
     const bekleyen = bekleyenOlaylar(rapor).length;
     $("bekleyen-sayisi").textContent = String(bekleyen);
     const kap = $("olay-gruplari");
-    temizle(kap);
     const gorunen = rapor.son_olaylar.filter(
       (o) =>
         (olayTuru === "hepsi" || o.tur === olayTuru) &&
         (!yalnizBekleyen || (o.tur === "ihlal" && o.durum === "new"))
     );
+    // Liste yalnız gösterdiği bir şey değişince yeniden kurulur: aynıysa
+    // dokunulmaz (odak ve ekran okuyucunun yeri korunur)
+    const imza = JSON.stringify([
+      olayTuru,
+      yalnizBekleyen,
+      gorunen.map((o) => [
+        o.id, o.tur, o.durum, o.durum_adi, o.foto, o.suruyor, o.sure, o.onem, o.onem_adi,
+        o.baslik, o.yer, o.ayrinti, o.zaman, olayGunu(o), inceleGosterilsin(o),
+        fotoHatasiTaze(o.id), fotoKucukleri.has(o.id),
+      ]),
+    ]);
+    if (kap.dataset.imza === imza) return;
+    kap.dataset.imza = imza;
+    odagiKoru(kap, function () {
+      olayGruplariniKur(kap, gorunen);
+    });
+    $("olay-bos").hidden = gorunen.length > 0;
+    $("olay-bos-baslik").textContent = yalnizBekleyen ? "İnceleme bekleyen ihlal yok" : "Bu türde olay yok";
+    $("olay-bos-metni").textContent = yalnizBekleyen ? "Hepsi işaretlendi." : "Son 20 olayın içinde.";
+    // Listeden düşen ya da artık "new" olmayan olayın önbelleği unutulur
+    for (const [anahtar, dugme] of fotoKucukleri) {
+      if (!dugme.isConnected) fotoKucukleri.delete(anahtar);
+    }
+    for (const [anahtar, kutu] of inceleKutulari) {
+      if (!kutu.isConnected) inceleKutulari.delete(anahtar);
+    }
+  }
+
+  function olayGruplariniKur(kap, gorunen) {
+    temizle(kap);
     // Olaylar güne göre gruplanır: Bugün, Dün, 21.10.2026 ...
     const gruplar = [];
     for (const o of gorunen) {
@@ -1821,16 +1974,6 @@
       for (const o of grup.olaylar) liste.appendChild(olaySatiri(o));
       bolum.appendChild(liste);
       kap.appendChild(bolum);
-    }
-    $("olay-bos").hidden = gorunen.length > 0;
-    $("olay-bos-baslik").textContent = yalnizBekleyen ? "İnceleme bekleyen ihlal yok" : "Bu türde olay yok";
-    $("olay-bos-metni").textContent = yalnizBekleyen ? "Hepsi işaretlendi." : "Son 20 olayın içinde.";
-    // Listeden düşen ya da artık "new" olmayan olayın önbelleği unutulur
-    for (const [anahtar, dugme] of fotoKucukleri) {
-      if (!dugme.isConnected) fotoKucukleri.delete(anahtar);
-    }
-    for (const [anahtar, kutu] of inceleKutulari) {
-      if (!kutu.isConnected) inceleKutulari.delete(anahtar);
     }
   }
 
@@ -2079,7 +2222,10 @@
       satir.appendChild(ust);
       if (k.ek) {
         const det = el("details", "teshis-ek");
-        det.appendChild(el("summary", "", "Teşhis metnini göster"));
+        det.dataset.odak = "teshis:" + k.id; // tazelemede açık kalır (odagiKoru)
+        const ozet = el("summary", "", "Teşhis metnini göster");
+        ozet.dataset.odak = "teshis-ozet:" + k.id;
+        det.appendChild(ozet);
         const pre = el("pre", "teshis-metni");
         pre.textContent = k.ek; // fabrikadan gelen metin: yalnız textContent
         det.appendChild(pre);
@@ -2124,9 +2270,37 @@
   }
 
   function anonsOnayiniKapat() {
+    const icinde = $("anons-onayi").contains(document.activeElement);
     $("anons-onayi").hidden = true;
     $("anons-alt").hidden = false;
+    if (icinde) $("anons-dugmesi").focus();
   }
+
+  /* Escape açık onay kutusunu ve hesap menüsünü kapatır; odak açan düğmeye döner.
+     Fotoğraf penceresi (<dialog>) Escape'i kendisi işler. */
+  document.addEventListener("keydown", function (olay) {
+    if (olay.key !== "Escape" || olay.defaultPrevented) return;
+    if (!$("anons-onayi").hidden) {
+      $("anons-dugmesi").focus();
+      anonsOnayiniKapat();
+    } else if (!$("yeniden-onayi").hidden) {
+      $("yeniden-dugmesi").focus();
+      yenidenOnayiniKapat();
+    } else if (!$("guncelle-onayi").hidden) {
+      $("guncelle-dugmesi").focus();
+      guncelleOnayiniKapat();
+    } else if (acikHesap && hesapVerisi) {
+      const ad = acikHesap;
+      acikHesap = null;
+      acikIslem = null;
+      kullanicilariCiz(hesapVerisi);
+      const dugme = document.querySelector('[data-odak="hesap:' + CSS.escape(ad) + '"]');
+      if (dugme) dugme.focus();
+    } else {
+      return;
+    }
+    olay.preventDefault();
+  });
 
   async function mudahaleGonder(istek) {
     const yanit = await fetch("/api/mudahale", {
@@ -2238,7 +2412,7 @@
 
   function bildirimEkle(kimlik) {
     if (bildirimler.some((b) => b.id === kimlik)) return;
-    bildirimler.push({ id: kimlik, bitti: 0, uzerinde: false });
+    bildirimler.push({ id: kimlik, bitti: 0, uzerinde: false, goruldu: Date.now() });
     bildirimleriCiz();
   }
 
@@ -2262,7 +2436,13 @@
     for (let i = bildirimler.length - 1; i >= 0; i--) {
       const b = bildirimler[i];
       const k = komutlar.find((x) => x.id === b.id);
-      if (!k) continue;
+      if (!k) {
+        // Sunucu listesinde yok (ör. yetki alındı, komut düştü): sonsuza dek
+        // "Sırada" kalıp hızlı tazelemeyi açık tutmasın
+        if (simdi - b.goruldu > SAHIPSIZ_BILDIRIM_MS) bildirimler.splice(i, 1);
+        continue;
+      }
+      b.goruldu = simdi;
       if (!komutSuruyor(k) && !b.bitti) b.bitti = simdi;
       const hatali = k.durum === "hata" || k.durum === "sonuc_yok";
       if (b.bitti && !hatali && !b.uzerinde && simdi - b.bitti > BILDIRIM_KAPANIS_MS) bildirimler.splice(i, 1);
@@ -2493,11 +2673,13 @@
   function yonetimKomutlariCiz(veri) {
     const komutlar = birlesikKomutlar(veri, YONETIM_TURLERI);
     const liste = $("yonetim-komutlar");
-    temizle(liste);
-    if (!komutlar.length) {
-      liste.appendChild(el("li", "bos-satir", "Henüz işlem yok; teşhis, yeniden başlatma ve güncelleme burada görünür"));
-    }
-    for (const k of komutlar) liste.appendChild(komutSatiri(k, true));
+    odagiKoru(liste, function () {
+      temizle(liste);
+      if (!komutlar.length) {
+        liste.appendChild(el("li", "bos-satir", "Henüz işlem yok; teşhis, yeniden başlatma ve güncelleme burada görünür"));
+      }
+      for (const k of komutlar) liste.appendChild(komutSatiri(k, true));
+    });
   }
 
   function yonetimiCiz(veri) {
@@ -2526,14 +2708,18 @@
   }
 
   function yenidenOnayiniKapat() {
+    const icinde = $("yeniden-onayi").contains(document.activeElement);
     $("yeniden-onayi").hidden = true;
     $("yeniden-dugmesi").hidden = false;
+    if (icinde) $("yeniden-dugmesi").focus(); // gizlenen kutudaki odak <body>'ye düşmesin
     $("yeniden-sifre").value = "";
     $("yeniden-sifre").removeAttribute("aria-invalid");
   }
   function guncelleOnayiniKapat() {
+    const icinde = $("guncelle-onayi").contains(document.activeElement);
     $("guncelle-onayi").hidden = true;
     $("guncelle-dugmesi").hidden = false;
+    if (icinde) $("guncelle-dugmesi").focus();
     $("guncelle-sifre").value = "";
     $("guncelle-sifre").removeAttribute("aria-invalid");
   }
@@ -2856,6 +3042,7 @@
       dugme.type = "button";
       dugme.setAttribute("aria-label", k.ad + ": işlemler");
       dugme.setAttribute("aria-expanded", String(acik));
+      dugme.dataset.odak = "hesap:" + k.ad;
       const ikon = simge("i-daha");
       ikon.style.strokeWidth = "2.6";
       dugme.appendChild(ikon);
@@ -2900,9 +3087,11 @@
       acikIslem = null;
     }
     const liste = $("kullanici-listesi");
-    temizle(liste);
-    if (!kullanicilar.length) liste.appendChild(el("li", "bos-satir", "Henüz hesap yok"));
-    for (const k of kullanicilar) liste.appendChild(kullaniciSatiri(k));
+    odagiKoru(liste, function () {
+      temizle(liste);
+      if (!kullanicilar.length) liste.appendChild(el("li", "bos-satir", "Henüz hesap yok"));
+      for (const k of kullanicilar) liste.appendChild(kullaniciSatiri(k));
+    });
     $("hesaplar-bolumu").setAttribute("aria-label", "Hesaplar: " + kullanicilar.length + " hesap (kurucu dahil)");
     kayitTablosu(veri.kayit || []);
     yetkileriCiz(veri.yetki);
@@ -3248,6 +3437,9 @@
     const rapor = veri.rapor;
     sayaclariCiz(rapor);
     for (const kutu of document.querySelectorAll(".veri")) kutu.hidden = !rapor;
+    // Haber yokken / program kapalıyken sayılar ve grafik son raporun: solgun çizilir
+    const bayat = veri.baglanti === "yok" || veri.baglanti === "kapandi";
+    for (const kutu of document.querySelectorAll(".kpi, #grafik-karti")) kutu.classList.toggle("bayat", bayat);
     bilgisayariCiz(rapor);
     if (rapor) {
       sayilariCiz(rapor);
@@ -3286,8 +3478,17 @@
             : tesislerAcik()
               ? "/api/durum?filo=1"
               : "/api/durum";
-      const yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store" });
-      const veri = await yanit.json().catch(() => ({}));
+      const iptal = new AbortController();
+      const zamanlayici = setTimeout(function () {
+        iptal.abort();
+      }, ISTEK_ZAMAN_ASIMI_MS);
+      let yanit, veri;
+      try {
+        yanit = await fetch(adres, { credentials: "same-origin", cache: "no-store", signal: iptal.signal });
+        veri = await yanit.json().catch(() => ({}));
+      } finally {
+        clearTimeout(zamanlayici);
+      }
       if (yanit.status === 401) {
         oturumuKapat();
         $("ad").focus();
@@ -3299,6 +3500,12 @@
       }
       if (!yanit.ok) {
         hataGoster(veri.mesaj || "Site hata verdi (HTTP " + yanit.status + ").");
+        return;
+      }
+      // 200 ama panonun cevabı değil (otel ağının giriş sayfası, araya giren vekil):
+      // eskiden boş veri gibi okunup pano "Henüz rapor yok"a dönüyordu
+      if (typeof veri.sunucu_zamani !== "string") {
+        hataGoster("Siteden beklenmeyen bir cevap geldi; ağ bir giriş sayfası göstermiş olabilir. Pano son bilinen durumu gösteriyor.");
         return;
       }
       saatFarkiMs = Date.parse(veri.sunucu_zamani) - Date.now();
@@ -3314,6 +3521,10 @@
         hesaplariYukle();
       }
     } catch (hata) {
+      // Ağ hatası ya da çizimdeki bir hata: ikincisi geliştirici konsolunda görünsün
+      if (!(hata instanceof TypeError && /fetch/i.test(hata.message)) && hata.name !== "AbortError") {
+        console.error(hata);
+      }
       hataGoster(
         "Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin; pano son bilinen durumu gösteriyor."
       );
@@ -3480,6 +3691,8 @@
       $("yukleniyor-metni").textContent = "Fabrikadan gelen son durum okunuyor.";
       tekEkranGoster("yukleniyor");
       await yukle();
+      // Giriş formu gizlendi: odak <body>'ye düşmesin, panonun başlığına gelsin
+      if (!$("kabuk").hidden) $("gorunum-basligi").focus({ preventScroll: true });
     } catch (hata) {
       girisDugmesi(kodAcik ? "Doğrula ve gir" : "Giriş yap", false);
       girisHatasi("Siteye ulaşılamıyor. İnternet bağlantınızı kontrol edin.");
@@ -3496,13 +3709,8 @@
           body: "{}",
         });
       } finally {
-        sonVeri = null;
-        oturum = null;
-        hesapVerisi = null;
-        oturumDustu = false;
-        $("oturum-bandi").hidden = true;
-        tekEkranGoster("giris");
-        girisAdiminaDon();
+        // Bellekte ve gizli sayfada hiçbir şey kalmasın: sayfa baştan yüklenir
+        location.reload();
       }
     });
   }
@@ -3547,8 +3755,12 @@
   let sonTazeleme = 0;
   setInterval(function () {
     if (document.visibilityState !== "visible" || !$("giris").hidden) return;
+    // Biten ya da yapılamayan bildirim hızlı tazelemeyi açık tutmaz; süren bildirim
+    // de 10 dakika dokunulmayan ekranda tutmaz (eskiden sonsuza dek 5 sn'de bir)
+    const surenBildirim =
+      bildirimler.some((b) => !b.bitti) && Date.now() - sonEtkilesim < DINLEME_SURESI_MS;
     const aralik =
-      dinleniyor() || yonetimDinliyor() || kareIzleniyor() || bildirimler.length ? HIZLI_TAZELEME_MS : TAZELEME_MS;
+      dinleniyor() || yonetimDinliyor() || kareIzleniyor() || surenBildirim ? HIZLI_TAZELEME_MS : TAZELEME_MS;
     if (Date.now() - sonTazeleme >= aralik - 250) {
       sonTazeleme = Date.now();
       yukle();
@@ -3570,4 +3782,18 @@
   yeniRolAciklama();
   gorunumuUygula();
   yukle();
+}
+
+/* demo.js (örnek veri, ~57 KB) yalnız /demo'da yüklenir ve panodan ÖNCE çalışır:
+   panonun /api isteklerini o karşılar. Eskiden pano.html onu her açılışta
+   indiriyordu, /pano'da hiçbir iş yapmadığı halde (denetim 08.11.2026). */
+(function () {
+  if (location.pathname.replace(/\/+$/, "") !== "/demo") {
+    panoyuBaslat();
+    return;
+  }
+  const betik = document.createElement("script");
+  betik.src = "/demo.js";
+  betik.onload = betik.onerror = panoyuBaslat;
+  document.head.appendChild(betik);
 })();

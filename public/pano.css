@@ -17,16 +17,16 @@
 
 /* ---------------------------------------------------------------- yazı tipi
    Inter iki dosyadır: latin altkümesinde Türkçenin ş, ğ ve İ harfleri yoktur,
-   onlar latin-ext'tedir. Lisans: LISANSLAR.md */
+   onlar küçük bir "Türkçe ek" altkümesindedir. Lisans: LISANSLAR.md */
 @font-face {
   font-family: "Inter";
   font-style: normal;
   font-weight: 100 900;
   font-display: swap;
-  src: url("/yazi/inter-latin-ext.woff2") format("woff2");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  /* Yalnız Türkçenin latin altkümesinde olmayan harfleri: Ğ ğ İ Ş ş (ve ₺).
+     Eskiden bütün latin-ext (85 KB) iniyordu; bu altküme 3 KB (denetim 08.11.2026) */
+  src: url("/yazi/inter-tr-ek.woff2") format("woff2");
+  unicode-range: U+011E-011F, U+0130, U+015E-015F, U+20BA;
 }
 @font-face {
   font-family: "Inter";
@@ -897,7 +897,9 @@ a:hover {
 .segment button[aria-pressed="true"] {
   background: var(--segment-secili);
   color: var(--metin);
-  box-shadow: var(--golge-xs);
+  font-weight: 650;
+  /* Seçili dilim zeminden yalnız açık tonla ayrılıyordu (~1,1:1): ince çerçeve de var */
+  box-shadow: var(--golge-xs), inset 0 0 0 1px var(--cizgi-guclu);
 }
 /* `.segment.iri` zaten --dugme-boyu kullanıyordu; sıradan segment de dokunmatikte 44 px olur */
 @media (pointer: coarse), (max-width: 1023.98px) {
@@ -982,7 +984,10 @@ a:hover {
 .secici:focus {
   border-color: var(--birincil);
   box-shadow: var(--odak-golgesi);
-  outline: none;
+  /* Saydam çizgi: olağanda görünmez, Windows yüksek karşıtlık modunda (gölge
+     orada çizilmez) odak halkası olarak çıkar */
+  outline: 2px solid transparent;
+  outline-offset: 1px;
 }
 .alan-hatasi {
   color: var(--tehlike);
@@ -1569,6 +1574,9 @@ a:hover {
 .menu-ogesi[aria-current="page"] {
   background: var(--panel);
   color: var(--metin);
+  font-weight: 650;
+  /* Bulunulan ekran renkten başka bir işaretle de belli olsun */
+  box-shadow: inset 3px 0 0 var(--birincil);
 }
 .menu-ogesi .sayac {
   margin-left: auto;
@@ -1663,6 +1671,10 @@ a:hover {
   padding: 20px 24px 24px;
 }
 .icerik:focus {
+  outline: none;
+}
+/* Ekran değişince odak başlığa gelir (pano.js); fareyle gelindiyse halka çıkmaz */
+#gorunum-basligi:focus:not(:focus-visible) {
   outline: none;
 }
 .gorunum {
@@ -2011,6 +2023,7 @@ a:hover {
   gap: 2px;
   min-width: 0;
   padding-top: 1px;
+  overflow-wrap: anywhere; /* boşluksuz uzun kamera adı dar ekranı taşırmasın */
 }
 .uyari-govde h2 {
   font-size: 15px;
@@ -2250,6 +2263,16 @@ a:hover {
 .grafik .simdi .dolgu {
   background: var(--cubuk-simdi);
 }
+/* Haber yok / kapandı: sayılar ve çubuklar son raporun; canlı gibi durmasın */
+.bayat .kpi-deger,
+.bayat .kpi-deger.dikkat {
+  color: var(--metin-3);
+}
+.bayat .grafik .dolu .dolgu,
+.bayat .grafik .simdi .dolgu {
+  background: var(--metin-3);
+  opacity: 0.45;
+}
 .grafik-etiketleri span {
   display: flex;
   justify-content: center;
@@ -2351,7 +2374,9 @@ a:hover {
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 16 / 10;
+  /* Kare fabrikadan 16:9 gelir (640x360). 16:10 kutu iki yandan ~%5 kırpıyor,
+     kameranın köşedeki adı ve saati kesiliyordu (denetim 08.11.2026). */
+  aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
   border: 0;
@@ -3715,4 +3740,131 @@ a:hover {
   .yetki-basligi .yetki-rol {
     font-size: 0.75rem;
   }
+}
+
+/* ===================================================== DENETİM EKLERİ (08.11.2026) */
+
+/* Kamera kutusunda durum rozetinin arkasında ince karartma: kameranın kendi
+   yazısı (ad, saat) rozetin altında da okunur kalsın */
+.kare::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 34%;
+  background: linear-gradient(180deg, rgba(8, 10, 16, 0.5), rgba(8, 10, 16, 0));
+  pointer-events: none;
+}
+.kare-durum,
+.kare-yavas {
+  z-index: 2;
+}
+
+/* Telefonda yapışkan üst çubuk ve yüzen sekme çubuğu odaktaki öğeyi örtmesin
+   (WCAG 2.4.11): Tab ile gelinen öğe iki çubuğun arasında kalacak kadar kayar */
+@media (max-width: 1023px) {
+  html {
+    scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 76px);
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
+  }
+}
+
+/* Windows yüksek karşıtlık modu: seçili dilim, çip ve menü öğesi çerçeveyle;
+   çubuklar ve şeritler sistem renkleriyle silinmesin diye kendi renkleriyle */
+@media (forced-colors: active) {
+  .segment button[aria-pressed="true"],
+  .cip[aria-pressed="true"],
+  .bekleyen-cipi[aria-pressed="true"],
+  .menu-ogesi[aria-current="page"],
+  .sekme[aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .grafik .dolgu,
+  .kamera-seridi span,
+  .cubuk-listesi .iz,
+  .cubuk-listesi .iz i,
+  .adimlar-cizgisi > * {
+    forced-color-adjust: none;
+  }
+  .kare::before {
+    display: none;
+  }
+}
+
+/* Yazdırma: menüler ve yüzen öğeler çıkar, kartlar bölünmez, grafik renkleri kalır */
+@media print {
+  .kenar,
+  .sekme-cubugu,
+  .ust-sag,
+  .bildirimler,
+  .demo-bandi,
+  .atlama,
+  .pano-bandi {
+    display: none !important;
+  }
+  body,
+  .kabuk,
+  .sayfa-karti,
+  .kart {
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  .kart {
+    break-inside: avoid;
+  }
+  .grafik .dolgu,
+  .kamera-seridi span,
+  .cubuk-listesi .iz i {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Grafik ekseni ve dokunulan çubuğun değeri */
+.grafik {
+  position: relative;
+  margin-left: 26px;
+}
+.grafik-etiketleri {
+  margin-left: 26px;
+}
+.grafik-olcek {
+  position: absolute;
+  inset: 0 auto 0 -26px;
+  width: 20px;
+  pointer-events: none;
+}
+.grafik-olcek span {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  color: var(--metin-3);
+  font-size: 11px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.grafik .sutun-cubuk {
+  cursor: pointer;
+}
+.grafik .sutun-cubuk.secili .dolgu {
+  outline: 2px solid var(--metin);
+  outline-offset: 1px;
+}
+.grafik-secili {
+  margin: 8px 0 0;
+  color: var(--metin-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* JavaScript kapalıysa "yükleniyor" ekranında kalınmasın: ne yapılacağı yazar */
+.noscript-uyarisi {
+  margin: 16px;
+  padding: 12px 16px;
+  border-radius: var(--kose-kucuk);
+  background: var(--uyari-acik);
+  color: var(--uyari);
+  font-weight: 600;
 }

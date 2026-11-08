@@ -564,6 +564,8 @@ class _SayanDepo(_pano.BellekDepo):
 
 
 AYIR = ["SET", "INCR", "SET", "INCR", "SET", "INCR", "GET"]
+# Pay geri verilirken sayaç önce süreli kurulur (SET NX EX), sonra azalır: süre korunur
+GERI_VER = ["SET", "DECR", "SET", "DECR", "SET", "DECR"]
 
 
 def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
@@ -581,7 +583,7 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     )
     depo = _SayanDepo()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", "kurucu-sifresi-123", 1_800_000_000)
-    assert depo.istekler == [AYIR, ["DECR", "DECR", "DECR"], ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, GERI_VER, ["LPUSH", "LTRIM"]]
     kayit = {
         "surum": 1,
         "ad": "ali",
@@ -594,7 +596,7 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     depo.boru_hatti([["SET", _pano.KULLANICI_ONEKI + "ali", json.dumps(kayit)]])
     depo.istekler.clear()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "dogru-sifre-1", 1_800_000_000, "123456")
-    assert depo.istekler == [AYIR, ["DECR", "DECR", "DECR", "SET"], ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, [*GERI_VER, "SET"], ["LPUSH", "LTRIM"]]
     depo.istekler.clear()
     with pytest.raises(_pano.PanoHatasi):
         _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "yanlis-sifre", 1_800_000_000)
