@@ -1570,8 +1570,20 @@
     $("foto-baslik").textContent = baslik;
     $("foto-alt").textContent = aciklama;
     fotoDetayiCiz(ek && ek.detay);
+    fotoEylemiCiz(null);
     const pencere = $("foto-penceresi");
     if (!pencere.open) pencere.showModal();
+  }
+
+  /* Bekleyen ihlalin fotoğrafı açıkken İncelendi / Yanlış alarm fotoğrafın
+     altında da durur: kanıta bakıp aynı yerde karar verilir. Satırdaki
+     denetim önbellekte (inceleKontrolu) ve tazelemede satıra geri taşınır;
+     pencere kendi kopyasını kurar. */
+  function fotoEylemiCiz(o) {
+    const kap = $("foto-eylem");
+    temizle(kap);
+    if (o && inceleGosterilsin(o) && !inceleDurum.has(String(o.id))) kap.appendChild(inceleKutusuKur(o));
+    kap.hidden = !kap.firstChild;
   }
 
   $("foto-kapat").addEventListener("click", function () {
@@ -1584,6 +1596,7 @@
   $("foto-penceresi").addEventListener("close", function () {
     acikKare = null;
     $("foto-buyuk").removeAttribute("src");
+    fotoEylemiCiz(null);
   });
 
   // -------------------------------------------------------------- olaylar
@@ -1614,6 +1627,7 @@
   function fotoAc(o) {
     acikKare = null;
     fotoGoster(DEMO ? DEMO.fotoAdresi(o.id) : "/api/foto?olay=" + o.id, o.baslik, olayAciklamasi(o));
+    fotoEylemiCiz(o);
   }
 
   function olaySatiri(o) {
@@ -1638,24 +1652,20 @@
     sag.appendChild(zamanOgesi(o.zaman, true));
     const durum = sistem ? null : olayDurumBilgisi(o);
     if (durum) sag.appendChild(rozet(durum[0], durum[1]));
-    const fotoVar = o.foto && o.id;
-    if (fotoVar) sag.appendChild(fotoKucuk(o));
     satir.appendChild(sag);
 
-    // Telefonda fotoğraf düğmesi ve inceleme düğmeleri satırın altında, tam genişlikte
-    const alti = el("div", "olay-alti");
-    if (fotoVar && !fotoHatasiTaze(o.id)) {
-      const dugme = el("button", "foto-dugmesi yalniz-mobil");
-      dugme.type = "button";
-      dugme.appendChild(simge("i-foto"));
-      dugme.appendChild(document.createTextNode("Kanıt fotoğrafı"));
-      dugme.addEventListener("click", function () {
-        fotoAc(o);
-      });
-      alti.appendChild(dugme);
+    // Kanıt fotoğrafının küçüğü: masaüstünde sağda, telefonda satırın başında
+    // (pano.css .olay-satiri). Ekran okuyucu önce olayın adını duysun diye
+    // gövdeden sonra gelir.
+    if (o.foto && o.id) {
+      satir.classList.add("fotolu");
+      satir.appendChild(fotoKucuk(o));
     }
-    if (inceleGosterilsin(o)) alti.appendChild(inceleKontrolu(o));
-    satir.appendChild(alti);
+    if (inceleGosterilsin(o)) {
+      const alti = el("div", "olay-alti");
+      alti.appendChild(inceleKontrolu(o));
+      satir.appendChild(alti);
+    }
     return satir;
   }
 
@@ -1763,6 +1773,9 @@
       inceleDurum.set(String(o.id), simdiMs());
       inceleGecti.delete(String(o.id));
       inceleKutulari.delete(String(o.id));
+      // Fotoğraf penceresinden gönderildiyse pencere kapanır: satır artık
+      // "Fabrikaya gönderildi" der, ilerleyiş bildirimde izlenir
+      if (kutu.closest("#foto-penceresi")) $("foto-penceresi").close();
       if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
       setTimeout(yukle, 1500);
     } catch (e) {
@@ -2221,6 +2234,8 @@
 
   // ---------------------------------------------------------- bildirimler
 
+  const bildirimKartlari = new Map(); // komut kimliği -> ekrandaki kart
+
   function bildirimEkle(kimlik) {
     if (bildirimler.some((b) => b.id === kimlik)) return;
     bildirimler.push({ id: kimlik, bitti: 0, uzerinde: false });
@@ -2256,20 +2271,40 @@
     const fazla = bildirimler.length - gorunen.length;
     $("bildirim-fazla").hidden = fazla <= 0;
     $("bildirim-fazla").textContent = "+" + fazla + " komut daha";
+    // Kart her tazelemede yeniden kurulmaz: aynı komutun kartı yerinde
+    // güncellenir. Yeniden kurulunca giriş animasyonu birkaç saniyede bir
+    // baştan oynuyor (kart saydamdan geliyor), ekran okuyucu da aynı
+    // bildirimi yeniden okuyordu.
     const liste = $("bildirim-listesi");
-    temizle(liste);
+    const istenen = [];
     for (const b of gorunen) {
       const k = komutlar.find((x) => x.id === b.id);
-      if (!k) continue;
-      liste.appendChild(bildirimKarti(k, b));
+      if (k) istenen.push([b, k]);
+    }
+    const kalacak = new Set(istenen.map(([b]) => b.id));
+    for (const [kimlik, kart] of bildirimKartlari) {
+      if (kalacak.has(kimlik)) continue;
+      kart.remove();
+      bildirimKartlari.delete(kimlik);
+    }
+    let onceki = null;
+    for (const [b, k] of istenen) {
+      let kart = bildirimKartlari.get(b.id);
+      if (!kart) {
+        kart = bildirimKarti(b);
+        bildirimKartlari.set(b.id, kart);
+        liste.insertBefore(kart, onceki ? onceki.nextSibling : liste.firstChild);
+      }
+      bildirimKartiniGuncelle(kart, k);
+      onceki = kart;
     }
   }
 
-  function bildirimKarti(k, b) {
-    const [etiket, sinif] = komutDurumBilgisi(k);
-    const suruyor = komutSuruyor(k);
+  /* Kartın iskeleti: üstüne gelince kapanış bekler, kapat düğmesi. İçerik
+     bildirimKartiniGuncelle'de. Duyuru #bildirimler'in aria-live'ındandır
+     (kartta ayrıca role="status" yok: iç içe canlı bölge iki kez okutur). */
+  function bildirimKarti(b) {
     const kart = el("div", "bildirim");
-    kart.setAttribute("role", "status");
     kart.addEventListener("mouseenter", function () {
       b.uzerinde = true;
     });
@@ -2277,6 +2312,23 @@
       b.uzerinde = false;
       if (b.bitti) b.bitti = Date.now() - BILDIRIM_KAPANIS_MS + 2000; // 2 sn sonra kapanır
     });
+    const kapat = el("button", "ikon-dugme");
+    kapat.type = "button";
+    kapat.setAttribute("aria-label", "Bildirimi kapat");
+    kapat.appendChild(simge("i-kapat"));
+    kapat.addEventListener("click", function () {
+      bildirimKapat(b.id);
+    });
+    kart.appendChild(kapat);
+    return kart;
+  }
+
+  /* Simge (sürerken döner), "Anons · Tüm fabrika · Çalınıyor", mesaj ve üç
+     adımlı ilerleme çizgisi. Yalnız bir şey değişince yeniden yazılır; kapat
+     düğmesine dokunulmaz (klavye odağı onda olabilir). */
+  function bildirimKartiniGuncelle(kart, k) {
+    const [etiket, sinif] = komutDurumBilgisi(k);
+    const suruyor = komutSuruyor(k);
     const ikon = suruyor
       ? "i-yukleniyor"
       : k.durum === "yapildi"
@@ -2284,28 +2336,29 @@
         : k.durum === "suresi_doldu"
           ? "i-saat"
           : "i-hata";
-    const kutu = ikonKutu(ikon, SINIF_TONU[sinif] || "");
-    if (suruyor) kutu.firstChild.classList.add("donus");
-    kart.appendChild(kutu);
-    const govde = el("div", "bildirim-govde");
-    govde.appendChild(el("b", "", k.ozet + " · " + etiket));
-    govde.appendChild(el("span", "", k.mesaj || saatMetni(k.olusturuldu)));
+    const baslik = k.ozet + " · " + etiket;
+    const alt = k.mesaj || saatMetni(k.olusturuldu);
     const adim = k.durum === "bekliyor" ? 1 : suruyor ? 2 : 3;
     const ton = suruyor ? "" : k.durum === "yapildi" ? "basari" : k.durum === "suresi_doldu" ? "notr" : "tehlike";
+    const imza = [ikon, sinif, baslik, alt, adim, ton].join("\n");
+    if (kart.dataset.imza === imza) return;
+    kart.dataset.imza = imza;
+
+    const kutu = ikonKutu(ikon, SINIF_TONU[sinif] || "");
+    if (suruyor) kutu.firstChild.classList.add("donus");
+    const govde = el("div", "bildirim-govde");
+    govde.appendChild(el("b", "", baslik));
+    govde.appendChild(el("span", "", alt));
     const cizgi = el("div", "adimlar-cizgisi" + (ton ? " " + ton : ""));
     cizgi.setAttribute("aria-hidden", "true");
     for (let i = 1; i <= 3; i++) cizgi.appendChild(el("i", i <= adim ? "gecti" : ""));
     govde.appendChild(cizgi);
-    kart.appendChild(govde);
-    const kapat = el("button", "ikon-dugme");
-    kapat.type = "button";
-    kapat.setAttribute("aria-label", "Bildirimi kapat");
-    kapat.appendChild(simge("i-kapat"));
-    kapat.addEventListener("click", function () {
-      bildirimKapat(k.id);
-    });
-    kart.appendChild(kapat);
-    return kart;
+    const eskiKutu = kart.querySelector(":scope > .ikon-kutu");
+    const eskiGovde = kart.querySelector(":scope > .bildirim-govde");
+    if (eskiKutu) eskiKutu.replaceWith(kutu);
+    else kart.prepend(kutu);
+    if (eskiGovde) eskiGovde.replaceWith(govde);
+    else kutu.after(govde);
   }
 
   $("bildirim-fazla").addEventListener("click", function () {
@@ -3453,6 +3506,30 @@
       }
     });
   }
+
+  // ---------------------------------------------------------------- görünüm
+
+  /* Sistem > Görünüm: Sistem / Açık / Koyu (tema.js, window.panoTema). Seçim
+     bu cihazda saklanır, Sistem cihazın ayarını izler. tema.js yüklenmediyse
+     satır gizlenir (sayfa açık temada kalır). */
+  function temaSeciminiCiz() {
+    const tema = window.panoTema;
+    $("gorunum-satiri").hidden = !tema;
+    if (!tema) return;
+    const secili = tema.secim();
+    for (const d of document.querySelectorAll("#tema-secimi button")) {
+      d.setAttribute("aria-pressed", String(d.dataset.secim === secili));
+    }
+  }
+  for (const d of document.querySelectorAll("#tema-secimi button")) {
+    d.addEventListener("click", function () {
+      if (window.panoTema) window.panoTema.sec(this.dataset.secim);
+      temaSeciminiCiz();
+    });
+  }
+  // Başka sekmede seçilirse düğmeler de güncellenir
+  window.addEventListener("storage", temaSeciminiCiz);
+  temaSeciminiCiz();
 
   $("yenile").addEventListener("click", function () {
     yukle();

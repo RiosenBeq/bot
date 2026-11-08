@@ -26,7 +26,9 @@ Demo gerçek veriye **dokunmaz**: sayfadaki `/api/...` istekleri tarayıcıda
 hiçbir şey kaydedilmez (sayfa yenilenince başa döner). Kamera görüntüleri ve
 kanıt fotoğrafları tarayıcıda çizilir. `/pano` adresinde `demo.js` hiçbir şey
 yapmaz. Yönlendirme `vercel.json`'daki `rewrites` satırıdır; demoyu kaldırmak
-için o satırı ve `pano.html`'deki `demo.js` etiketini silmek yeter.
+için o satırı, `pano.html`'deki `demo.js` etiketini ve tanıtım sayfasındaki
+(`index.html`) iki `/demo` bağlantısını ("Örnek verilerle incele", "Örnek
+pano") silmek yeter.
 
 Fabrikadaki program bu siteye düzenli aralıkla (varsayılan 30 sn) kısa, **imzalı**
 bir durum özeti, ihlallerin kanıt fotoğrafını ve (Kameralar ekranı açıkken)
@@ -219,8 +221,11 @@ Buradan alınanlar, sade haliyle:
 - **Kanıt fotoğrafı ve anlık görüntü:** her ihlalin yanında fotoğrafı durur
   (dokununca büyür); Kameralar ekranında kameraların 10 saniyede bir yenilenen
   görüntüsü, köşesinde bağlantı durumu; dokununca büyür ve kare hızları görünür.
-- **Olaylar** güne göre gruplanır; "Bekleyenler" yalnız incelenmemiş ihlalleri
-  gösterir, inceleme iki dokunuşla satırın içinde yapılır.
+- **Olaylar** güne göre gruplanır (gün başlığı kaydırırken üstte kalır);
+  "Bekleyenler" yalnız incelenmemiş ihlalleri gösterir. İnceleme iki dokunuşla
+  satırın içinde ya da kanıt fotoğrafı açıkken fotoğrafın altında yapılır:
+  kanıta bakıp aynı yerde karar verilir. Telefonda kanıt fotoğrafının küçüğü
+  satırın başında durur.
 - **Komut bildirimi:** gönderilen komut sağ altta (telefonda sekme çubuğunun
   üstünde) Sırada → Fabrikada → Yapıldı diye izlenir.
 
@@ -576,7 +581,7 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
-| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `pano.css` (pano), `stil.css` (tanıtım ve 404), `404.html`; `demo.js` yalnız `/demo`'da örnek veri verir |
+| `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `pano.css` (pano), `stil.css` (tanıtım ve 404), `404.html`; `tema.js` açık / koyu tema (her sayfada); `demo.js` yalnız `/demo`'da örnek veri verir |
 | `vercel.json` | Güvenlik başlıkları, `public/`'in yayınlanması, `/demo` yönlendirmesi |
 | `yerel_sunucu.py` | Siteyi Vercel'siz, bu bilgisayarda denemek için |
 
@@ -589,9 +594,21 @@ bakan kameranın görüş alanı ve eşikteki kişi), ince ayarlı sürümü.
 Görünüm: panonun 2. tasarımı (Claude Design, Kasım 2026). Bilgisayarda gri zemin
 üstünde kenar çubuğu ve sayfa kartı, telefonda beyaz sayfa, yapışkan cam üst
 çubuk ve altta yüzen sekme çubuğu (en az 44 px dokunma alanı, çentik ve alt
-çizgi payı). Giriş ekranında solda (telefonda üstte) koyu marka paneli.
-Panodaki simgeler bu proje için çizildi ve sayfanın içindedir; tanıtım
-sayfasındakiler Lucide'dendir, lisanslar `public/LISANSLAR.md`.
+çizgi payı); tablette (768 px ve üstü) kartlar iki sütun. Giriş ekranında solda
+(telefonda üstte) koyu marka paneli. Panodaki simgeler bu proje için çizildi ve
+sayfanın içindedir; tanıtım sayfasındakiler Lucide'dendir, lisanslar
+`public/LISANSLAR.md`. Tanıtım sayfasının başındaki pano önizlemesi resim
+değildir, panonun bileşenleriyle çizilir; verileri örnektir ve altında öyle
+yazar.
+
+**Açık ve koyu tema.** Her sayfa cihazın açık / koyu ayarını izler. Panoda
+**Sistem → Görünüm** satırından *Sistem*, *Açık* ya da *Koyu* seçilir; seçim o
+cihazın tarayıcısında saklanır (sunucuya gitmez), açık öbür sekmeler de hemen
+değişir. `public/tema.js` sayfa çizilmeden önce çalışır (koyu temada beyaz
+yanıp sönme olmaz) ve tarayıcı çubuğunun rengini de ayarlar. Renkler yalnız
+`pano.css` ve `stil.css`'teki `:root` (açık) ve `:root[data-tema="koyu"]`
+bloklarındadır; her rengin koyu karşılığı olduğunu `tests/test_sayfalar.py`
+denetler. İki temada da yazılar en az 4.5:1 kontrastlıdır.
 
 ## Güvenlik
 

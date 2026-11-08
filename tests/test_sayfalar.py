@@ -125,3 +125,50 @@ def test_demo_yalniz_demo_adresinde_calisir():
 def test_demo_vercelde_pano_sayfasina_yonlenir():
     ayar = json.loads((PUBLIC.parent / "vercel.json").read_text(encoding="utf-8"))
     assert {"source": "/demo", "destination": "/pano"} in ayar["rewrites"]
+
+
+# --------------------------------------------------------------- koyu tema
+
+RENK = re.compile(r"#[0-9a-fA-F]{3,8}\b|rgba?\(|gradient\(")
+
+
+def _degiskenler(css, secici):
+    """`secici { ... }` bloğundaki --ad: değer; çiftleri (ilk blok)."""
+    bas = css.index(secici + " {")
+    son = css.index("\n}", bas)
+    return dict(re.findall(r"(--[a-z0-9-]+):\s*([^;]+);", css[bas:son]))
+
+
+@pytest.mark.parametrize("ad", STILLER)
+def test_koyu_temada_her_renk_tanimli(ad):
+    """Açık temadaki her renk değişkeninin koyu temada karşılığı olmalı: biri
+    unutulursa koyu sayfada beyaz bir kart ya da okunmayan bir yazı kalır."""
+    css = (PUBLIC / ad).read_text(encoding="utf-8")
+    acik = _degiskenler(css, ":root")
+    koyu = _degiskenler(css, ':root[data-tema="koyu"]')
+    renkler = {ad for ad, deger in acik.items() if RENK.search(deger)}
+    assert renkler, "açık temada renk değişkeni bulunamadı"
+    assert not sorted(renkler - set(koyu)), f"koyu temada eksik: {sorted(renkler - set(koyu))}"
+    assert "color-scheme: dark" in css  # form öğeleri ve kaydırma çubuğu da koyu
+
+
+@pytest.mark.parametrize("sayfa", SAYFALAR, ids=lambda p: p.name)
+def test_tema_cizimden_once_yuklenir(sayfa):
+    """Koyu temada beyaz yanıp sönme olmasın: tema.js <head>'de ve defer'siz
+    çalışır; theme-color'dan sonra gelir, çünkü onu da günceller."""
+    metin = sayfa.read_text(encoding="utf-8")
+    bas = metin[: metin.index("</head>")]
+    assert '<script src="/tema.js"></script>' in bas
+    assert bas.index('name="theme-color"') < bas.index("/tema.js")
+    assert (PUBLIC / "tema.js").is_file()
+
+
+def test_bildirim_karti_tazelemede_yeniden_kurulmaz():
+    """Komut bildirimi her tazelemede yeniden kuruluyordu: giriş animasyonu
+    birkaç saniyede bir baştan oynuyor (kart saydamdan geliyor), ekran okuyucu
+    da aynı bildirimi yeniden okuyordu. Kart komut kimliğiyle saklanır ve
+    yalnız içeriği değişince yerinde güncellenir."""
+    ciz = re.search(r"function bildirimleriCiz\(\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    assert "temizle(liste)" not in ciz and "bildirimKartlari" in ciz
+    guncelle = re.search(r"function bildirimKartiniGuncelle\(kart, k\) \{.*?\n  \}", PANO_JS, re.S)
+    assert "kart.dataset.imza === imza" in guncelle.group(0)
