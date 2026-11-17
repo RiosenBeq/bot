@@ -3033,10 +3033,13 @@ a:hover {
 }
 .ozellikler-listesi > div {
   display: flex;
-  align-items: center;
+  /* Etiket değerin İLK satırıyla hizalanır: uzun değer (Kart notu) sarılınca
+     etiket satırın dikey ortasında kalmasın. Tek satırlık satırın boyu aynıdır. */
+  align-items: baseline;
   justify-content: space-between;
   gap: 16px;
   min-height: 42px;
+  padding: 11px 0;
   border-top: 1px solid var(--ayrac);
 }
 .ozellikler-listesi dt {
