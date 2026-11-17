@@ -1444,8 +1444,9 @@ function panoyuBaslat() {
   /* Ekranda görünen (ya da yarım ekran yakınındaki) kutucukların kamera
      kimlikleri, `&kameralar=4,5` olarak: fabrika yalnız bunların anlık
      görüntüsünü gönderir (50-60 kamerada yük ekrandakilerle sınırlı kalsın).
-     Büyütülmüş görüntünün kamerası da eklenir. Hiçbiri yoksa ek gitmez ve
-     site eskisi gibi hepsini ister. */
+     Büyütülmüş görüntünün kamerası da eklenir. Hiçbiri yoksa (ilk okumada
+     kutucuklar henüz çizilmedi) ek BOŞ gider: site onu sorgusu hiç olmayan
+     eski panodan ayırır ve "hepsini iste" işaretini koymaz. */
   function gorunenKameraSorgusu() {
     const yukseklik = window.innerHeight || document.documentElement.clientHeight;
     const pay = yukseklik * GORUNUR_PAY;
@@ -1458,7 +1459,7 @@ function panoyuBaslat() {
     }
     const acik = acikKare && $("foto-penceresi").open ? kareKutulari.get(acikKare) : null;
     if (acik && acik.kamera.id) kimlikler.add(acik.kamera.id);
-    return kimlikler.size ? "&kameralar=" + Array.from(kimlikler).join(",") : "";
+    return "&kameralar=" + Array.from(kimlikler).join(",");
   }
 
   function kareAdresi(kimlik, zaman) {
