@@ -121,3 +121,29 @@ def test_teshis_eki_metincontent_ile_yazilir():
     # Teşhis eki (fabrikadan gelen metin) yalnız textContent ile yazılır
     assert "pre.textContent = k.ek" in PANO_JS
     assert ".innerHTML" not in PANO_JS  # yalnız textContent; innerHTML hiç kullanılmaz
+
+
+def _fonksiyon_govdesi(ad):
+    """pano.js'teki bir fonksiyonun gövdesi (bir sonraki `function`a kadar)."""
+    bas = PANO_JS.index(f"function {ad}(")
+    return PANO_JS[bas : PANO_JS.index("\n  function ", bas + 1)]
+
+
+def test_yonetim_karti_kurulum_adini_bilgisayar_kartindan_alir():
+    # Yönetim kartı rapor.bilgisayar.kurulum_turu varsa Bilgisayar kartının
+    # gösterdiği adı yazar (Docker'da "Diğer" değil "Docker kapsayıcısı"); o
+    # yoksa (eski program) bugünkü KURULUM_ADLARI davranışı (docs/19 §3.9).
+    govde = _fonksiyon_govdesi("yonetimProgramCiz")
+    assert "rapor.bilgisayar" in govde
+    assert "b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum" in govde
+    assert "meta.push(" in govde and ".textContent = " in govde
+    # Bilgisayar kartı aynı alanı gösterir
+    assert "[b.kurulum_turu, b.kurulum_tarihi" in PANO_JS
+
+
+def test_kurulum_adlari_icin_ikinci_tablo_yok():
+    # Kurulum adlarının tek kaynağı programın gönderdiği bilgisayar.kurulum_turu;
+    # sitede yalnız yonetim.kurulum (paket/git/diger) için eski tablo durur.
+    assert PANO_JS.count("KURULUM_ADLARI = ") == 1
+    for ad in ("Docker kapsayıcısı", "Sunucu hizmeti", "Kaynak kurulumu", "Windows uygulaması"):
+        assert ad not in PANO_JS, ad

@@ -74,3 +74,41 @@ def test_bozuk_alanlar_reddedilir():
     assert temiz["yedi_gun"] is None
     assert temiz["yerler"] == []
     assert temiz["bilgisayar"] is None  # hiçbir alan geçerli değil
+
+
+def test_panelsiz_sunucu_kurulumunun_sebebi_ve_kurulum_adi_kesilmeden_gecer():
+    # Program (DALSAN uzak_yonetim.PANELSIZ_SEBEPLER, 17.11.2026) Docker ve
+    # systemd hizmetinde sebebe sunucudaki komutları yazar; site onu 200'de
+    # keser, metin bu sınırın altında kalır. Yönetim kartı kurulum adını
+    # bilgisayar.kurulum_turu'ndan alır; yonetim.kurulum yine paket/git/diger.
+    docker = (
+        "Docker kurulumunda siteden yapılamaz. Sunucuda yeniden başlatma: docker "
+        "compose restart; güncelleme: git pull, docker compose build, docker "
+        "compose up -d (ayrıntı docs/06 §3)."
+    )
+    hizmet = (
+        "systemd hizmetinde siteden yapılamaz. Sunucuda yeniden başlatma: sudo "
+        "systemctl restart dalsan; güncelleme: git pull, paket kurulumu, sonra "
+        "aynı komut (ayrıntı docs/06 §3)."
+    )
+    for sebep, kurulum, ad in (
+        (docker, "diger", "Docker kapsayıcısı"),
+        (hizmet, "git", "Sunucu hizmeti (systemd)"),
+    ):
+        temiz = _pano.rapor_temizle(
+            {
+                **RAPOR,
+                "bilgisayar": {**BILGISAYAR, "kurulum_turu": ad},
+                "yonetim": {
+                    "acik": True,
+                    "isler": ["teshis", "yeniden_baslat", "guncelle"],
+                    "kurulum": kurulum,
+                    "yeniden_baslatma": {"mumkun": False, "sebep": sebep},
+                    "guncelleme": {"mumkun": False, "sebep": sebep},
+                },
+            }
+        )
+        assert temiz["yonetim"]["kurulum"] == kurulum
+        assert temiz["yonetim"]["yeniden_baslatma"]["sebep"] == sebep
+        assert temiz["yonetim"]["guncelleme"]["sebep"] == sebep
+        assert temiz["bilgisayar"]["kurulum_turu"] == ad
