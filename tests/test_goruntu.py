@@ -186,9 +186,9 @@ def test_rapor_cevabi_yalniz_panoda_gorunen_kameralari_ister(site):  # noqa: F81
     ("sorgu", "beklenen"),
     [
         ("&kameralar=5,abc,0,-3,99999999999,5,7", {"iste": True, "kameralar": [5]}),
-        ("&kameralar=abc", {"iste": True}),  # geçerli kimlik yok: hepsi
-        ("&kameralar=", {"iste": True}),  # boş liste: hepsi
-        ("&kameralar=7", {"iste": True}),  # raporda olmayan kamera: hepsi
+        ("&kameralar=abc", {"iste": True}),  # bozuk liste (tanınmayan istemci): hepsi
+        ("&kameralar=", {"iste": False}),  # boş liste: ekranda kutucuk yok, istenmez
+        ("&kameralar=7", {"iste": False}),  # raporda olmayan kamera: istenmez
         ("&kameralar=" + ",".join(["4"] * 129), {"iste": True}),  # sınırdan uzun: yok sayılır
         ("&kameralar=4%2C5", {"iste": True, "kameralar": [4, 5]}),
     ],
@@ -339,7 +339,8 @@ def test_secimden_sonra_rapordan_cikan_kamera_istenmez():
 
 def test_pano_kameralar_ekraninda_gorunenleri_bildirir():
     """Kameralar ekranının okuması ?kare=1'e ekrandaki kutucukları ekler."""
-    assert '? "/api/durum?kare=1" + gorunenKameraSorgusu()' in PANO_JS
+    assert "const kareSorgusu = kareIzleniyor() ? gorunenKameraSorgusu() : null;" in PANO_JS
+    assert '? "/api/durum?kare=1" + kareSorgusu' in PANO_JS
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")

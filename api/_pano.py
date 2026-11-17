@@ -3635,7 +3635,7 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     fabrika sık sorar. `?kare=1`: Kameralar ekranı açık; görüntü zamanları gelir.
     Yanındaki `&kameralar=4,5` ekranda görünen kutucuklardır: fabrika yalnız
     onların görüntüsünü gönderir. Sorgu hiç yoksa (eski pano) hepsini; boşsa
-    (yeni pano, ekranda kutucuk yok) "hepsi" işareti konmaz.
+    (yeni pano, ekranda kutucuk yok) görüntü istenmez.
     `?filo=1` (yönetici): Tesisler ekranı açık; her tesisin özeti gelir (docs/20 §4)."""
     ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
@@ -3666,8 +3666,11 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
         veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.yetkiler, izliyor=True)
     if istek.sorgu("kare") == "1":
         secim = kare_secimi_coz(istek.sorgu("kameralar"))
-        if secim is None and istek.sorgu_var("kameralar"):
-            secim = []  # yeni pano, ekranda geçerli kutucuk yok: "hepsi" değil
+        if secim is None and istek.sorgu_var("kameralar") and not istek.sorgu("kameralar"):
+            # Yeni pano, ekranda kutucuk yok (liste VAR ama boş): görüntü istenmez.
+            # Dolu ama çözülemeyen liste (bozuk, sınırdan uzun) tanınmayan bir
+            # istemcidir: eski pano gibi "hepsi" sayılır (güvenli yön).
+            secim = []
         veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"), secim, simdi)
     if istek.sorgu("filo") == "1" and oturum.yetkili("ekran.tesisler"):
         veri["filo"] = filo_verisi(
