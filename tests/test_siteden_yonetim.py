@@ -134,8 +134,15 @@ def test_yonetim_karti_kurulum_adini_bilgisayar_kartindan_alir():
     # gösterdiği adı yazar (Docker'da "Diğer" değil "Docker kapsayıcısı"); o
     # yoksa (eski program) bugünkü KURULUM_ADLARI davranışı (docs/19 §3.9).
     govde = _fonksiyon_govdesi("yonetimProgramCiz")
-    assert "rapor.bilgisayar" in govde
-    assert "b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum" in govde
+    # Rapor henüz yokken (null) kart "Fabrikadan henüz rapor gelmedi" der:
+    # rapor.bilgisayar'a koruma olmadan erişilirse çizim TypeError ile kesilir.
+    assert "const b = (rapor && rapor.bilgisayar) || {};" in govde
+    # Kurulum adı yalnız yönetim bloğu kurulum bildirirken yazılır; yönetim
+    # kapalıyken bilgisayar.kurulum_turu tek başına ad yazdırmaz.
+    assert (
+        "if (y && y.kurulum) meta.push(b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum);"
+        in govde
+    )
     assert "meta.push(" in govde and ".textContent = " in govde
     # Bilgisayar kartı aynı alanı gösterir
     assert "[b.kurulum_turu, b.kurulum_tarihi" in PANO_JS
