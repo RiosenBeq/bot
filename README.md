@@ -298,18 +298,20 @@ ve sınırı aşanı depoya hiç yazmaz.
 - **Yalnız ekrandakiler (17.11.2026):** pano her okumada ekranda görünen (ve
   yarım ekran yakınındaki) kutucukların kamera kimliklerini bildirir
   (`/api/durum?kare=1&kameralar=4,5`; büyütülmüş görüntünün kamerası da).
-  Site her kimliği 30 saniye tutar, birden çok kişi bakıyorsa birleşimini alır
-  ve rapor cevabına `kare.kameralar` olarak (küçükten büyüğe, yalnız raporda
-  olan kameralar, en çok 128) yazar: fabrika yalnız onların görüntüsünü
-  gönderir. Listesiz bakan biri varsa (eski pano: `kameralar` sorgusu hiç yok)
-  30 saniye "hepsi" işareti konur; o işaret varken ya da liste boşsa alan hiç yazılmaz ve fabrika
+  Site her kimliği 45 saniye tutar (ekran açık işaretinden önce düşmesin diye
+  30 değil), birden çok kişi bakıyorsa birleşimini alır ve rapor cevabına
+  `kare.kameralar` olarak (küçükten büyüğe, yalnız raporda olan kameralar, en
+  çok 128) yazar: fabrika yalnız onların görüntüsünü gönderir. Listesiz bakan
+  biri varsa (eski pano: `kameralar` sorgusu hiç yok) 30 saniye "hepsi" işareti
+  konur; o işaret varken ya da liste boşsa alan hiç yazılmaz ve fabrika
   bugünkü gibi hepsini gönderir. Yeni pano ekranda kutucuk yokken de sorguyu
   boş gönderir (`&kameralar=`; ekran ilk açıldığında kutucuklar henüz
   çizilmemiştir): bu "hepsi" işaretini koymaz, beş saniye sonraki listeli okuma
   hemen geçerlidir. Rakam olmayan, 0 ya da 2^31 ve üstü kimlik atılır;
   128'den uzun liste yok sayılır. Kaydırınca yeni görünen kutucuğun görüntüsü
   en geç bir rapor aralığı (30 sn) ve 10 saniye içinde gelir; o arada son
-  görüntü (2 dakikaya kadar) ya da "Görüntü bekleniyor" görünür.
+  görüntü (2 dakikaya kadar) ya da "Görüntü bekleniyor" görünür. Ekrandan
+  çıkan kamera 45 saniyeye kadar istenmeye devam eder.
 
 Raporun cevabı: `{tamam, alindi, komut: {hizli}, kare: {iste, kameralar?},
 foto: {var: []}}`. Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü
@@ -581,7 +583,7 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   rapor gelirse (her açılışta yaklaşık altıda bir olasılık, 30 sn rapor
   aralığıyla) fabrika bir rapor aralığı boyunca hepsini gönderir: 60 kamerada
   en çok ~180 kare, ~550 komut ve ~11 MB. "Sorunlu" çipi bütün kutucukları
-  gizlerse liste en geç 30 saniye sonra boşalır ve ekran açık kaldıkça fabrika
+  gizlerse liste en geç 45 saniye sonra boşalır ve ekran açık kaldıkça fabrika
   yine hepsini gönderir (alan yoksa hepsi kuralı). 50-60 kameralık fabrikada
   Kameralar ekranı sık açılacaksa kullandıkça öde planı ve harcama sınırı gerekir.
 - **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
