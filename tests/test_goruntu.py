@@ -8,11 +8,17 @@ yalnız Kameralar ekranı açıkken istenir.
 
 import base64
 import json
+import re
+import shutil
+import subprocess
 import time
+from pathlib import Path
 
 import _pano
+import pytest
 from test_uctan_uca import ANAHTAR, RAPOR, _cerez, _giris, _istek, _rapor_gonder, site  # noqa: F401
 
+PANO_JS = (Path(__file__).resolve().parents[1] / "public" / "pano.js").read_text(encoding="utf-8")
 JPEG = b"\xff\xd8\xff\xe0" + b"\x10JFIF" + bytes(range(256)) * 4 + b"\xff\xd9"
 RAPOR_KAMERALI = {
     **RAPOR,
@@ -153,6 +159,171 @@ def test_anlik_goruntu_yalniz_kameralar_ekrani_acikken_istenir(site):  # noqa: F
     assert kod == 200 and veri == JPEG and basliklar["Cache-Control"] == "no-store"
     assert _istek(f"{site}/api/kare?kamera=5")[0] == 401
     assert _istek(f"{site}/api/kare?kamera=6", basliklar={"Cookie": cerez})[0] == 404
+
+
+def _kare_cevabi(site, cerez, sorgu=""):  # noqa: F811
+    """Kameralar ekranı açık panonun bir okuması, ardından fabrikanın raporu: kare bloğu."""
+    kod, _, _ = _istek(f"{site}/api/durum?kare=1{sorgu}", basliklar={"Cookie": cerez})
+    assert kod == 200
+    return json.loads(_rapor_gonder(site, RAPOR_KAMERALI)[2])["kare"]
+
+
+def test_rapor_cevabi_yalniz_panoda_gorunen_kameralari_ister(site):  # noqa: F811
+    """50-60 kameraya hazırlık (17.11.2026): pano Kameralar ekranında görünen
+    kutucukların kimliklerini ?kameralar= ile bildirir; rapor cevabı kare.kameralar
+    ile yalnız onları ister. Birden çok kişi bakıyorsa birleşimi istenir; listesiz
+    bakan (eski pano) varsa bugünkü gibi hepsi."""
+    _rapor_gonder(site, RAPOR_KAMERALI)
+    cerez = _cerez(_giris(site)[1])
+    assert _kare_cevabi(site, cerez, "&kameralar=5") == {"iste": True, "kameralar": [5]}
+    # Başka bir ekranda 4 görünüyor: ikisi birden istenir (küçükten büyüğe)
+    assert _kare_cevabi(site, cerez, "&kameralar=4") == {"iste": True, "kameralar": [4, 5]}
+    # Listesiz bakan (eski pano): fabrika hepsini göndersin (bugünkü cevap)
+    assert _kare_cevabi(site, cerez) == {"iste": True}
+
+
+@pytest.mark.parametrize(
+    ("sorgu", "beklenen"),
+    [
+        ("&kameralar=5,abc,0,-3,99999999999,5,7", {"iste": True, "kameralar": [5]}),
+        ("&kameralar=abc", {"iste": True}),  # geçerli kimlik yok: hepsi
+        ("&kameralar=", {"iste": True}),  # boş liste: hepsi
+        ("&kameralar=7", {"iste": True}),  # raporda olmayan kamera: hepsi
+        ("&kameralar=" + ",".join(["4"] * 129), {"iste": True}),  # sınırdan uzun: yok sayılır
+        ("&kameralar=4%2C5", {"iste": True, "kameralar": [4, 5]}),
+    ],
+)
+def test_bozuk_kamera_listesi_suzulur_ya_da_yok_sayilir(site, sorgu, beklenen):  # noqa: F811
+    _rapor_gonder(site, RAPOR_KAMERALI)
+    cerez = _cerez(_giris(site)[1])
+    assert _kare_cevabi(site, cerez, sorgu) == beklenen
+
+
+def test_kamera_listesi_kameralar_ekrani_kapaliyken_bir_sey_istemez(site):  # noqa: F811
+    _rapor_gonder(site, RAPOR_KAMERALI)
+    cerez = _cerez(_giris(site)[1])
+    kod, _, _ = _istek(f"{site}/api/durum?kameralar=4", basliklar={"Cookie": cerez})
+    assert kod == 200
+    assert json.loads(_rapor_gonder(site, RAPOR_KAMERALI)[2])["kare"] == {"iste": False}
+    assert _istek(f"{site}/api/durum?kare=1&kameralar=4")[0] == 401  # oturumsuz bildirilmez
+
+
+def test_gorunen_kamera_listesi_bakan_kalmayinca_duser():
+    """Her kimlik IZLEYEN_SURESI_SN sonra düşer: kaydırılıp ekrandan çıkan kamera
+    bir süre sonra istenmez; kimse bakmıyorsa kare bloğu bugünkü gibi."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
+    simdi[0] += 20
+    _pano.kare_zamanlari(depo, rapor, [5], simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [4, 5]}
+    simdi[0] += _pano.IZLEYEN_SURESI_SN - 15  # 4'ün süresi doldu, 5'inki sürüyor
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [5]}
+    simdi[0] += 15
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
+
+
+def test_pano_kameralar_ekraninda_gorunenleri_bildirir():
+    """Kameralar ekranının okuması ?kare=1'e ekrandaki kutucukları ekler."""
+    assert '? "/api/durum?kare=1" + gorunenKameraSorgusu()' in PANO_JS
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
+def test_pano_yalniz_ekranda_ve_yakininda_gorunen_kutucuklari_sayar():
+    """pano.js'teki gorunenKameraSorgusu node ile çalıştırılır: ekran 800 px,
+    pay yarım ekran (400 px). Süzgeçle gizlenen, boyu olmayan (görünüm kapalı) ve
+    kimliksiz (eski program) kutucuk sayılmaz; büyütülmüş görüntünün kamerası
+    sayılır. Hiçbiri yoksa ek gitmez (site hepsini ister)."""
+    islev = re.search(r"function gorunenKameraSorgusu\(\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    betik = (
+        """
+const GORUNUR_PAY = 0.5;
+const window = { innerHeight: 800 };
+const document = { documentElement: { clientHeight: 800 } };
+let pencereAcik = false;
+let acikKare = null;
+function $() { return { open: pencereAcik }; }
+function kutu(id, ust, boy, gizli) {
+  return {
+    kamera: { id: id },
+    dugme: {
+      hidden: !!gizli,
+      getBoundingClientRect: () =>
+        ({ top: ust, bottom: ust + boy, width: boy ? 300 : 0, height: boy }),
+    },
+  };
+}
+const kareKutulari = new Map([
+  ["id:1", kutu(1, 0, 200)],
+  ["id:2", kutu(2, 1100, 200)],
+  ["id:3", kutu(3, 1300, 200)],
+  ["id:4", kutu(4, -700, 200)],
+  ["id:5", kutu(5, -500, 200)],
+  ["id:6", kutu(6, 100, 200, true)],
+  ["id:7", kutu(7, 0, 0)],
+  ["ad:Eski", kutu(null, 0, 200)],
+]);
+"""
+        + islev
+        + """
+console.log(gorunenKameraSorgusu());
+acikKare = "id:3";
+console.log(gorunenKameraSorgusu());
+pencereAcik = true;
+console.log(gorunenKameraSorgusu());
+kareKutulari.clear();
+acikKare = null;
+console.log(JSON.stringify(gorunenKameraSorgusu()));
+"""
+    )
+    cikti = subprocess.run(
+        ["node", "-e", betik], capture_output=True, text=True, timeout=20, check=True
+    ).stdout.splitlines()
+    assert cikti == [
+        "&kameralar=1,2,5",
+        "&kameralar=1,2,5",  # pencere kapalıyken büyütülmüş kamera sayılmaz
+        "&kameralar=1,2,5,3",
+        '""',
+    ]
+
+
+def test_ayni_secim_yarim_sure_dolmadan_yeniden_yazilmaz():
+    """Pano 5 sn'de bir okur; seçim her okumada değil, süresinin yarısı dolunca
+    (ya da yeni kamera görününce) yazılır: Upstash'e her okumada bir komut daha
+    gitmesin (README "Plan ve maliyet")."""
+    simdi = [1000.0]
+    yazilan = []
+
+    class Sayan(_pano.BellekDepo):
+        def _calistir(self, parcalar):
+            if parcalar[:2] == ["SET", _pano.KARE_SECIM_ANAHTARI]:
+                yazilan.append(simdi[0])
+            return super()._calistir(parcalar)
+
+    depo = Sayan(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    for _ in range(7):  # 30 sn boyunca 5 sn'de bir, hep 4 görünüyor
+        _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
+        assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {
+            "iste": True,
+            "kameralar": [4],
+        }
+        simdi[0] += 5
+    assert yazilan == [1000.0, 1015.0, 1030.0]
+    _pano.kare_zamanlari(depo, rapor, [4, 5], simdi[0])  # 5 de göründü: hemen yazılır
+    assert yazilan[-1] == simdi[0]
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"]["kameralar"] == [4, 5]
+
+
+def test_kare_secimi_coz():
+    assert _pano.kare_secimi_coz(None) is None
+    assert _pano.kare_secimi_coz("") is None
+    assert _pano.kare_secimi_coz("4,5,4") == [4, 5]
+    assert _pano.kare_secimi_coz(" 5 , 4 ") == [4, 5]
+    assert _pano.kare_secimi_coz("x,1e3,+4,0x5,٣") is None  # yalnız ASCII rakam
+    assert _pano.kare_secimi_coz(",".join(str(i) for i in range(1, 130))) is None
+    assert _pano.kare_secimi_coz(",".join(str(i) for i in range(1, 129))) == list(range(1, 129))
 
 
 def test_anlik_goruntu_iki_dakikada_silinir():

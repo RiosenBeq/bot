@@ -173,7 +173,7 @@ ve `iki_adim_sifirla {ad, sifre}` (yönetici; öbür hesap işleriyle aynı kura
 | Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
 | Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (adres ve dosya yolu çıkarılmış) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
 | İhlallerin **kanıt fotoğrafı** (en çok 960 px, ihlal başına bir kez) | 7 gün, en çok 60 fotoğraf | |
-| Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken gelir | |
+| Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken ve yalnız ekranda görünen kutucukların kameraları için gelir | |
 | Kurulu olduğu bilgisayar: adı, IP adresi, işletim sistemi, donanım | 7 gün | Oturum açan kullanıcının adı |
 
 Pano hesapları siteye ait ayrı hesaplardır; şifreleri yalnız geri çevrilemeyen
@@ -295,9 +295,24 @@ ve sınırı aşanı depoya hiç yazmaz.
   300 KB (640 px önerilir). Cevaptaki `iste` yanlışa dönünce ya da 60 saniye
   boyunca doğru gelmezse bırakır. Görüntü 2 dakikada silinir; ekrana 10
   dakika dokunulmazsa pano istemeyi bırakır.
+- **Yalnız ekrandakiler (17.11.2026):** pano her okumada ekranda görünen (ve
+  yarım ekran yakınındaki) kutucukların kamera kimliklerini bildirir
+  (`/api/durum?kare=1&kameralar=4,5`; büyütülmüş görüntünün kamerası da).
+  Site her kimliği 30 saniye tutar, birden çok kişi bakıyorsa birleşimini
+  alır ve rapor cevabına `kare.kameralar` olarak (küçükten büyüğe, yalnız
+  raporda olan kameralar, en çok 128) yazar: fabrika yalnız onların görüntüsünü
+  gönderir. Listesiz bakan biri varsa (eski pano) ya da liste boşsa alan hiç
+  yazılmaz ve fabrika bugünkü gibi hepsini gönderir. Rakam olmayan, 0 ya da
+  2^31 ve üstü kimlik atılır; 128'den uzun liste yok sayılır. Kaydırınca yeni
+  görünen kutucuğun görüntüsü en geç bir rapor aralığı (30 sn) ve 10 saniye
+  içinde gelir; o arada son görüntü (2 dakikaya kadar) ya da "Görüntü
+  bekleniyor" görünür.
 
-Raporun cevabı: `{tamam, alindi, komut: {hizli}, kare: {iste}, foto: {var: []}}`.
-Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü göndermemelidir.
+Raporun cevabı: `{tamam, alindi, komut: {hizli}, kare: {iste, kameralar?},
+foto: {var: []}}`. Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü
+göndermemelidir. `kare.kameralar` yoksa (eski site ya da her şeyi isteyen pano)
+fabrika açık bütün kameraların görüntüsünü gönderir; eski program bu alanı
+tanımaz ve yine hepsini gönderir (örnek: `tests/sozlesme/rapor-cevabi-kare.json`).
 Tesis taşıyan raporda ana tesisin cevabına `filo: {ana: true}` eklenir; öbür
 tesisin cevabı yalnız `{tamam, alindi, filo: {ana: false}}`'dır.
 
@@ -538,8 +553,28 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   ticari olmayan kullanım içindir. Bir fabrika için **Pro** planı gerekir.
 - **Upstash:** her rapor 1 istekte 3 komuttur: 30 sn aralıkla ayda yaklaşık
   260 bin. Pano açıkken saatte yaklaşık 240 komut okur. Kanıt fotoğrafı başına
-  3-4 komut. Kameralar ekranı açıkken 4 kamerada saatte yaklaşık 8 bin komut ve
-  dakikada 3 MB kadar veri akar; ekrana 10 dakika dokunulmazsa durur.
+  3-4 komut. Kameralar ekranı açıkken yük ekrandaki kamera sayısıyla büyür;
+  ekrana 10 dakika dokunulmazsa durur (aşağıda).
+- **Kameralar ekranının yükü (tahmin, 17.11.2026).** Ekranda görüntüsü gelen
+  her kamera için: fabrika 10 sn'de bir gönderir (saatte 360 × 3 komut = 1.080:
+  görüntü, zamanı, "hâlâ bakılıyor mu"), pano her yeni görüntüyü indirir (saatte
+  360 × 2 komut = 720: oturum ve görüntü). Kamera başına saatte ~1.800 komut ve
+  45 KB'lık bir 640 px kare için (base64 ~60 KB, bir kez yazılır, bir kez okunur)
+  dakikada ~0,75 MB. Panonun 5 sn'de bir okuması ve raporlar saatte ~3.500 komut
+  daha ekler; bir kişi bakarken. Sitenin gerçek kodu bellek deposuyla ölçüldü
+  (bir dakikalık benzetim × 60; gerçek kare boyu sahneye göre değişir):
+
+  | Kameralar ekranı açıkken | Saatte komut | Dakikada veri | Ücretsiz plan (ayda 500 bin) |
+  |---|---|---|---|
+  | 4 kamera, hepsi ekranda | ~11 bin | ~3 MB | ~45 saatte biter |
+  | 60 kamera, eskisi gibi hepsi | ~112 bin | ~44 MB | ~4,5 saatte biter |
+  | 60 kamera, masaüstünde ~24'ü ekranda | ~47 bin | ~18 MB | ~10,5 saatte biter |
+  | 60 kamera, telefonda ~7'si ekranda | ~17 bin | ~5 MB | ~30 saatte biter |
+
+  "Ekranda" yarım ekran payını da sayar (kaydırınca gelen kutucuk hazır olsun).
+  Hepsi ekrandayken yük eskisinden biraz fazladır (saatte ~1.000 komut: seçimin
+  okunması ve 15 sn'de bir yazılması). 50-60 kameralık fabrikada Kameralar ekranı
+  sık açılacaksa kullandıkça öde planı ve harcama sınırı gerekir.
 - **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
   doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. İki adımı açık
   hesabın her girişi 2 istek daha yapar (son kullanılan adım okunur, adım
@@ -577,7 +612,7 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 |---|---|
 | `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
 | `api/giris.py`, `api/cikis.py` | Panoya kişisel hesapla giriş ve çıkış (oturum çerezi, kilitler, iki adımlı doğrulama kodu) |
-| `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir) |
+| `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir, `&kameralar=4,5`: yalnız ekrandaki kameralarınki) |
 | `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir / iki adımı sıfırlar, herkes kendi şifresini değiştirir ve kendi iki adımlı doğrulamasını açar / kapatır (onay şifresiyle) |
 | `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
