@@ -467,6 +467,12 @@ sitede fotoğrafı olup olmadığını site kendisi yazar.
 Yönetim ve inceleme düğmelerini pasif bırakır ("Fabrika programı bu işi bilmiyor;
 programı güncelleyin."). Anons ve hoparlör denemesi bugünkü gibi çalışır.
 
+Yönetim kartındaki kurulum adı Bilgisayar kartındakiyle aynıdır: rapor
+`bilgisayar.kurulum_turu` taşıyorsa o ("Docker kapsayıcısı", "Sunucu hizmeti
+(systemd)", "Windows uygulaması" gibi; adı program yazar, sitede ikinci bir ad
+tablosu yoktur), taşımıyorsa `yonetim.kurulum`'un adı ("Paket (Windows)",
+"Kaynak (git)", "Diğer").
+
 ### Komut sözleşmesi (`/api/komut`)
 
 Komut sorusu ve cevabı da raporla aynı anahtarla, aynı başlıklarla imzalanır;
@@ -733,6 +739,7 @@ yenileyin.
 | Tesisler: "Aynı tesis kimliği iki bilgisayardan geliyor" | Bir `.env` öbür bilgisayara kopyalanmış: bilgisayarlardan birinde `UZAK_PANO_TESIS_ID`'yi değiştirip programı yeniden başlatın; uyarı yaklaşık bir saatte kalkar |
 | Pano: "ÖNİZLEME - fabrikaya komut ve hesap değişikliği gönderilmez" | Önizleme (Preview) adresindesiniz; Vercel'in ana (Production) adresini açın |
 | Yönetim: düğme pasif, "Fabrika programı bu işi bilmiyor" | Fabrika programı eski; güncellendiğinde Yönetim işleri açılır (ilk güncelleme fabrikada elle yapılır) |
+| Yönetim: düğme pasif, "Docker kurulumunda siteden yapılamaz" ya da "systemd hizmetinde siteden yapılamaz" | Program sunucuda Kontrol Paneli olmadan çalışıyor; yeniden başlatma ve güncelleme sunucuda, sebepte yazan komutlarla yapılır (DALSAN docs/06 §3) |
 | Program: "İmza tutmadı" | Programdaki anahtar ile `RAPOR_ANAHTARI` aynı değil |
 | Program: "saati yaklaşık ... saniye geri" | Fabrika bilgisayarının tarih ve saatinde "otomatik ayarla"yı açın |
 | Program: "beklenmeyen bir cevap verdi (HTTP 401)" | Önizleme adresi yazılmış; Vercel'in ana (Production) adresini yazın |
