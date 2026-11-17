@@ -444,7 +444,7 @@ tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 | `kapanis_sebebi` | `""` / `guncelleme` / `yeniden_baslatma` (yalnız kapanış raporunda dolu) |
 | `program` | `{ad, surum, yapi: {commit (7-40 küçük hex ya da boş), tarih (ISO ya da boş), calistirma}}` |
 | `sistem` | `{analiz, hazir, model, uyari_garantisi, sorunlar[], bos_disk_gb, calisma_suresi_sn}` |
-| `kameralar[]` | `{id, ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` (`id` anlık görüntünün anahtarı) |
+| `kameralar[]` | `{id, ad, bolum, durum, okunan_fps, islenen_fps, hedef_fps, yavas, son_kare_yasi_sn}` (`id` anlık görüntünün anahtarı), en çok 128 kamera (17.11.2026'ya kadar 64; fabrika geneli 50-60 kamera). 128 kameralık rapor, adlar ve bölümler 80 Türkçe harfle ve öbür listeler doluyken ~118 KB, gerçekçi adlarla ~46 KB'tır; site raporu en çok 128 KB alır |
 | `sayilar` | `{bugun_ihlal, dun_ihlal, bekleyen, aktif_kural, kamera_toplam, kamera_canli}` |
 | `saatlik` | bugünün 24 saati, ihlal sayısı |
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
