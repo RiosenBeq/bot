@@ -352,11 +352,15 @@ KARE_ZAMAN_ONEKI = "dalsan:kare_zaman:"
 KARE_IZLEYEN_ANAHTARI = "dalsan:kare:izleyen"
 # Kameralar ekranında görünen kutucuklar (17.11.2026): fabrika yalnız onların anlık
 # görüntüsünü gönderir. Seçim {"kimlik": bitiş anı} olarak durur, her kimlik
-# IZLEYEN_SURESI_SN sonra düşer; birden çok kişi bakıyorsa birleşimidir. Listesiz
+# KARE_SECIM_SURESI_SN sonra düşer; birden çok kişi bakıyorsa birleşimidir. Listesiz
 # bakan (eski pano; `kameralar` sorgusu hiç yok) "hepsi" işaretini koyar: o varken
 # liste gönderilmez. Yeni panonun boş listesi (kutucuklar henüz çizilmedi) koymaz.
 KARE_SECIM_ANAHTARI = "dalsan:kare:secim"
 KARE_HEPSI_ANAHTARI = "dalsan:kare:hepsi"
+# Seçim "ekran açık" işaretinden (son okumadan IZLEYEN_SURESI_SN) önce düşmesin:
+# yeniden yazım kalan süre IZLEYEN_SURESI_SN'e inince olur, yeni bitiş 1,5 katıdır.
+# Ekrandan çıkan kamera en çok bu kadar daha istenir.
+KARE_SECIM_SURESI_SN = IZLEYEN_SURESI_SN + IZLEYEN_SURESI_SN // 2
 KARE_EN_BUYUK_BAYT = 300 * 1024
 KARE_SAKLAMA_SN = 120
 KARE_ARALIK_SN = 10  # fabrikaya önerilen gönderme aralığı (README)
@@ -4530,7 +4534,7 @@ def kare_zamanlari(
 
     `secim`: ekranda görünen kameralar (kare_secimi_coz). Rapordaki kameralarla
     kesişimi, öbür bakanların henüz düşmemiş seçimine eklenir (bir okuma; yazma
-    yalnız yeni kamera görününce ya da sürenin yarısı dolunca).
+    yalnız yeni kamera görününce ya da kalan süre IZLEYEN_SURESI_SN'e inince).
     Yarışta kaybolan bir seçim bir sonraki okumada geri gelir. `secim` None ise
     (eski pano, liste hiç yok) "hepsi" işareti konur: fabrika bugünkü gibi
     hepsini gönderir. Boş liste ya da boş kesişim (yeni pano, ekranda kutucuk
@@ -4552,18 +4556,20 @@ def kare_zamanlari(
         komutlar.append(["MGET", *(KARE_ZAMAN_ONEKI + str(k) for k in kimlikler)])
     sonuc = depo.boru_hatti(komutlar)
     harita = kare_secim_haritasi(sonuc[1], simdi) if gorunen else {}
-    # Yazım yalnız gerekince: yeni bir kamera göründü ya da birinin süresinin
-    # yarısı doldu. Pano 5 sn'de bir okur; her okumada yazmak saatte 720 komut eder.
-    tazele = simdi + IZLEYEN_SURESI_SN / 2
+    # Yazım yalnız gerekince: yeni bir kamera göründü ya da birinin kalan süresi
+    # "ekran açık" işaretininkine (IZLEYEN_SURESI_SN) indi; yeni bitiş daha uzundur,
+    # seçim o işaretten önce düşmez. Pano 5 sn'de bir okur; her okumada yazmak
+    # saatte 720 komut eder (böyle 15 sn'de bir yazılır).
+    tazele = simdi + IZLEYEN_SURESI_SN
     if any(harita.get(k, 0) <= tazele for k in gorunen):
         harita = {k: b for k, b in harita.items() if k in kimlikler}
-        harita.update(dict.fromkeys(gorunen, int(simdi) + IZLEYEN_SURESI_SN))
+        harita.update(dict.fromkeys(gorunen, int(simdi) + KARE_SECIM_SURESI_SN))
         depo.yaz_coklu(
             [
                 (
                     KARE_SECIM_ANAHTARI,
                     json.dumps({str(k): b for k, b in sorted(harita.items())}),
-                    IZLEYEN_SURESI_SN,
+                    KARE_SECIM_SURESI_SN,
                 )
             ]
         )
