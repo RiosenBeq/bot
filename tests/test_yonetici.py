@@ -83,13 +83,13 @@ def test_panelsiz_sunucu_kurulumunun_sebebi_ve_kurulum_adi_kesilmeden_gecer():
     # bilgisayar.kurulum_turu'ndan alır; yonetim.kurulum yine paket/git/diger.
     docker = (
         "Docker kurulumunda siteden yapılamaz. Sunucuda yeniden başlatma: docker "
-        "compose restart; güncelleme: git pull, docker compose build, docker "
-        "compose up -d (ayrıntı docs/06 §3)."
+        "compose restart; güncelleme: docs/06 §3'teki adımlar (git pull, "
+        "models/indir.sh, yapı bilgili build, docker compose up -d)."
     )
     hizmet = (
         "systemd hizmetinde siteden yapılamaz. Sunucuda yeniden başlatma: sudo "
-        "systemctl restart dalsan; güncelleme: git pull, paket kurulumu, sonra "
-        "aynı komut (ayrıntı docs/06 §3)."
+        "systemctl restart dalsan; güncelleme: git pull, Python bağımlılıklarının "
+        "kurulumu, sonra aynı komut (ayrıntı docs/06 §3)."
     )
     for sebep, kurulum, ad in (
         (docker, "diger", "Docker kapsayıcısı"),
