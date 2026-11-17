@@ -3040,13 +3040,14 @@ a:hover {
   border-top: 1px solid var(--ayrac);
 }
 .ozellikler-listesi dt {
+  flex-shrink: 0; /* uzun değerin yanında etiket iki satıra bölünmez */
   color: var(--metin-3);
   font-size: 13px;
 }
 .ozellikler-listesi dd {
   min-width: 0;
   font-weight: 500;
-  text-align: right;
+  text-align: left; /* sarılan uzun değer (Kart notu) sola yaslı; kısa değer yine sağda */
   overflow-wrap: anywhere;
 }
 #bilgisayar-ac .acilir {

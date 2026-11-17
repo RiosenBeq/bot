@@ -116,3 +116,20 @@ def test_demo_iki_alani_ornekle_gosterir():
     blok = re.search(r"bilgisayar: \{.*?\n      \},", DEMO_JS, re.S).group(0)
     assert "cikarim_secimi:" in blok and "cikarim_notu:" in blok
     assert "Sonuçları işlemciyle karşılaştırıldı" in blok
+
+
+def _css_kurali(css: str, secici: str) -> str:
+    return re.search(re.escape(secici) + r" \{([^}]*)\}", css).group(1)
+
+
+def test_uzun_kart_notu_satirinda_etiket_sarilmaz_metin_sola_yaslanir():
+    """Kart notu 300 karaktere varır: Bilgisayar kartının iki sütunlu satırında
+    etiket ("Seçilen donanım", "Kart notu") daralıp iki satıra bölünmez, birden
+    çok satıra sarılan değer sağa değil sola yaslanır. Tek satırlık kısa değerler
+    yine sağda durur (satır space-between, değerin kutusu metni kadar)."""
+    css = (PUBLIC / "pano.css").read_text(encoding="utf-8")
+    assert "justify-content: space-between;" in _css_kurali(css, ".ozellikler-listesi > div")
+    assert "flex-shrink: 0;" in _css_kurali(css, ".ozellikler-listesi dt")
+    dd = _css_kurali(css, ".ozellikler-listesi dd")
+    assert "text-align: left;" in dd and "text-align: right;" not in dd
+    assert "min-width: 0;" in dd and "overflow-wrap: anywhere;" in dd
