@@ -224,6 +224,22 @@ def test_gorunen_kamera_listesi_bakan_kalmayinca_duser():
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
 
 
+def test_secimden_sonra_rapordan_cikan_kamera_istenmez():
+    """Cevaptaki liste yalnız raporda olan kameralardır: seçimde 4 ve 5 varken
+    5 rapordan çıkarsa (silindi) yalnız 4 istenir."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    _pano.kare_zamanlari(depo, rapor, [4, 5], simdi[0])
+    rapor_5siz = _pano.rapor_temizle(
+        {**RAPOR_KAMERALI, "kameralar": RAPOR_KAMERALI["kameralar"][:1]}
+    )
+    assert _pano.rapor_kaydet(depo, rapor_5siz, simdi[0])["kare"] == {
+        "iste": True,
+        "kameralar": [4],
+    }
+
+
 def test_pano_kameralar_ekraninda_gorunenleri_bildirir():
     """Kameralar ekranının okuması ?kare=1'e ekrandaki kutucukları ekler."""
     assert '? "/api/durum?kare=1" + gorunenKameraSorgusu()' in PANO_JS
@@ -231,14 +247,15 @@ def test_pano_kameralar_ekraninda_gorunenleri_bildirir():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
 def test_pano_yalniz_ekranda_ve_yakininda_gorunen_kutucuklari_sayar():
-    """pano.js'teki gorunenKameraSorgusu node ile çalıştırılır: ekran 800 px,
-    pay yarım ekran (400 px). Süzgeçle gizlenen, boyu olmayan (görünüm kapalı) ve
+    """pano.js'teki gorunenKameraSorgusu ve GORUNUR_PAY node ile çalıştırılır:
+    ekran 800 px, pay yarım ekran (400 px). Süzgeçle gizlenen, boyu olmayan (görünüm kapalı) ve
     kimliksiz (eski program) kutucuk sayılmaz; büyütülmüş görüntünün kamerası
     sayılır. Hiçbiri yoksa ek gitmez (site hepsini ister)."""
     islev = re.search(r"function gorunenKameraSorgusu\(\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    pay = re.search(r"^  const GORUNUR_PAY = [^;\n]+;$", PANO_JS, re.M).group(0)
     betik = (
-        """
-const GORUNUR_PAY = 0.5;
+        pay
+        + """
 const window = { innerHeight: 800 };
 const document = { documentElement: { clientHeight: 800 } };
 let pencereAcik = false;
