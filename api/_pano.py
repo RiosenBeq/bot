@@ -353,7 +353,8 @@ KARE_IZLEYEN_ANAHTARI = "dalsan:kare:izleyen"
 # Kameralar ekranında görünen kutucuklar (17.11.2026): fabrika yalnız onların anlık
 # görüntüsünü gönderir. Seçim {"kimlik": bitiş anı} olarak durur, her kimlik
 # IZLEYEN_SURESI_SN sonra düşer; birden çok kişi bakıyorsa birleşimidir. Listesiz
-# bakan (eski pano) "hepsi" işaretini koyar: o varken liste gönderilmez.
+# bakan (eski pano; `kameralar` sorgusu hiç yok) "hepsi" işaretini koyar: o varken
+# liste gönderilmez. Yeni panonun boş listesi (kutucuklar henüz çizilmedi) koymaz.
 KARE_SECIM_ANAHTARI = "dalsan:kare:secim"
 KARE_HEPSI_ANAHTARI = "dalsan:kare:hepsi"
 KARE_EN_BUYUK_BAYT = 300 * 1024
@@ -3422,6 +3423,11 @@ class Isleyici(BaseHTTPRequestHandler):
         degerler = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         return degerler.get(ad, [""])[0]
 
+    def sorgu_var(self, ad: str) -> bool:
+        """Sorguda `ad` var mı (boş değerli `&ad=` de sayılır)."""
+        sorgu = urllib.parse.urlsplit(self.path).query
+        return ad in urllib.parse.parse_qs(sorgu, keep_blank_values=True)
+
     def koken_dogrula(self) -> None:
         """Tarayıcı başka bir siteden istek gönderiyorsa reddedilir. Oturum
         çerezi SameSite=Strict olduğu için zaten taşınmaz; bu ikinci kilittir."""
@@ -3611,7 +3617,8 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     `?mudahale=1` (operatör+) ve `?yonetim=1` (yönetici): son komutlar gelir ve
     fabrika sık sorar. `?kare=1`: Kameralar ekranı açık; görüntü zamanları gelir.
     Yanındaki `&kameralar=4,5` ekranda görünen kutucuklardır: fabrika yalnız
-    onların görüntüsünü gönderir (yoksa hepsini).
+    onların görüntüsünü gönderir. Sorgu hiç yoksa (eski pano) hepsini; boşsa
+    (yeni pano, ekranda kutucuk yok) "hepsi" işareti konmaz.
     `?filo=1` (yönetici): Tesisler ekranı açık; her tesisin özeti gelir (docs/20 §4)."""
     ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
@@ -3641,6 +3648,8 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
         veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.yetkiler, izliyor=True)
     if istek.sorgu("kare") == "1":
         secim = kare_secimi_coz(istek.sorgu("kameralar"))
+        if secim is None and istek.sorgu_var("kameralar"):
+            secim = []  # yeni pano, ekranda geçerli kutucuk yok: "hepsi" değil
         veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"), secim, simdi)
     if istek.sorgu("filo") == "1" and oturum.yetkili("ekran.tesisler"):
         veri["filo"] = filo_verisi(
@@ -4521,9 +4530,11 @@ def kare_zamanlari(
 
     `secim`: ekranda görünen kameralar (kare_secimi_coz). Rapordaki kameralarla
     kesişimi, öbür bakanların henüz düşmemiş seçimine eklenir (bir okuma; yazma
-    yalnız yeni kamera görününce ya da sürenin yarısı dolunca). Yarışta kaybolan
-    bir seçim bir sonraki okumada geri gelir. Seçim yoksa ya da kesişim boşsa
-    "hepsi" işareti konur: fabrika bugünkü gibi hepsini gönderir."""
+    yalnız yeni kamera görününce ya da sürenin yarısı dolunca).
+    Yarışta kaybolan bir seçim bir sonraki okumada geri gelir. `secim` None ise
+    (eski pano, liste hiç yok) "hepsi" işareti konur: fabrika bugünkü gibi
+    hepsini gönderir. Boş liste ya da boş kesişim (yeni pano, ekranda kutucuk
+    yok ya da henüz çizilmedi) ikisine de dokunmaz: yalnız "ekran açık" işareti."""
     simdi = time.time() if simdi is None else simdi
     kimlikler = [
         k["id"]
@@ -4531,12 +4542,12 @@ def kare_zamanlari(
         if isinstance(k, dict) and _kimlik(k.get("id"))
     ]
     gorunen = [k for k in (secim or []) if k in set(kimlikler)]
-    komutlar: list[list[str]] = [
-        _set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
-        ["GET", KARE_SECIM_ANAHTARI]
-        if gorunen
-        else _set_komutu(KARE_HEPSI_ANAHTARI, "1", IZLEYEN_SURESI_SN),
-    ]
+    komutlar: list[list[str]] = [_set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN)]
+    if gorunen:
+        komutlar.append(["GET", KARE_SECIM_ANAHTARI])
+    elif secim is None:
+        komutlar.append(_set_komutu(KARE_HEPSI_ANAHTARI, "1", IZLEYEN_SURESI_SN))
+    zaman_sirasi = len(komutlar)
     if kimlikler:
         komutlar.append(["MGET", *(KARE_ZAMAN_ONEKI + str(k) for k in kimlikler)])
     sonuc = depo.boru_hatti(komutlar)
@@ -4556,7 +4567,11 @@ def kare_zamanlari(
                 )
             ]
         )
-    zamanlar = sonuc[2] if len(sonuc) > 2 and isinstance(sonuc[2], list) else []
+    zamanlar = (
+        sonuc[zaman_sirasi]
+        if len(sonuc) > zaman_sirasi and isinstance(sonuc[zaman_sirasi], list)
+        else []
+    )
     return {
         str(kimlik): zaman
         for kimlik, zaman in zip(kimlikler, zamanlar, strict=False)

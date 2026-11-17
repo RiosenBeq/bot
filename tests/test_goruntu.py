@@ -224,6 +224,36 @@ def test_gorunen_kamera_listesi_bakan_kalmayinca_duser():
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
 
 
+def test_yeni_panonun_bos_listesi_hepsi_isaretini_koymaz():
+    """Kameralar ekranı doğrudan açılınca (yenileme, giriş sonrası) ilk okuma
+    kutucuklar çizilmeden gider: yeni pano boş liste bildirir. Bu "hepsi"
+    işaretini koymaz (o yalnız listesiz okuyan eski panonundur); 5 sn sonraki
+    okumanın listesi hemen geçerlidir. O arada gelen rapor listesizdir ve alan
+    hiç yazılmaz (fabrika bugünkü gibi hepsini gönderir), ama 30 sn yapışmaz."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    _pano.kare_zamanlari(depo, rapor, [], simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True}
+    assert depo.al_coklu([_pano.KARE_HEPSI_ANAHTARI]) == [None]
+    simdi[0] += 5
+    _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
+    simdi[0] += 1
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [4]}
+    # Eski pano (liste hiç yok) yine "hepsi" der
+    _pano.kare_zamanlari(depo, rapor, None, simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True}
+
+
+def test_yeni_panonun_bos_listesi_istekte_de_hepsi_demez(site):  # noqa: F811
+    """`&kameralar=` boş ama VAR: yeni pano, ekranda henüz kutucuk yok. Sorgunun
+    hiç olmaması (eski pano) ise bugünkü gibi hepsini ister."""
+    _rapor_gonder(site, RAPOR_KAMERALI)
+    cerez = _cerez(_giris(site)[1])
+    assert _kare_cevabi(site, cerez, "&kameralar=") == {"iste": True}
+    assert _kare_cevabi(site, cerez, "&kameralar=5") == {"iste": True, "kameralar": [5]}
+
+
 def test_secimden_sonra_rapordan_cikan_kamera_istenmez():
     """Cevaptaki liste yalnız raporda olan kameralardır: seçimde 4 ve 5 varken
     5 rapordan çıkarsa (silindi) yalnız 4 istenir."""
@@ -248,9 +278,10 @@ def test_pano_kameralar_ekraninda_gorunenleri_bildirir():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
 def test_pano_yalniz_ekranda_ve_yakininda_gorunen_kutucuklari_sayar():
     """pano.js'teki gorunenKameraSorgusu ve GORUNUR_PAY node ile çalıştırılır:
-    ekran 800 px, pay yarım ekran (400 px). Süzgeçle gizlenen, boyu olmayan (görünüm kapalı) ve
-    kimliksiz (eski program) kutucuk sayılmaz; büyütülmüş görüntünün kamerası
-    sayılır. Hiçbiri yoksa ek gitmez (site hepsini ister)."""
+    ekran 800 px, pay yarım ekran (400 px). Süzgeçle gizlenen, boyu olmayan
+    (görünüm kapalı) ve kimliksiz (eski program) kutucuk sayılmaz; büyütülmüş
+    görüntünün kamerası sayılır. Hiçbiri yoksa ek BOŞ gider: site onu eski
+    panonun listesiz okumasından ayırır ve "hepsi" demez."""
     islev = re.search(r"function gorunenKameraSorgusu\(\) \{.*?\n  \}", PANO_JS, re.S).group(0)
     pay = re.search(r"^  const GORUNUR_PAY = [^;\n]+;$", PANO_JS, re.M).group(0)
     betik = (
@@ -301,7 +332,7 @@ console.log(JSON.stringify(gorunenKameraSorgusu()));
         "&kameralar=1,2,5",
         "&kameralar=1,2,5",  # pencere kapalıyken büyütülmüş kamera sayılmaz
         "&kameralar=1,2,5,3",
-        '""',
+        '"&kameralar="',
     ]
 
 
