@@ -42,21 +42,26 @@ Yönetim kartında kurulum adı, yalnız ekrandaki kameraların anlık görünt�
 Bilgisayar kartında seçilen donanım ile kart notu bu dalda (`site-entegrasyon`); DALSAN'da B10
 #5-#7. Kalanlar küçüktür, hiçbiri uyarıyı kaybettirmez:
 
-1. **"Sorunlu" çipi bütün kutucukları gizlerse** liste en geç 45 sn sonra boşalır ve ekran açık
-   kaldıkça fabrika bütün kameraları gönderir (alan yoksa hepsi kuralı; güvenli yön). Ekran ilk
-   açıldığında da yaklaşık altıda bir olasılıkla bir rapor aralığı (~30 sn) hepsi gider. Tam
-   kapatmak için pano kutucukları çizmeden `?kare=1` dememeli ya da liste `/api/kare` cevabına da
-   konmalı (DALSAN ile birlikte).
-2. **Statik dosyalarda sürüm kuralı yok:** önbellekte kalmış eski `pano.js` açık bir sekmede
-   "hepsi" işaretini koyar; o sekme yenilenene kadar fabrika bütün kameraları gönderir.
+1. ~~**"Sorunlu" çipi bütün kutucukları gizlerse** ... fabrika bütün kameraları gönderir; ekran ilk
+   açıldığında altıda bir olasılıkla bir rapor aralığı hepsi gider.~~ Yapıldı (17.11.2026): yeni
+   panonun boş listesi ne "hepsi" ne "ekran açık" işaretini koyar, fabrikadan görüntü istenmez;
+   kutucuklar çizilince pano listeyi hemen bildirir (`KARE_ILK_LISTE_MS`). Dolu ama çözülemeyen
+   liste eskisi gibi "hepsi" sayılır.
+2. ~~**Statik dosyalarda sürüm kuralı yok:** önbellekte kalmış eski `pano.js` açık bir sekmede
+   "hepsi" işaretini koyar.~~ Yapıldı (17.11.2026): `/api/durum` sitenin sürümünü söyler
+   (`VERCEL_GIT_COMMIT_SHA`), pano ilk gördüğü sürüm değişince sayfayı yeniler (yazı yazılırken ya
+   da pencere açıkken değil; 5 dakikada en çok bir kez). Bu değişiklikten önce açılmış sekmeler
+   bir kez elle yenilenmeli.
 3. **Seçimi aynı anda yazan iki pano** bir okuma turu (5 sn) boyunca birinin eklediğini
    kaybedebilir; bir sonraki okumada kendiliğinden düzelir.
 4. **Kararı belgede olmayan iki değer:** yarım ekran payı (`GORUNUR_PAY = 0.5`) ve seçimin 45 sn
    tutulması (`KARE_SECIM_SURESI_SN`). Yük tablosu tek bakan kişiyle ve 45 KB'lık kareyle bir
    tahmindir; gerçek Upstash ve Vercel'de ölçülmedi.
-5. **Görünüm:** Bilgisayar kartında uzun "Kart notu"nun yanındaki etiket satırın dikey ortasında
-   durur; Yönetim kartında git kaynak kurulumu artık "(git)" bilgisini göstermez (adı program
-   yazar). İkisi tarayıcıda bakılıp sahibine sorulur.
+5. **Görünüm:** ~~Bilgisayar kartında uzun "Kart notu"nun yanındaki etiket satırın dikey ortasında
+   durur~~ (17.11.2026: etiket değerin ilk satırıyla hizalanır); Yönetim kartında git kaynak
+   kurulumu artık "(git)" bilgisini göstermez (adı program yazar): sahibine sorulur.
+6. **Otomatik güncelleme panoda yalnız Olaylar ve Teşhis'te görünür** (DALSAN docs/19 §5.6,
+   17.11.2026). Yönetim kartına ayar ve son sonuç satırı eklemek rapora alan ekler (iki depo).
 
 ## Güvenlik incelemesinden kalanlar (02.11.2026, hepsi düşük)
 
