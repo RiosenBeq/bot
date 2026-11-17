@@ -209,18 +209,19 @@ def test_kamera_listesi_kameralar_ekrani_kapaliyken_bir_sey_istemez(site):  # no
 
 
 def test_gorunen_kamera_listesi_bakan_kalmayinca_duser():
-    """Her kimlik IZLEYEN_SURESI_SN sonra düşer: kaydırılıp ekrandan çıkan kamera
-    bir süre sonra istenmez; kimse bakmıyorsa kare bloğu bugünkü gibi."""
+    """Her kimlik KARE_SECIM_SURESI_SN (45 sn) sonra düşer: kaydırılıp ekrandan
+    çıkan kamera bir süre sonra istenmez; kimse bakmıyorsa kare bloğu bugünkü gibi."""
+    assert _pano.KARE_SECIM_SURESI_SN == 45
     simdi = [1000.0]
     depo = _pano.BellekDepo(lambda: simdi[0])
     rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
     _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
     simdi[0] += 20
-    _pano.kare_zamanlari(depo, rapor, [5], simdi[0])
+    _pano.kare_zamanlari(depo, rapor, [5], simdi[0])  # 5'ten sonra okuma yok
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [4, 5]}
-    simdi[0] += _pano.IZLEYEN_SURESI_SN - 15  # 4'ün süresi doldu, 5'inki sürüyor
+    simdi[0] = 1000.0 + _pano.KARE_SECIM_SURESI_SN  # 4'ün süresi doldu, 5'inki sürüyor
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [5]}
-    simdi[0] += 15
+    simdi[0] = 1020.0 + _pano.IZLEYEN_SURESI_SN  # kimse bakmıyor
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
 
 
@@ -252,6 +253,26 @@ def test_yeni_panonun_bos_listesi_istekte_de_hepsi_demez(site):  # noqa: F811
     cerez = _cerez(_giris(site)[1])
     assert _kare_cevabi(site, cerez, "&kameralar=") == {"iste": True}
     assert _kare_cevabi(site, cerez, "&kameralar=5") == {"iste": True, "kameralar": [5]}
+
+
+def test_secim_izleyen_isaretinden_once_dusmez():
+    """Seçim, "ekran açık" işaretinden (son okumadan IZLEYEN_SURESI_SN sonra
+    düşer) önce düşmez: bakan ayrılırken gelen rapor listesiz kalıp fabrikaya
+    bütün kameraları göndertmez. Okumalar 0, 5, 10; seçim yalnız 0'da yazıldı."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    for okuma in (0, 5, 10):
+        simdi[0] = 1000.0 + okuma
+        _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
+    for an in (25, 31, 35, 39):
+        simdi[0] = 1000.0 + an
+        assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {
+            "iste": True,
+            "kameralar": [4],
+        }, an
+    simdi[0] = 1000.0 + 10 + _pano.IZLEYEN_SURESI_SN + 1
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
 
 
 def test_secimden_sonra_rapordan_cikan_kamera_istenmez():
@@ -337,9 +358,9 @@ console.log(JSON.stringify(gorunenKameraSorgusu()));
 
 
 def test_ayni_secim_yarim_sure_dolmadan_yeniden_yazilmaz():
-    """Pano 5 sn'de bir okur; seçim her okumada değil, süresinin yarısı dolunca
-    (ya da yeni kamera görününce) yazılır: Upstash'e her okumada bir komut daha
-    gitmesin (README "Plan ve maliyet")."""
+    """Pano 5 sn'de bir okur; seçim her okumada değil, 15 sn'de bir (kalan süresi
+    IZLEYEN_SURESI_SN'e inince) ya da yeni kamera görününce yazılır: Upstash'e her
+    okumada bir komut daha gitmesin (README "Plan ve maliyet")."""
     simdi = [1000.0]
     yazilan = []
 
