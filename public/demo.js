@@ -778,6 +778,10 @@
         bellek_gb: 32,
         ekran_karti: "NVIDIA GeForce RTX 3060",
         cikarim: "Ekran kartı (DirectML)",
+        cikarim_secimi: "Ekran kartı (varsa; yoksa işlemci)",
+        cikarim_notu:
+          "Kullanılıyor - NVIDIA GeForce RTX 3060 (DirectML, yüksek performanslı kart olduğu tahmin " +
+          "ediliyor). Sonuçları işlemciyle karşılaştırıldı: 11:42, en büyük puan farkı 0,0012.",
         disk_toplam_gb: 476.9,
         kurulum_turu: "Windows uygulaması",
         kurulum_tarihi: iso(ACILIS - 12 * 24 * SA),
