@@ -1,0 +1,32 @@
+{
+  "aciklama": "Yeni programın raporundaki bilgisayar bloğu, seçilen tespit donanımı (cikarim_secimi) ve ekran kartının notuyla (cikarim_notu; 17.11.2026, docs/19 §3.8). Raporun öteki alanları rapor.json'daki gibidir. kullaniliyor: kart çalışıyor ve işlemciyle karşılaştırıldı; birakildi: kart çalışırken bırakıldı (not en çok 300 karakter, kısaltılmış); islemci: Ayarlar'da işlemci seçili (not boş). Eski program iki alanı göndermez (rapor.json).",
+  "kullaniliyor": {
+    "ad": "Gebze fabrikası",
+    "bilgisayar_adi": "DALSAN-PC",
+    "ip": [
+      "192.168.1.20"
+    ],
+    "isletim_sistemi": "Windows 11 Pro",
+    "islemci": "Intel Core i7-12700",
+    "cekirdek": 12,
+    "bellek_gb": 32.0,
+    "ekran_karti": "NVIDIA GeForce RTX 3060",
+    "cikarim": "Ekran kartı (DirectML)",
+    "cikarim_secimi": "Ekran kartı (varsa; yoksa işlemci)",
+    "cikarim_notu": "Kullanılıyor - NVIDIA GeForce RTX 3060 (DirectML, yüksek performanslı kart olduğu tahmin ediliyor). Sonuçları işlemciyle karşılaştırıldı: 11:42, en büyük puan farkı 0,0012.",
+    "disk_toplam_gb": 476.9,
+    "kurulum_turu": "Windows uygulaması",
+    "kurulum_tarihi": "2026-10-20T07:00:00+00:00",
+    "acilis": "2026-10-31T05:30:00+00:00"
+  },
+  "birakildi": {
+    "cikarim": "İşlemci (CPU)",
+    "cikarim_secimi": "Ekran kartı (varsa; yoksa işlemci)",
+    "cikarim_notu": "Kullanılmıyor - CIKARIM_CIHAZI=gpu seçili ve ekran kartı açılışta çalışıyordu, ama çalışırken hata verdi; sistem CPU ile çalışıyor (daha yavaş). Sürücü güncellenmiş, kart uyku kipine geçmiş ya da kartın belleği yetmemiş olabilir. Program kartı 10 dakika sonra yeniden deneyecek. Sürerse ekran kart..."
+  },
+  "islemci": {
+    "cikarim": "İşlemci (CPU)",
+    "cikarim_secimi": "İşlemci (CPU)",
+    "cikarim_notu": ""
+  }
+}

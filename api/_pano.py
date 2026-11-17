@@ -1095,7 +1095,11 @@ def _bilgisayar(ham: object) -> dict | None:
         "cekirdek": _tam(ham.get("cekirdek"), 0, 1024) or None,
         "bellek_gb": _sayi(ham.get("bellek_gb"), 0, 10**5),
         "ekran_karti": _metin(ham.get("ekran_karti"), 120),
-        "cikarim": _metin(ham.get("cikarim"), 80),
+        "cikarim": _metin(ham.get("cikarim"), 80),  # şu an çalışan donanım
+        # Ayarlar'da seçilen donanım ve Teşhis'in "Ekran kartı" satırı (17.11.2026):
+        # eski program göndermez, boş kalır (Bilgisayar kartında satırı çıkmaz)
+        "cikarim_secimi": _metin(adres_maskele(_metin(ham.get("cikarim_secimi"), 160)), 80),
+        "cikarim_notu": _metin(adres_maskele(_metin(ham.get("cikarim_notu"), 600)), 300),
         "disk_toplam_gb": _sayi(ham.get("disk_toplam_gb"), 0, 10**6),
         "kurulum_turu": _metin(ham.get("kurulum_turu"), 60),
         "kurulum_tarihi": _zaman(ham.get("kurulum_tarihi")),

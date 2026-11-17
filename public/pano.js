@@ -2022,6 +2022,8 @@ function panoyuBaslat() {
       ["Bellek", b.bellek_gb ? ondalik(b.bellek_gb) + " GB" : ""],
       ["Ekran kartı", b.ekran_karti],
       ["Tespit", b.cikarim],
+      ["Seçilen donanım", b.cikarim_secimi],
+      ["Kart notu", b.cikarim_notu],
       [
         "Disk",
         b.disk_toplam_gb

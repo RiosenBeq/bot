@@ -113,3 +113,31 @@ def test_rapor_cevabi_kamera_listesini_ornekteki_bicimde_verir():
         assert cevap["kare"] == ornek[anahtar]["kare"], anahtar
         assert set(cevap["komut"]) == set(ornek[anahtar]["komut"])
         assert set(cevap["foto"]) == set(ornek[anahtar]["foto"])
+
+
+def test_ekran_karti_ornegi_suzgecten_aynen_gecer():
+    """rapor-ekran-karti.json (17.11.2026): programın ürettiği seçilen donanım ve
+    kart notu (kart kullanılıyor, bırakıldı, işlemci seçili) süzgeçten bozulmadan
+    geçer; bilgisayar bloğunun öteki alanları da örnekteki gibidir."""
+    ornek = _yukle("rapor-ekran-karti.json")
+    rapor = _yukle("rapor.json")["rapor"]
+    temiz = _pano.rapor_temizle({**rapor, "bilgisayar": ornek["kullaniliyor"]})["bilgisayar"]
+    for alan, deger in ornek["kullaniliyor"].items():
+        assert temiz[alan] == deger, alan
+    for ad in ("birakildi", "islemci"):
+        bilgi = {**rapor["bilgisayar"], **ornek[ad]}
+        temiz = _pano.rapor_temizle({**rapor, "bilgisayar": bilgi})["bilgisayar"]
+        for alan in ("cikarim", "cikarim_secimi", "cikarim_notu"):
+            assert temiz[alan] == ornek[ad][alan], (ad, alan)
+
+
+def test_eski_programin_bilgisayari_kart_alanlarini_bos_sayar():
+    """rapor.json ve rapor-eski.json'da iki alan yoktur: boş gelir (satır çıkmaz),
+    öteki alanlar bugünkü gibi."""
+    for ad in ("rapor.json", "rapor-eski.json"):
+        rapor = _yukle(ad)["rapor"]
+        if "bilgisayar" not in rapor:
+            continue
+        temiz = _pano.rapor_temizle(rapor)["bilgisayar"]
+        assert temiz["cikarim_secimi"] == "" and temiz["cikarim_notu"] == ""
+        assert temiz["cikarim"] == rapor["bilgisayar"]["cikarim"]
