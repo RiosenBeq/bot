@@ -169,8 +169,62 @@ def test_liste_uzunluklari_sinirlidir():
         son_olaylar=[{"baslik": "x"} for _ in range(200)],
     )
     temiz = _pano.rapor_temizle(rapor)
-    assert len(temiz["kameralar"]) == 64
+    assert len(temiz["kameralar"]) == _pano.KAMERA_EN_COK == 128
     assert len(temiz["son_olaylar"]) == 50
+
+
+def test_128_kameralik_rapor_sinira_sigar():
+    """50-60 kameralık fabrika geneline hazırlık (17.11.2026): site 128 kamera
+    tutar. Her kameranın adı ve bölümü sitenin sınırında (80 harf, hepsi iki
+    baytlık Türkçe harf) ve öbür listeler de en uzun hâliyle doluyken bile rapor
+    RAPOR_EN_BUYUK_BAYT'a sığar (ölçüm: ~118 KB; gerçekçi adlarla ~46 KB).
+    Fazlası sessizce düşmesin: 128 kameranın 128'i de panoya girer."""
+    uzun = "ğ" * 80
+    olay = {
+        "id": 1,
+        "zaman": "2026-11-17T09:00:00+00:00",
+        "tur": "sistem",
+        "baslik": "Kamera bağlantısı koptu" * 4,
+        "yer": uzun + " · " + uzun,
+        "onem": "high",
+        "onem_adi": "Yüksek",
+        "durum_adi": "yeni",
+        "durum": "new",
+        "suruyor": False,
+        "sure": "8 sn",
+        "ayrinti": "ş" * 300,
+    }
+    rapor = _rapor(
+        kameralar=[
+            {
+                "id": i,
+                "ad": uzun,
+                "bolum": uzun,
+                "durum": "online",
+                "okunan_fps": 12.5,
+                "islenen_fps": 9.75,
+                "hedef_fps": 10,
+                "yavas": False,
+                "son_kare_yasi_sn": 0.42,
+            }
+            for i in range(1, 129)
+        ],
+        son_olaylar=[dict(olay, id=i) for i in range(1, 21)],
+        ogeler=[{"ad": "ı" * 60, "sayi": 1234} for _ in range(20)],
+        yerler=[{"ad": uzun, "bolum": uzun, "sayi": 99} for _ in range(10)],
+        mudahale={
+            "acik": True,
+            "isler": ["anons", "ses_dene", "olay_incele"],
+            "mesajlar": [{"id": i, "metin": "ç" * 200} for i in range(1, 31)],
+            "kanallar": [{"id": i, "ad": uzun, "bolum": uzun} for i in range(1, 31)],
+        },
+    )
+    rapor["sistem"]["sorunlar"] = ["ö" * 200] * 20
+    rapor["sayilar"].update(kamera_toplam=128, kamera_canli=128)
+    boy = len(json.dumps(rapor, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    assert boy < _pano.RAPOR_EN_BUYUK_BAYT, boy
+    temiz = _pano.rapor_temizle(rapor)
+    assert [k["id"] for k in temiz["kameralar"]] == list(range(1, 129))
 
 
 def test_zaman_utcye_cevrilir_saat_dilimsiz_damga_atilir():

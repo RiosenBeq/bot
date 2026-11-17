@@ -97,6 +97,10 @@ KAMERA_DURUMLARI = ("online", "connecting", "offline", "pasif")
 ONEMLER = ("critical", "high", "medium", "low")
 OLAY_TURLERI = ("ihlal", "sistem")
 OLAY_EN_COK = 50  # rapordaki son olaylar (pano 20'sini gösterir)
+# Rapordaki en çok kamera. Fabrika geneli 50-60 kamera olacak (17.11.2026); 128
+# kameralık rapor, adlar en uzun hâliyle de RAPOR_EN_BUYUK_BAYT'a sığar
+# (tests/test_cekirdek.py ölçer). Fazlası düşerdi ve kamera_toplam ile çelişirdi.
+KAMERA_EN_COK = 128
 # ---- roller (docs/19 §1)
 # Hesap rolü her istekte kayıttan okunur; ekranda Türkçe adıyla gösterilir.
 ROLLER = ("izleyici", "operator", "yonetici")
@@ -1282,7 +1286,9 @@ def rapor_temizle(ham: object) -> dict:
             "calisma_suresi_sn": _tam(sistem.get("calisma_suresi_sn"), 0, 10**9),
         },
         "kameralar": [
-            _kamera(oge) for oge in _liste(ham.get("kameralar"), 64) if isinstance(oge, dict)
+            _kamera(oge)
+            for oge in _liste(ham.get("kameralar"), KAMERA_EN_COK)
+            if isinstance(oge, dict)
         ],
         "sayilar": {alan: _tam(sayilar.get(alan), 0, 10**7) for alan in SAYI_ALANLARI},
         "saatlik": _saatlik(ham.get("saatlik")),
