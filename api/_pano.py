@@ -354,7 +354,8 @@ KARE_IZLEYEN_ANAHTARI = "dalsan:kare:izleyen"
 # görüntüsünü gönderir. Seçim {"kimlik": bitiş anı} olarak durur, her kimlik
 # KARE_SECIM_SURESI_SN sonra düşer; birden çok kişi bakıyorsa birleşimidir. Listesiz
 # bakan (eski pano; `kameralar` sorgusu hiç yok) "hepsi" işaretini koyar: o varken
-# liste gönderilmez. Yeni panonun boş listesi (kutucuklar henüz çizilmedi) koymaz.
+# liste gönderilmez. Yeni panonun boş listesi (kutucuklar henüz çizilmedi ya da
+# süzgeç hepsini gizledi) ne onu ne "ekran açık" işaretini koyar: görüntü istenmez.
 KARE_SECIM_ANAHTARI = "dalsan:kare:secim"
 KARE_HEPSI_ANAHTARI = "dalsan:kare:hepsi"
 # Seçim "ekran açık" işaretinden (son okumadan IZLEYEN_SURESI_SN) önce düşmesin:
@@ -3617,6 +3618,14 @@ def _oturumlu(istek: Isleyici) -> tuple[Ayar, float, Oturum]:
     return ayar, simdi, oturum
 
 
+def site_surumu() -> str:
+    """Yayındaki sitenin sürümü (Vercel'in verdiği commit'in ilk 12 hanesi); Vercel
+    dışında boş. Pano ilk gördüğü sürüm değişince sayfayı yeniler: açık kalmış
+    sekme eski pano.js ile yeni sunucuya konuşmasın (pano.js surumuDenetle)."""
+    ham = os.environ.get("VERCEL_GIT_COMMIT_SHA", "")
+    return ham[:12] if re.fullmatch(r"[0-9a-f]{40}", ham) else ""
+
+
 def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/durum - panonun verisi; oturum ister. Rol süzgeci GORUNUM_EN_AZ_ROL
     tablosundan okunur (docs/19 §1): izleyici bilgisayarın IP'sini, adını, fabrika
@@ -3633,6 +3642,7 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     veri = pano_verisi(depo, ayar, simdi)
     veri["oturum"] = oturum_ozeti(oturum)
     veri["onizleme"] = onizleme_mi()
+    veri["surum"] = site_surumu()
     rapor = veri.get("rapor")
     yonetici = oturum.yetkili("ekran.yonetim")
     mudahaleci = oturum.yetkili("ekran.mudahale")
@@ -4541,8 +4551,11 @@ def kare_zamanlari(
     yalnız yeni kamera görününce ya da kalan süre IZLEYEN_SURESI_SN'e inince).
     Yarışta kaybolan bir seçim bir sonraki okumada geri gelir. `secim` None ise
     (eski pano, liste hiç yok) "hepsi" işareti konur: fabrika bugünkü gibi
-    hepsini gönderir. Boş liste ya da boş kesişim (yeni pano, ekranda kutucuk
-    yok ya da henüz çizilmedi) ikisine de dokunmaz: yalnız "ekran açık" işareti."""
+    hepsini gönderir. Boş liste ya da boş kesişim (yeni pano, ekranda geçerli
+    kutucuk yok: henüz çizilmedi, süzgeç hepsini gizledi, kamera silindi) hiçbir
+    işareti koymaz ve tazelemez: fabrikadan görüntü istenmez (17.11.2026; eskiden
+    "ekran açık" işareti konuyor, liste olmadığı için fabrika hepsini gönderiyordu).
+    Kutucuklar çizilince pano listeyi hemen bildirir (pano.js KARE_ILK_LISTE_MS)."""
     simdi = time.time() if simdi is None else simdi
     kimlikler = [
         k["id"]
@@ -4550,15 +4563,17 @@ def kare_zamanlari(
         if isinstance(k, dict) and _kimlik(k.get("id"))
     ]
     gorunen = [k for k in (secim or []) if k in set(kimlikler)]
-    komutlar: list[list[str]] = [_set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN)]
+    komutlar: list[list[str]] = []
     if gorunen:
+        komutlar.append(_set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN))
         komutlar.append(["GET", KARE_SECIM_ANAHTARI])
     elif secim is None:
+        komutlar.append(_set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN))
         komutlar.append(_set_komutu(KARE_HEPSI_ANAHTARI, "1", IZLEYEN_SURESI_SN))
     zaman_sirasi = len(komutlar)
     if kimlikler:
         komutlar.append(["MGET", *(KARE_ZAMAN_ONEKI + str(k) for k in kimlikler)])
-    sonuc = depo.boru_hatti(komutlar)
+    sonuc = depo.boru_hatti(komutlar) if komutlar else []
     harita = kare_secim_haritasi(sonuc[1], simdi) if gorunen else {}
     # Yazım yalnız gerekince: yeni bir kamera göründü ya da birinin kalan süresi
     # "ekran açık" işaretininkine (IZLEYEN_SURESI_SN) indi; yeni bitiş daha uzundur,

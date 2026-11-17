@@ -225,18 +225,19 @@ def test_gorunen_kamera_listesi_bakan_kalmayinca_duser():
     assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
 
 
-def test_yeni_panonun_bos_listesi_hepsi_isaretini_koymaz():
+def test_yeni_panonun_bos_listesi_goruntu_istemez():
     """Kameralar ekranı doğrudan açılınca (yenileme, giriş sonrası) ilk okuma
-    kutucuklar çizilmeden gider: yeni pano boş liste bildirir. Bu "hepsi"
-    işaretini koymaz (o yalnız listesiz okuyan eski panonundur); 5 sn sonraki
-    okumanın listesi hemen geçerlidir. O arada gelen rapor listesizdir ve alan
-    hiç yazılmaz (fabrika bugünkü gibi hepsini gönderir), ama 30 sn yapışmaz."""
+    kutucuklar çizilmeden gider: yeni pano boş liste bildirir. Boş liste ne
+    "hepsi" işaretini ne "ekran açık" işaretini koyar: o arada gelen rapora
+    "gönderme" denir. Eskiden işaret konuyor, liste olmadığı için fabrika bir
+    rapor aralığı boyunca (50-60 kamerada hepsini) gönderiyordu. Kutucuklar
+    çizilince pano listeyi hemen bildirir (pano.js)."""
     simdi = [1000.0]
     depo = _pano.BellekDepo(lambda: simdi[0])
     rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
     _pano.kare_zamanlari(depo, rapor, [], simdi[0])
-    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True}
-    assert depo.al_coklu([_pano.KARE_HEPSI_ANAHTARI]) == [None]
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
+    assert depo.al_coklu([_pano.KARE_HEPSI_ANAHTARI, _pano.KARE_IZLEYEN_ANAHTARI]) == [None, None]
     simdi[0] += 5
     _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
     simdi[0] += 1
@@ -251,8 +252,53 @@ def test_yeni_panonun_bos_listesi_istekte_de_hepsi_demez(site):  # noqa: F811
     hiç olmaması (eski pano) ise bugünkü gibi hepsini ister."""
     _rapor_gonder(site, RAPOR_KAMERALI)
     cerez = _cerez(_giris(site)[1])
-    assert _kare_cevabi(site, cerez, "&kameralar=") == {"iste": True}
+    assert _kare_cevabi(site, cerez, "&kameralar=") == {"iste": False}
     assert _kare_cevabi(site, cerez, "&kameralar=5") == {"iste": True, "kameralar": [5]}
+
+
+def test_suzgec_butun_kutucuklari_gizleyince_goruntu_istenmez():
+    """ "Sorunlu" çipi bütün kutucukları gizlerse pano boş liste bildirir. Eskiden
+    seçim 45 sn'de düşüyor, "ekran açık" işareti kalıyor ve ekran açık kaldıkça
+    fabrika BÜTÜN kameraları gönderiyordu. Artık boş liste işareti tazelemez:
+    işaret 30 sn'de düşer ve fabrikaya "gönderme" denir. Başka biri kutucuk
+    görüyorsa onun seçimi geçerlidir."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    _pano.kare_zamanlari(depo, rapor, [4], simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": True, "kameralar": [4]}
+    # Süzgeç her şeyi gizledi: pano 5 sn'de bir boş liste bildirir
+    for _ in range(12):
+        simdi[0] += 5
+        _pano.kare_zamanlari(depo, rapor, [], simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
+    # İkinci bir kişi 5. kamerayı görüyor: yalnız o istenir
+    _pano.kare_zamanlari(depo, rapor, [5], simdi[0])
+    _pano.kare_zamanlari(depo, rapor, [], simdi[0] + 1)
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0] + 2)["kare"] == {
+        "iste": True,
+        "kameralar": [5],
+    }
+
+
+def test_raporda_olmayan_kamerayi_isteyen_liste_de_goruntu_istemez():
+    """Listedeki kimliklerin hiçbiri raporda yoksa (kamera fabrikada silinmiş)
+    görünen geçerli kutucuk yoktur: boş liste gibi davranılır."""
+    simdi = [1000.0]
+    depo = _pano.BellekDepo(lambda: simdi[0])
+    rapor = _pano.rapor_temizle(RAPOR_KAMERALI)
+    _pano.kare_zamanlari(depo, rapor, [999], simdi[0])
+    assert _pano.rapor_kaydet(depo, rapor, simdi[0])["kare"] == {"iste": False}
+
+
+def test_pano_kutucuklar_cizilince_gorunenleri_hemen_bildirir():
+    """İlk okuma boş listeyle gittiyse ve kutucuklar şimdi varsa pano 5 sn'lik
+    turu beklemeden yeniden okur: fabrika ilk rapor cevabında listeyi alsın."""
+    govde = PANO_JS[PANO_JS.index("  async function yukle() {") :]
+    govde = govde[: govde.index("\n  }\n")]
+    assert 'kareSorgusu === "&kameralar="' in govde
+    assert 'gorunenKameraSorgusu() !== "&kameralar="' in govde
+    assert "setTimeout(yukle, KARE_ILK_LISTE_MS)" in govde
 
 
 def test_secim_izleyen_isaretinden_once_dusmez():

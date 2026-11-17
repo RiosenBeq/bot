@@ -45,6 +45,14 @@ function panoyuBaslat() {
   // Ekranın bu kadar üstü ve altı da "görünüyor" sayılır: kaydırınca gelen
   // kutucuğun görüntüsü çoktan istenmiş olsun (fabrika listeyi raporla öğrenir).
   const GORUNUR_PAY = 0.5;
+  // Kameralar ekranının ilk okuması kutucuklar çizilmeden gider (liste boş: site
+  // o okumada fabrikadan görüntü istemez). Kutucuklar çizilince liste bu kadar
+  // sonra bildirilir; 5 sn'lik tur beklenmez.
+  const KARE_ILK_LISTE_MS = 300;
+  // Site güncellenince sayfa kendini yeniler (surumuDenetle); art arda yenileme
+  // olmasın diye iki yenileme arasında en az bu kadar beklenir.
+  const SURUM_YENILEME_ARASI_MS = 5 * 60 * 1000;
+  const SURUM_YENILEME_ISARETI = "pano-surum-yenileme";
   // Gelmeyen kanıt fotoğrafı bu süre geçmeden yeniden istenmez
   const FOTO_YENIDEN_MS = 2 * 60 * 1000;
   // Fabrika son soruyu bu kadar saniye önce sorduysa "dinliyor" denir
@@ -183,6 +191,7 @@ function panoyuBaslat() {
   let saatFarkiMs = 0; // sunucu saati - bu cihazın saati
   let istekSuruyor = false;
   let sonDuyuru = "";
+  let siteSurumu = null; // bu sayfanın ilk gördüğü site sürümü (surumuDenetle)
   let kameraSuzgeci = "hepsi";
   let olayTuru = "hepsi";
   let yalnizBekleyen = false;
@@ -3493,18 +3502,48 @@ function panoyuBaslat() {
 
   // ----------------------------------------------------------- sunucu
 
+  /* Site her cevapta kendi sürümünü söyler (Vercel'deki commit). Bu sayfanın ilk
+     gördüğü sürüm değiştiyse site güncellenmiştir: açık kalmış sekme eski
+     betikle yeni sunucuya konuşmasın diye sayfa yenilenir. Yazı yazılırken ya da
+     bir pencere açıkken yenilenmez (sonraki okumada yeniden bakılır). Sürüm boşsa
+     (yerel sunucu, /demo) hiçbir şey yapılmaz. Döner: sayfa yenileniyor mu. */
+  function surumuDenetle(surum) {
+    if (typeof surum !== "string" || !surum) return false;
+    if (siteSurumu === null) {
+      siteSurumu = surum;
+      return false;
+    }
+    if (surum === siteSurumu || !yenilemeGuvenli()) return false;
+    try {
+      const son = Number(sessionStorage.getItem(SURUM_YENILEME_ISARETI)) || 0;
+      if (Date.now() - son < SURUM_YENILEME_ARASI_MS) return false;
+      sessionStorage.setItem(SURUM_YENILEME_ISARETI, String(Date.now()));
+    } catch (hata) {
+      return false; // depo kapalıysa (gizli sekme) döngü riski alınmaz
+    }
+    location.reload();
+    return true;
+  }
+
+  function yenilemeGuvenli() {
+    if (document.querySelector("dialog[open]")) return false;
+    const odak = document.activeElement;
+    return !(odak && /^(INPUT|TEXTAREA|SELECT)$/.test(odak.tagName));
+  }
+
   async function yukle() {
     if (istekSuruyor) return;
     istekSuruyor = true;
     const yenile = $("yenile");
     yenile.classList.add("donuyor");
     try {
+      const kareSorgusu = kareIzleniyor() ? gorunenKameraSorgusu() : null;
       const adres = dinleniyor()
         ? "/api/durum?mudahale=1"
         : yonetimDinliyor()
           ? "/api/durum?yonetim=1"
-          : kareIzleniyor()
-            ? "/api/durum?kare=1" + gorunenKameraSorgusu()
+          : kareSorgusu !== null
+            ? "/api/durum?kare=1" + kareSorgusu
             : tesislerAcik()
               ? "/api/durum?filo=1"
               : "/api/durum";
@@ -3538,6 +3577,7 @@ function panoyuBaslat() {
         hataGoster("Siteden beklenmeyen bir cevap geldi; ağ bir giriş sayfası göstermiş olabilir. Pano son bilinen durumu gösteriyor.");
         return;
       }
+      if (surumuDenetle(veri.surum)) return;
       saatFarkiMs = Date.parse(veri.sunucu_zamani) - Date.now();
       sonVeri = veri;
       oturum = veri.oturum || null;
@@ -3546,6 +3586,11 @@ function panoyuBaslat() {
       siteUyarisi("");
       panoyuCiz(veri);
       panoyuGoster();
+      // Bu okuma kutucuklar çizilmeden gitti (liste boştu) ve kutucuklar şimdi
+      // var: görünenleri hemen bildir, fabrika ilk rapor cevabında listeyi alsın
+      if (kareSorgusu === "&kameralar=" && kareIzleniyor() && gorunenKameraSorgusu() !== "&kameralar=") {
+        setTimeout(yukle, KARE_ILK_LISTE_MS);
+      }
       // Kullanıcılar ekranı açık ve henüz yüklenmediyse hesapları getir
       if (aktifGorunum === "kullanicilar" && gorunumYetkili("kullanicilar") && !hesapVerisi) {
         hesaplariYukle();
