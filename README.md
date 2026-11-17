@@ -218,7 +218,12 @@ Buradan alınanlar, sade haliyle:
 - **İhlaller:** tek grafik, iki dönem: bugün saat saat ya da son 14 gün.
 - **En çok ihlal** (son 7 gün): kamera (yer) ya da tür başına.
 - **Kurulu olduğu bilgisayar:** Sistem ekranında tek satır özet; IP adresi,
-  işlemci, bellek, ekran kartı, disk, kurulum türü ve tarihi katlanır.
+  işlemci, bellek, ekran kartı, tespitin çalıştığı ve Ayarlar'da seçilen
+  donanım, kartın notu (kart kullanılıyorsa işlemciyle son karşılaştırması,
+  kullanılmıyorsa sebebi: teşhis istemeden kartın doğrulandığı görülür), disk,
+  kurulum türü ve tarihi katlanır. IP adresini ve bilgisayar adını yalnız
+  "Bilgisayarın IP adresi, adı ve fabrika adresi" yetkisi olan görür; öteki
+  satırları her rol görür.
 - **Kanıt fotoğrafı ve anlık görüntü:** her ihlalin yanında fotoğrafı durur
   (dokununca büyür); Kameralar ekranında kameraların 10 saniyede bir yenilenen
   görüntüsü, köşesinde bağlantı durumu; dokununca büyür ve kare hızları görünür.
@@ -474,7 +479,7 @@ tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 | `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
 | `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
 | `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
-| `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis, ip[]}` (`ip` yerel ağdaki adresler, en çok 4) |
+| `bilgisayar` | `{ad, bilgisayar_adi, isletim_sistemi, islemci, cekirdek, bellek_gb, ekran_karti, cikarim, cikarim_secimi, cikarim_notu, disk_toplam_gb, kurulum_turu, kurulum_tarihi, acilis, ip[]}` (`ip` yerel ağdaki adresler, en çok 4; `cikarim` tespitin şu an çalıştığı donanım, `cikarim_secimi` Ayarlar'da seçilen donanım, en çok 80 karakter; `cikarim_notu` fabrikanın Teşhis'indeki "Ekran kartı" satırı: kullanılıyorsa kart ve işlemciyle son karşılaştırma, kullanılmıyorsa sebebi, en çok 300 karakter, adres ve dosya yolu çıkarılmış, işlemci seçiliyse boş. İkisi 17.11.2026'da eklendi; yoksa boş sayılır ve Bilgisayar kartında "Seçilen donanım" / "Kart notu" satırı çıkmaz. Örnek: `tests/sozlesme/rapor-ekran-karti.json`) |
 | `tesis` | *(isteğe bağlı)* `{id, ad}`: `id` küçük harf, rakam, `-`, `_` (1-32 karakter), `ad` en çok 80 karakter. Yoksa site tek fabrika gibi davranır; bozuk `id` 400 alır (yukarıda **Birden çok fabrika**) |
 | `calisma` | *(isteğe bağlı)* bu ayın çalışma oranı `{ay, sistem_yuzde, kamera_yuzde, olculen_saat}`: `ay` `YYYY-AA` (ör. `2026-11`), yüzdeler 0-100 (site bir ondalığa yuvarlar), `olculen_saat` 0-744 tam sayı. Bir parçası bile bozuksa alan hiç girmez (rapor bugünküyle aynı). Varsa Sistem ekranında her role tek satır: "Bu ay çalışma: %99,6 (kameralar %98,9; 312 saat ölçüldü)" |
 
