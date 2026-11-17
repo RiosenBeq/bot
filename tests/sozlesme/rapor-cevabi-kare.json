@@ -1,0 +1,35 @@
+{
+  "aciklama": "Raporun cevabı (POST /api/rapor; docs/19 §3.7). kare.kameralar isteğe bağlıdır (17.11.2026): panoda Kameralar ekranında görünen kutucukların kamera kimlikleri, küçükten büyüğe, en çok 128. Program yalnız bu kameraların anlık görüntüsünü gönderir. Yoksa (eski site ya da her şeyi isteyen pano) ya da boşsa açık bütün kameraların görüntüsü gider. rapor.json'daki kamera 1 ile iki kamera daha (2, 3) bağlı bir fabrikanın cevabı.",
+  "cevap": {
+    "tamam": true,
+    "alindi": "2026-11-17T09:00:00+00:00",
+    "komut": {
+      "hizli": false
+    },
+    "kare": {
+      "iste": true,
+      "kameralar": [
+        1,
+        3
+      ]
+    },
+    "foto": {
+      "var": [
+        1234
+      ]
+    }
+  },
+  "eski_site": {
+    "tamam": true,
+    "alindi": "2026-11-17T09:00:00+00:00",
+    "komut": {
+      "hizli": false
+    },
+    "kare": {
+      "iste": true
+    },
+    "foto": {
+      "var": []
+    }
+  }
+}

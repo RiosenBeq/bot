@@ -2,7 +2,8 @@
 
 Bu dosyalar iki depoda birebir aynıdır (DALSAN'dan kopyalanır); DÜZENLENMEZ.
 Site tarafı: _komut_yuku çıktısı teslim edilen komut biçimiyle, rapor_temizle
-yeni alanlarla ve sonuclari_yaz sonuç biçimiyle uyar.
+yeni alanlarla, sonuclari_yaz sonuç biçimiyle ve rapor_kaydet'in cevabı
+rapor-cevabi-kare.json ile uyar.
 """
 
 import json
@@ -93,3 +94,22 @@ def test_komut_cevabi_nonce_ve_alinan_tasir():
     assert set(cevap) >= {"tamam", "nonce", "alinan", "komutlar", "hizli"}
     istek = _yukle("komut-sorusu.json")["istek"]
     assert cevap["nonce"] == istek["nonce"]  # cevap istekteki nonce'u taşır
+
+
+def test_rapor_cevabi_kamera_listesini_ornekteki_bicimde_verir():
+    """rapor-cevabi-kare.json (17.11.2026): Kameralar ekranında 1 ve 3 görünüyorken
+    cevabın kare bloğu örnekle birebir aynıdır; listesiz bakan (eski pano) varken
+    eski sitenin cevabıyla aynıdır. Öbür anahtarlar örnekle aynı adları taşır."""
+    ornek = _yukle("rapor-cevabi-kare.json")
+    rapor = _yukle("rapor.json")["rapor"]
+    ilk = rapor["kameralar"][0]
+    rapor["kameralar"] = [dict(ilk, id=kimlik) for kimlik in (1, 2, 3)]
+    temiz = _pano.rapor_temizle(rapor)
+    for anahtar, secim in (("cevap", [1, 3]), ("eski_site", None)):
+        depo = _pano.BellekDepo(lambda: 1000.0)
+        _pano.kare_zamanlari(depo, temiz, secim, 1000.0)
+        cevap = {"tamam": True, "alindi": "", **_pano.rapor_kaydet(depo, temiz, 1000.0)}
+        assert set(cevap) == set(ornek[anahtar]), anahtar
+        assert cevap["kare"] == ornek[anahtar]["kare"], anahtar
+        assert set(cevap["komut"]) == set(ornek[anahtar]["komut"])
+        assert set(cevap["foto"]) == set(ornek[anahtar]["foto"])

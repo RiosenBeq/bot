@@ -350,6 +350,12 @@ FOTO_EN_COK = 60
 KARE_ONEKI = "dalsan:kare:"
 KARE_ZAMAN_ONEKI = "dalsan:kare_zaman:"
 KARE_IZLEYEN_ANAHTARI = "dalsan:kare:izleyen"
+# Kameralar ekranında görünen kutucuklar (17.11.2026): fabrika yalnız onların anlık
+# görüntüsünü gönderir. Seçim {"kimlik": bitiş anı} olarak durur, her kimlik
+# IZLEYEN_SURESI_SN sonra düşer; birden çok kişi bakıyorsa birleşimidir. Listesiz
+# bakan (eski pano) "hepsi" işaretini koyar: o varken liste gönderilmez.
+KARE_SECIM_ANAHTARI = "dalsan:kare:secim"
+KARE_HEPSI_ANAHTARI = "dalsan:kare:hepsi"
 KARE_EN_BUYUK_BAYT = 300 * 1024
 KARE_SAKLAMA_SN = 120
 KARE_ARALIK_SN = 10  # fabrikaya önerilen gönderme aralığı (README)
@@ -1336,8 +1342,9 @@ def rapor_kaydet(
 ) -> dict:
     """Raporu yazar ve fabrikaya cevabı kurar: komutları sık sorsun mu
     (Müdahale ekranı açık ya da komut bekliyor; müdahale kapalıysa hayır),
-    anlık görüntü göndersin mi (Kameralar ekranı açık) ve raporundaki hangi
-    olayların fotoğrafı sitede zaten var. Hepsi tek komutla okunur.
+    anlık görüntü göndersin mi (Kameralar ekranı açık; `kare.kameralar` varsa
+    yalnız ekranda görünen kameralarınkini) ve raporundaki hangi olayların
+    fotoğrafı sitede zaten var. Hepsi tek komutla okunur.
 
     Tesis taşıyan rapor (öneri 10) önce kütüğe yazılır. Ana tesis değilse panonun
     durumuna dokunmaz ve cevabı yalnız `{"filo": {"ana": false}}` olur: komut,
@@ -1350,7 +1357,14 @@ def rapor_kaydet(
         if not ana:
             return {"filo": {"ana": False}}
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
-    okunan = [IZLEYEN_ANAHTARI, KOMUT_ISARET_ANAHTARI, KARE_IZLEYEN_ANAHTARI, FOTO_LISTESI_ANAHTARI]
+    okunan = [
+        IZLEYEN_ANAHTARI,
+        KOMUT_ISARET_ANAHTARI,
+        KARE_IZLEYEN_ANAHTARI,
+        FOTO_LISTESI_ANAHTARI,
+        KARE_HEPSI_ANAHTARI,
+        KARE_SECIM_ANAHTARI,
+    ]
     # Bekçi açıkken "sistemden haber yok" işareti aynı MGET'te okunur ve yalnız
     # varsa (kesintiden sonraki ilk taze rapor) silinir: düzelme, bir sonraki
     # kesintide yeniden uyarılır (docs/20 §3). Rapor başına ek komut yok; bekçi
@@ -1365,15 +1379,22 @@ def rapor_kaydet(
     ]
     isaretler = _mget_listesi(depo.boru_hatti(komutlar + ek_komutlar)[2], len(okunan))
     isaretler = isaretler or [None] * len(okunan)
-    izleyen, komut_var, kare, ham_fotolar = isaretler[:4]
-    if bekci and isaretler[4] is not None:
+    izleyen, komut_var, kare, ham_fotolar, kare_hepsi, ham_secim = isaretler[:6]
+    if bekci and isaretler[6] is not None:
         depo.sil(BEKCI_UYARI_ANAHTARI)
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
     # Sık sor: müdahale ya da yönetim açık VE ekran açık ya da komut var (docs/19 §3.8)
     komut_acik = rapor["mudahale"]["acik"] or rapor["yonetim"]["acik"]
+    kare_blogu: dict = {"iste": bool(kare)}
+    if kare and not kare_hepsi:
+        # Yalnız ekranda görünenler; liste boşsa alan hiç girmez (fabrika hepsini gönderir)
+        kimlikler = {k["id"] for k in rapor["kameralar"] if k["id"]}
+        gorunen = sorted(k for k in kare_secim_haritasi(ham_secim, simdi) if k in kimlikler)
+        if gorunen:
+            kare_blogu["kameralar"] = gorunen
     cevap = {
         "komut": {"hizli": bool(komut_acik and (izleyen or komut_var))},
-        "kare": {"iste": bool(kare)},
+        "kare": kare_blogu,
         "foto": {"var": [o["id"] for o in rapor["son_olaylar"] if o["id"] in fotolar]},
     }
     if tesis:
@@ -3589,6 +3610,8 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     hoparlör kanalları) görmez; yönetim bloğunu yalnız yönetici görür.
     `?mudahale=1` (operatör+) ve `?yonetim=1` (yönetici): son komutlar gelir ve
     fabrika sık sorar. `?kare=1`: Kameralar ekranı açık; görüntü zamanları gelir.
+    Yanındaki `&kameralar=4,5` ekranda görünen kutucuklardır: fabrika yalnız
+    onların görüntüsünü gönderir (yoksa hepsini).
     `?filo=1` (yönetici): Tesisler ekranı açık; her tesisin özeti gelir (docs/20 §4)."""
     ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
@@ -3617,7 +3640,8 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     if istiyor_mudahale or istiyor_yonetim:
         veri["mudahale"] = mudahale_verisi(depo, simdi, oturum.yetkiler, izliyor=True)
     if istek.sorgu("kare") == "1":
-        veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"))
+        secim = kare_secimi_coz(istek.sorgu("kameralar"))
+        veri["kareler"] = kare_zamanlari(depo, veri.get("rapor"), secim, simdi)
     if istek.sorgu("filo") == "1" and oturum.yetkili("ekran.tesisler"):
         veri["filo"] = filo_verisi(
             depo, ayar, simdi, veri, bilgisayar_gorur=oturum.yetkili("veri.bilgisayar")
@@ -4456,21 +4480,83 @@ def kare_al(istek: Isleyici) -> tuple[int, dict, str | None]:
     return 200, {"tamam": True, "iste": bool(izleyen)}, None
 
 
-def kare_zamanlari(depo: UpstashDepo | BellekDepo, rapor: object) -> dict[str, str]:
+def kare_secimi_coz(ham: str | None) -> list[int] | None:
+    """`?kameralar=4,5`: ekranda görünen kutucukların kamera kimlikleri, küçükten
+    büyüğe ve tekrarsız. Kimlik olmayan öğe (rakam dışı, 0, 2^31 ve üstü) atılır.
+    Yoksa, boşsa, KAMERA_EN_COK öğeden uzunsa ya da geçerli kimlik kalmazsa None:
+    bugünkü gibi fabrika hepsini gönderir."""
+    if not isinstance(ham, str) or not ham or len(ham) > KAMERA_EN_COK * 12:
+        return None
+    parcalar = [parca.strip() for parca in ham.split(",")]
+    if len(parcalar) > KAMERA_EN_COK:
+        return None
+    secim = {int(parca) for parca in parcalar if re.fullmatch(r"[0-9]{1,10}", parca)}
+    return sorted(k for k in secim if _kimlik(k) is not None) or None
+
+
+def kare_secim_haritasi(ham: object, simdi: float) -> dict[int, int]:
+    """Depodaki seçim: {kimlik: bitiş anı}; süresi dolan ve bozuk kayıt atılır."""
+    try:
+        harita = json.loads(ham) if isinstance(ham, str) else {}
+    except ValueError:
+        return {}
+    sonuc: dict[int, int] = {}
+    for anahtar, bitis in list(_sozluk(harita).items())[:KAMERA_EN_COK]:
+        kimlik = _kimlik(int(anahtar)) if _rakam_mi(anahtar) else None
+        if kimlik is None or isinstance(bitis, bool) or not isinstance(bitis, int):
+            continue
+        if bitis > simdi:
+            sonuc[kimlik] = bitis
+    return sonuc
+
+
+def kare_zamanlari(
+    depo: UpstashDepo | BellekDepo,
+    rapor: object,
+    secim: list[int] | None = None,
+    simdi: float | None = None,
+) -> dict[str, str]:
     """Kameralar ekranı açık: her kameranın son görüntüsünün zamanı. Fabrikaya
-    "anlık görüntü gönder" işareti de burada konur (IZLEYEN_SURESI_SN)."""
+    "anlık görüntü gönder" işareti de burada konur (IZLEYEN_SURESI_SN).
+
+    `secim`: ekranda görünen kameralar (kare_secimi_coz). Rapordaki kameralarla
+    kesişimi, öbür bakanların henüz düşmemiş seçimine eklenir (bir okuma; yazma
+    yalnız yeni kamera görününce ya da sürenin yarısı dolunca). Yarışta kaybolan
+    bir seçim bir sonraki okumada geri gelir. Seçim yoksa ya da kesişim boşsa
+    "hepsi" işareti konur: fabrika bugünkü gibi hepsini gönderir."""
+    simdi = time.time() if simdi is None else simdi
     kimlikler = [
         k["id"]
         for k in _sozluk(rapor).get("kameralar", [])
         if isinstance(k, dict) and _kimlik(k.get("id"))
     ]
+    gorunen = [k for k in (secim or []) if k in set(kimlikler)]
     komutlar: list[list[str]] = [
         _set_komutu(KARE_IZLEYEN_ANAHTARI, "1", IZLEYEN_SURESI_SN),
+        ["GET", KARE_SECIM_ANAHTARI]
+        if gorunen
+        else _set_komutu(KARE_HEPSI_ANAHTARI, "1", IZLEYEN_SURESI_SN),
     ]
     if kimlikler:
         komutlar.append(["MGET", *(KARE_ZAMAN_ONEKI + str(k) for k in kimlikler)])
     sonuc = depo.boru_hatti(komutlar)
-    zamanlar = sonuc[1] if len(sonuc) > 1 and isinstance(sonuc[1], list) else []
+    harita = kare_secim_haritasi(sonuc[1], simdi) if gorunen else {}
+    # Yazım yalnız gerekince: yeni bir kamera göründü ya da birinin süresinin
+    # yarısı doldu. Pano 5 sn'de bir okur; her okumada yazmak saatte 720 komut eder.
+    tazele = simdi + IZLEYEN_SURESI_SN / 2
+    if any(harita.get(k, 0) <= tazele for k in gorunen):
+        harita = {k: b for k, b in harita.items() if k in kimlikler}
+        harita.update(dict.fromkeys(gorunen, int(simdi) + IZLEYEN_SURESI_SN))
+        depo.yaz_coklu(
+            [
+                (
+                    KARE_SECIM_ANAHTARI,
+                    json.dumps({str(k): b for k, b in sorted(harita.items())}),
+                    IZLEYEN_SURESI_SN,
+                )
+            ]
+        )
+    zamanlar = sonuc[2] if len(sonuc) > 2 and isinstance(sonuc[2], list) else []
     return {
         str(kimlik): zaman
         for kimlik, zaman in zip(kimlikler, zamanlar, strict=False)

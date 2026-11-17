@@ -56,7 +56,9 @@ def _kaydet(depo, ham, simdi, ayar=None):
 
 
 def _bugunku_komutlar(rapor, simdi):
-    """Tesis özelliğinden ÖNCEKİ rapor_kaydet'in gönderdiği komutlar (canlı site)."""
+    """Tesis özelliğinden ÖNCEKİ rapor_kaydet'in gönderdiği komutlar (canlı site).
+    Kameralar ekranında görünen kutucuklar (17.11.2026) aynı MGET'e iki anahtar
+    ekledi ("hepsi" işareti ve seçim): komut ve istek sayısı aynı kaldı."""
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
     return [
         ["SET", "dalsan:durum", kayit, "EX", "604800"],
@@ -67,6 +69,8 @@ def _bugunku_komutlar(rapor, simdi):
             "dalsan:komut:isaret",
             "dalsan:kare:izleyen",
             "dalsan:fotolar",
+            "dalsan:kare:hepsi",
+            "dalsan:kare:secim",
         ],
     ]
 
@@ -92,7 +96,7 @@ def test_tesissiz_rapor_bugunku_komutlarin_aynisini_gonderir():
 
 def test_bekci_acikken_tesissiz_rapor_isareti_ayni_okumada_okur_yalniz_varsa_siler():
     """BEKCI=acik rapor başına komut eklemez (30 sn'de bir DEL ayda ~86 bin komut
-    olurdu): işaret raporun zaten yaptığı MGET'in beşinci anahtarıdır. DEL yalnız
+    olurdu): işaret raporun zaten yaptığı MGET'in son anahtarıdır. DEL yalnız
     işaret varsa (kesintiden sonraki ilk taze rapor) gider ve işaret kalkar."""
     rapor = _pano.rapor_temizle(_rapor())
     ayar = _ayar(bekci="acik")

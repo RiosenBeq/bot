@@ -4,7 +4,8 @@
    Müdahale ekranı açıkken 5 saniyede bir okur ve `?mudahale=1` der: fabrika
    o zaman komutları sık sormaya başlar. Kameralar ekranı açıkken de 5
    saniyede bir okur ve `?kare=1` der: fabrika o zaman 10 saniyede bir anlık
-   görüntü gönderir. Ekrana 10 dakika dokunulmazsa ikisi de bekler (açık
+   görüntü gönderir, yalnız ekranda görünen kutucukların kameraları için
+   (`&kameralar=4,5`). Ekrana 10 dakika dokunulmazsa ikisi de bekler (açık
    unutulan bir ekran fabrikayı boşuna sorgulatmasın).
    Sekiz görünüm var; adres çubuğundaki #genel, #kameralar ... hangisinin
    açık olduğunu söyler, hem masaüstünün kenar çubuğu hem telefonun sekme
@@ -41,6 +42,9 @@ function panoyuBaslat() {
   // Fabrika 10 saniyede bir gönderir; bundan eski kare soluk gösterilir
   // (kamera ya da bağlantı durmuş olabilir).
   const KARE_BAYAT_SN = 35;
+  // Ekranın bu kadar üstü ve altı da "görünüyor" sayılır: kaydırınca gelen
+  // kutucuğun görüntüsü çoktan istenmiş olsun (fabrika listeyi raporla öğrenir).
+  const GORUNUR_PAY = 0.5;
   // Gelmeyen kanıt fotoğrafı bu süre geçmeden yeniden istenmez
   const FOTO_YENIDEN_MS = 2 * 60 * 1000;
   // Fabrika son soruyu bu kadar saniye önce sorduysa "dinliyor" denir
@@ -1435,6 +1439,26 @@ function panoyuBaslat() {
 
   function kareIzleniyor() {
     return aktifGorunum === "kameralar" && Date.now() - sonEtkilesim < DINLEME_SURESI_MS;
+  }
+
+  /* Ekranda görünen (ya da yarım ekran yakınındaki) kutucukların kamera
+     kimlikleri, `&kameralar=4,5` olarak: fabrika yalnız bunların anlık
+     görüntüsünü gönderir (50-60 kamerada yük ekrandakilerle sınırlı kalsın).
+     Büyütülmüş görüntünün kamerası da eklenir. Hiçbiri yoksa ek gitmez ve
+     site eskisi gibi hepsini ister. */
+  function gorunenKameraSorgusu() {
+    const yukseklik = window.innerHeight || document.documentElement.clientHeight;
+    const pay = yukseklik * GORUNUR_PAY;
+    const kimlikler = new Set();
+    for (const kutu of kareKutulari.values()) {
+      if (!kutu.kamera.id || kutu.dugme.hidden) continue;
+      const sinir = kutu.dugme.getBoundingClientRect();
+      if (!sinir.width || !sinir.height) continue;
+      if (sinir.bottom >= -pay && sinir.top <= yukseklik + pay) kimlikler.add(kutu.kamera.id);
+    }
+    const acik = acikKare && $("foto-penceresi").open ? kareKutulari.get(acikKare) : null;
+    if (acik && acik.kamera.id) kimlikler.add(acik.kamera.id);
+    return kimlikler.size ? "&kameralar=" + Array.from(kimlikler).join(",") : "";
   }
 
   function kareAdresi(kimlik, zaman) {
@@ -3477,7 +3501,7 @@ function panoyuBaslat() {
         : yonetimDinliyor()
           ? "/api/durum?yonetim=1"
           : kareIzleniyor()
-            ? "/api/durum?kare=1"
+            ? "/api/durum?kare=1" + gorunenKameraSorgusu()
             : tesislerAcik()
               ? "/api/durum?filo=1"
               : "/api/durum";
