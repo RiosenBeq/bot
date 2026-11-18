@@ -41,6 +41,7 @@
     "ekran.yonetim",
     "komut.teshis",
     "komut.yeniden_baslat",
+    "komut.bilgisayari_yeniden_baslat",
     "komut.guncelle",
     "ekran.tesisler",
     "ekran.kullanicilar",
@@ -55,6 +56,7 @@
     "ekran.yonetim": "Yönetim ekranını görme",
     "komut.teshis": "Teşhis alma",
     "komut.yeniden_baslat": "Programı yeniden başlatma",
+    "komut.bilgisayari_yeniden_baslat": "Bilgisayarı yeniden başlatma",
     "komut.guncelle": "Programı güncelleme",
     "ekran.tesisler": "Tesisler ekranını görme",
     "ekran.kullanicilar": "Kullanıcılar ve işlem kaydını görme",
@@ -63,10 +65,21 @@
   const YETKI_GRUPLARI = [
     ["Müdahale", ["ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele"]],
     ["Bilgi", ["veri.bilgisayar", "ekran.tesisler"]],
-    ["Yönetim", ["ekran.yonetim", "komut.teshis", "komut.yeniden_baslat", "komut.guncelle"]],
+    [
+      "Yönetim",
+      [
+        "ekran.yonetim",
+        "komut.teshis",
+        "komut.yeniden_baslat",
+        "komut.bilgisayari_yeniden_baslat",
+        "komut.guncelle",
+      ],
+    ],
     ["Hesaplar", ["ekran.kullanicilar", "hesap.yonet"]],
   ];
   const KILITLI_YETKILER = ["ekran.kullanicilar", "hesap.yonet"];
+  // Yalnız yöneticiye verilebilir (sunucunun YALNIZ_YONETICI_YETKILERI'i)
+  const YALNIZ_YONETICI_YETKILERI = ["komut.bilgisayari_yeniden_baslat"];
   const VARSAYILAN_YETKILER = {
     izleyici: [],
     operator: ["ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele", "veri.bilgisayar"],
@@ -85,6 +98,7 @@
     if (!Array.isArray(liste)) return [...VARSAYILAN_YETKILER[rol]];
     const kume = new Set(liste.filter((y) => YETKILER.includes(y) && !KILITLI_YETKILER.includes(y)));
     if (rol === "yonetici") for (const y of KILITLI_YETKILER) kume.add(y);
+    else for (const y of YALNIZ_YONETICI_YETKILERI) kume.delete(y);
     return YETKILER.filter((y) => kume.has(y));
   }
 
@@ -99,6 +113,7 @@
         yetkiler: yetkiler.map((y) => ({ id: y, ad: YETKI_ADLARI[y] })),
       })),
       kilitli: [...KILITLI_YETKILER],
+      yalniz_yonetici: [...YALNIZ_YONETICI_YETKILERI],
       roller: Object.keys(ROL_ADLARI).map((rol) => ({
         id: rol,
         ad: ROL_ADLARI[rol],
@@ -441,8 +456,8 @@
   );
   komutlar.sort((a, b) => b.olusturulduMs - a.olusturulduMs);
 
-  const AGIR = ["yeniden_baslat", "guncelle"];
-  const YONETIM = ["teshis", "yeniden_baslat", "guncelle"];
+  const AGIR = ["yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat"];
+  const YONETIM = ["teshis", "yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat"];
   const MUDAHALE = ["anons", "ses_dene", "olay_incele"];
 
   /* Yeni komutun yolu: Sırada (2,5 sn) -> Fabrikada (2,5 sn) -> Yapıldı.
@@ -463,7 +478,9 @@
         k.mesaj =
           k.tur === "guncelle"
             ? "Kontrol Paneli'ne iletildi; güncelleme hazırlanıyor."
-            : "Program yeniden başlatılıyor; kameralar birazdan yeniden izlenir.";
+            : k.tur === "bilgisayari_yeniden_baslat"
+              ? "Kontrol Paneli'ne iletildi; bilgisayar birazdan yeniden başlatılacak."
+              : "Program yeniden başlatılıyor; kameralar birazdan yeniden izlenir.";
       } else {
         k.durum = "yapildi";
         k.mesaj = k.sonucMesaji;
@@ -790,10 +807,11 @@
       },
       yonetim: {
         acik: true,
-        isler: ["teshis", "yeniden_baslat", "guncelle"],
+        isler: ["teshis", "yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat"],
         kurulum: "paket",
         yeniden_baslatma: { mumkun: true, sebep: "" },
         guncelleme: { mumkun: true, sebep: "" },
+        bilgisayar_yeniden_baslatma: { mumkun: true, sebep: "" },
       },
       // Bu ayın çalışma oranı (isteğe bağlı alan): ayın başından bu yana ölçülen saat
       calisma: {
@@ -1043,15 +1061,23 @@
       if (komutlar.some((x) => AGIR.includes(x.tur) && !x.bitti)) {
         throw new DemoHatasi(409, "agir_suruyor", "Önceki güncelleme ya da yeniden başlatma henüz bitmedi.");
       }
-      k =
-        tur === "guncelle"
-          ? komutKaydet(
-              simdi,
-              tur,
-              "Güncelleme",
-              "Program zaten son sürümde (v2.2 Keskin Göz); yeniden açıldı.",
-            )
-          : komutKaydet(simdi, tur, "Yeniden başlatma", "Program yeniden başlatıldı; kameralar izleniyor.");
+      if (tur === "guncelle") {
+        k = komutKaydet(
+          simdi,
+          tur,
+          "Güncelleme",
+          "Program zaten son sürümde (v2.2 Keskin Göz); yeniden açıldı.",
+        );
+      } else if (tur === "bilgisayari_yeniden_baslat") {
+        k = komutKaydet(
+          simdi,
+          tur,
+          "Bilgisayarı yeniden başlatma",
+          "Bilgisayar yeniden başlatıldı; sistem ayakta.",
+        );
+      } else {
+        k = komutKaydet(simdi, tur, "Yeniden başlatma", "Program yeniden başlatıldı; kameralar izleniyor.");
+      }
     }
     return { tamam: true, komut: komutGorunumu(k, durum.rol === "yonetici") };
   }

@@ -491,6 +491,22 @@
               </div>
               <button id="yeniden-dugmesi" class="dugme ikincil" type="button">Yeniden başlat</button>
             </section>
+            <!-- Bilgisayarı yeniden başlat (18.11.2026): yalnız yetkisi olana görünür (pano.js) -->
+            <section id="bilgisayar-karti" class="kart islem-karti" aria-labelledby="bilgisayar-baslik" hidden>
+              <span class="ikon-kutu iri gul"><svg class="simge" aria-hidden="true"><use href="#i-guc"/></svg></span>
+              <div><h2 id="bilgisayar-baslik">Bilgisayarı yeniden başlat</h2><p>Fabrika bilgisayarı yeniden açılır; birkaç dakika kameralar izlenmez ve uyarı çıkmaz. Yalnız program kendiliğinden açılacaksa yapılır.</p></div>
+              <p id="bilgisayar-sebep" class="not" hidden></p>
+              <div id="bilgisayar-onayi" class="onay-formu" hidden>
+                <label for="bilgisayar-sifre">Onaylamak için şifreniz</label>
+                <input id="bilgisayar-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="bilgisayar-hatasi">
+                <p id="bilgisayar-hatasi" class="hata" role="alert"></p>
+                <div class="dugmeler">
+                  <button id="bilgisayar-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                  <button id="bilgisayar-gonder" class="dugme birincil" type="button">Evet, bilgisayarı başlat</button>
+                </div>
+              </div>
+              <button id="bilgisayar-dugmesi" class="dugme ikincil" type="button">Bilgisayarı yeniden başlat</button>
+            </section>
             <section class="kart islem-karti" aria-labelledby="guncelle-baslik">
               <span class="ikon-kutu iri yesil"><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg></span>
               <div><h2 id="guncelle-baslik">Güncelle</h2><p>Resmi son sürüm kurulur; önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür.</p></div>

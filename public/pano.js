@@ -99,7 +99,9 @@ function panoyuBaslat() {
   // Telefonda sekme değil, Sistem'den açılan görünümler (üstte geri düğmesi)
   const SISTEM_ALTI = ["yonetim", "kullanicilar", "tesisler"];
   const MUDAHALE_TURLERI = ["anons", "ses_dene", "olay_incele"];
-  const YONETIM_TURLERI = ["teshis", "yeniden_baslat", "guncelle"];
+  const YONETIM_TURLERI = ["teshis", "yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat"];
+  // Ağır işler: aynı anda tek, saatte en çok 3 (docs/19 §3.5)
+  const AGIR_TURLERI = ["yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat"];
   const INCELE_BEKLEME_MS = 3 * 60 * 1000; // sonuç bu süre gelmezse düğmeler geri gelir
 
   // Komutun türe göre durum etiketi ve rozet sınıfı (docs/19 §3.6, O10).
@@ -110,6 +112,7 @@ function panoyuBaslat() {
     teshis: "i-teshis",
     yeniden_baslat: "i-guc",
     guncelle: "i-indir",
+    bilgisayari_yeniden_baslat: "i-guc",
   };
   const ILETILDI_ETIKETI = {
     anons: "Çalınıyor",
@@ -117,7 +120,11 @@ function panoyuBaslat() {
     teshis: "Hazırlanıyor",
     olay_incele: "Fabrikada",
   };
-  const SURUYOR_ETIKETI = { yeniden_baslat: "Yeniden başlatılıyor", guncelle: "Güncelleniyor" };
+  const SURUYOR_ETIKETI = {
+    yeniden_baslat: "Yeniden başlatılıyor",
+    guncelle: "Güncelleniyor",
+    bilgisayari_yeniden_baslat: "Bilgisayar yeniden başlatılıyor",
+  };
   const SINIF_TONU = { basari: "yesil", tehlike: "gul", uyari: "bal", bilgi: "mavi", "": "" };
 
   // Ekleme ve rol formundaki rol açıklamaları (docs/19 §1, O10).
@@ -2593,7 +2600,7 @@ function panoyuBaslat() {
     return (
       komutlar.find(
         (k) =>
-          (k.tur === "yeniden_baslat" || k.tur === "guncelle") &&
+          AGIR_TURLERI.includes(k.tur) &&
           (k.durum === "bekliyor" || k.durum === "iletildi" || k.durum === "suruyor")
       ) || null
     );
@@ -2608,7 +2615,18 @@ function panoyuBaslat() {
     const agir = acikAgirKomut(veri);
     if (durum !== "canli") {
       let sebep = durum === "kapandi" && rapor ? rapor.kapanis_sebebi : "";
+      // Bilgisayar yeniden başlarken kapanış raporu gelmez: bant açık komuttan kurulur
+      if (agir && agir.tur === "bilgisayari_yeniden_baslat") sebep = "bilgisayar";
       if (!sebep && agir) sebep = agir.tur === "guncelle" ? "guncelleme" : "yeniden_baslatma";
+      if (sebep === "bilgisayar") {
+        return {
+          acik: false,
+          agir: true,
+          sinif: "uyari",
+          kisa: "Bilgisayar yeniden başlatılıyor",
+          alt: "Program birkaç dakika kapalı kalabilir; bilgisayar açılınca kendiliğinden başlar.",
+        };
+      }
       if (sebep === "guncelleme" || sebep === "yeniden_baslatma") {
         const ad = sebep === "guncelleme" ? "Güncelleme" : "Yeniden başlatma";
         const sinir = sebep === "guncelleme" ? 600 : 300;
@@ -2651,7 +2669,12 @@ function panoyuBaslat() {
         acik: true,
         agir: true,
         sinif: "uyari",
-        kisa: agir.tur === "guncelle" ? "Güncelleme sürüyor" : "Yeniden başlatılıyor",
+        kisa:
+          agir.tur === "guncelle"
+            ? "Güncelleme sürüyor"
+            : agir.tur === "bilgisayari_yeniden_baslat"
+              ? "Bilgisayar yeniden başlatılıyor"
+              : "Yeniden başlatılıyor",
         alt: "",
       };
     }
@@ -2733,16 +2756,25 @@ function panoyuBaslat() {
     const teshisVar = acik && (y.isler || []).includes("teshis");
     const yrb = y && y.yeniden_baslatma;
     const gnc = y && y.guncelleme;
+    const bil = y && y.bilgisayar_yeniden_baslatma;
     const yenidenVar = acik && !hal.agir && (y.isler || []).includes("yeniden_baslat") && yrb && yrb.mumkun;
     const guncelleVar = acik && !hal.agir && (y.isler || []).includes("guncelle") && gnc && gnc.mumkun;
+    // Bilgisayarı yeniden başlatma yalnız yetkisi olana (Yönetici) görünür
+    const bilgisayarYetkili = yetkili("komut.bilgisayari_yeniden_baslat");
+    const bilgisayarVar =
+      bilgisayarYetkili && acik && !hal.agir && (y.isler || []).includes("bilgisayari_yeniden_baslat") && bil && bil.mumkun;
     $("teshis-dugmesi").disabled = !teshisVar;
     $("yeniden-dugmesi").disabled = !yenidenVar;
     $("guncelle-dugmesi").disabled = !guncelleVar;
+    $("bilgisayar-karti").hidden = !bilgisayarYetkili;
+    $("bilgisayar-dugmesi").disabled = !bilgisayarVar;
     sebepGoster("yeniden-sebep", hal.agir ? "" : yonetimSebep(acik, y, "yeniden_baslat", yrb));
     sebepGoster("guncelle-sebep", hal.agir ? "" : yonetimSebep(acik, y, "guncelle", gnc));
+    sebepGoster("bilgisayar-sebep", hal.agir ? "" : yonetimSebep(acik, y, "bilgisayari_yeniden_baslat", bil));
     $("islem-notu").hidden = !hal.agir;
     if (!yenidenVar) yenidenOnayiniKapat();
     if (!guncelleVar) guncelleOnayiniKapat();
+    if (!bilgisayarVar) bilgisayarOnayiniKapat();
     yonetimKomutlariCiz(veri);
   }
 
@@ -2761,6 +2793,14 @@ function panoyuBaslat() {
     if (icinde) $("guncelle-dugmesi").focus();
     $("guncelle-sifre").value = "";
     $("guncelle-sifre").removeAttribute("aria-invalid");
+  }
+  function bilgisayarOnayiniKapat() {
+    const icinde = $("bilgisayar-onayi").contains(document.activeElement);
+    $("bilgisayar-onayi").hidden = true;
+    $("bilgisayar-dugmesi").hidden = false;
+    if (icinde) $("bilgisayar-dugmesi").focus();
+    $("bilgisayar-sifre").value = "";
+    $("bilgisayar-sifre").removeAttribute("aria-invalid");
   }
 
   $("yonetim-surdur").addEventListener("click", function () {
@@ -2788,6 +2828,7 @@ function panoyuBaslat() {
     ac.addEventListener("click", function () {
       guncelleOnayiniKapat();
       yenidenOnayiniKapat();
+      bilgisayarOnayiniKapat();
       $(hataKimlik).textContent = "";
       kapat.onayi.hidden = false;
       ac.hidden = true;
@@ -2835,6 +2876,13 @@ function panoyuBaslat() {
     "yeniden-sifre",
     "yeniden-hatasi",
     "yeniden_baslat"
+  );
+  agirOnay(
+    $("bilgisayar-dugmesi"),
+    { onayi: $("bilgisayar-onayi"), vazgec: $("bilgisayar-vazgec"), gonder: $("bilgisayar-gonder") },
+    "bilgisayar-sifre",
+    "bilgisayar-hatasi",
+    "bilgisayari_yeniden_baslat"
   );
   agirOnay(
     $("guncelle-dugmesi"),
@@ -3149,12 +3197,16 @@ function panoyuBaslat() {
     if (!yetkiTaslagi) yetkiTaslagi = taslaktanKur(tanim);
     const kurucu = !!(oturum && oturum.kurucu);
     $("yetkiler-notu").textContent = kurucu
-      ? "Kilitli satırlar değişmez: hesap yönetimi ve Kullanıcılar ekranı yalnız yöneticide kalır."
+      ? "Kilitli satırlar değişmez: hesap yönetimi ve Kullanıcılar ekranı yalnız yöneticide kalır. " +
+        "Bilgisayarı yeniden başlatma yalnız yöneticiye verilebilir."
       : "Rol yetkilerini yalnız kurucu hesabı değiştirebilir; burası salt okunur.";
     $("yetki-formu").hidden = !kurucu;
     const izgara = $("yetki-izgarasi");
     temizle(izgara);
     const kilitli = new Set(tanim.kilitli || []);
+    // Yalnız yöneticiye verilebilen yetki (bilgisayarı yeniden başlatma): öteki
+    // rollerde kutu kapalı; sunucu da başka role yazmaz.
+    const yalnizYonetici = new Set(tanim.yalniz_yonetici || []);
 
     const bas = el("div", "yetki-satiri yetki-basligi");
     bas.appendChild(el("span", "yetki-ad", "Yetki"));
@@ -3171,7 +3223,7 @@ function panoyuBaslat() {
           const kutu = el("input");
           kutu.type = "checkbox";
           kutu.checked = yetkiTaslagi[r.id].has(y.id);
-          kutu.disabled = !kurucu || kilitli.has(y.id);
+          kutu.disabled = !kurucu || kilitli.has(y.id) || (r.id !== "yonetici" && yalnizYonetici.has(y.id));
           kutu.setAttribute("aria-label", r.ad + ": " + y.ad);
           kutu.addEventListener("change", function () {
             if (this.checked) yetkiTaslagi[r.id].add(y.id);

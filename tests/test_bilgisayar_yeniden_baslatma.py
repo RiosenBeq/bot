@@ -9,6 +9,7 @@ başka alan taşımaz.
 """
 
 import json
+from pathlib import Path
 
 import _pano
 import pytest
@@ -19,6 +20,9 @@ from test_yetki import _yetki_yaz
 
 IS = "bilgisayari_yeniden_baslat"
 YETKI = "komut." + IS
+PUBLIC = Path(__file__).resolve().parents[1] / "public"
+PANO_HTML = (PUBLIC / "pano.html").read_text(encoding="utf-8")
+PANO_JS = (PUBLIC / "pano.js").read_text(encoding="utf-8")
 YON = {"ad": "kurucu", "rol": "yonetici"}
 OTURUM_KAPALI = (
     "Windows otomatik oturum açmıyor; bilgisayar yeniden başlarsa program açılmaz. "
@@ -186,3 +190,37 @@ def test_onay_sifresi_ister_kurucu_ile_kuyruga_girer(site):  # noqa: F811
     assert kod == 200, govde
     komut = json.loads(govde)["komut"]
     assert (komut["tur"], komut["ozet"]) == (IS, "Bilgisayarı yeniden başlatma")
+
+
+# ------------------------------------------------------------------ ön yüz
+
+
+def test_yonetim_kartinda_ikinci_dugme_ve_onay_formu():
+    for kimlik in (
+        "bilgisayar-dugmesi",
+        "bilgisayar-onayi",
+        "bilgisayar-sifre",
+        "bilgisayar-sebep",
+        "bilgisayar-hatasi",
+        "bilgisayar-vazgec",
+        "bilgisayar-gonder",
+    ):
+        assert f'id="{kimlik}"' in PANO_HTML, kimlik
+    # Program kartından sonra, güncellemeden önce (yeniden başlatmanın yanında)
+    assert (
+        PANO_HTML.index('id="yeniden-dugmesi"')
+        < PANO_HTML.index('id="bilgisayar-dugmesi"')
+        < PANO_HTML.index('id="guncelle-dugmesi"')
+    )
+    assert "Bilgisayarı yeniden başlat" in PANO_HTML
+    assert "Evet, bilgisayarı başlat" in PANO_HTML
+
+
+def test_pano_js_isi_tanir_ve_onay_akisina_baglar():
+    assert f'"{IS}"' in PANO_JS[PANO_JS.index("const YONETIM_TURLERI") :][:200]
+    assert "Bilgisayar yeniden başlatılıyor" in PANO_JS
+    # Aynı onay akışı (şifreli form) yeni türe bağlanır
+    assert f'"bilgisayar-hatasi",\n    "{IS}"' in PANO_JS
+    # Düğme yalnız yetkisi olana görünür; yetki Kullanıcılar'da başka role verilemez
+    assert f'yetkili("{YETKI}")' in PANO_JS
+    assert "yalniz_yonetici" in PANO_JS
