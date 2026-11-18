@@ -143,3 +143,69 @@ def test_eski_programin_bilgisayari_kart_alanlarini_bos_sayar():
         temiz = _pano.rapor_temizle(rapor)["bilgisayar"]
         assert temiz["cikarim_secimi"] == "" and temiz["cikarim_notu"] == ""
         assert temiz["cikarim"] == rapor["bilgisayar"]["cikarim"]
+
+
+# ------------------------------------------ bilgisayarı yeniden başlatma (18.11.2026)
+
+
+def test_bilgisayar_komutu_turunden_baska_alan_tasimaz():
+    """bilgisayar-yeniden-baslatma.json: teslim edilen komut tür, kimlik, süre ve
+    istek sahibinden ibarettir; programa komut satırına girecek değer gitmez."""
+    ornek = _yukle("bilgisayar-yeniden-baslatma.json")
+    komut = ornek["komut"]
+    beklenen = {k: v for k, v in komut.items() if k != "kalan_sn"}
+    assert _pano._komut_yuku(json.dumps(komut)) == beklenen
+    assert set(beklenen) == {"id", "tur", "son_gecerlilik", "kim"}
+
+
+def test_bilgisayar_yonetim_ornegi_temizlenince_aynen_kalir():
+    ornek = _yukle("bilgisayar-yeniden-baslatma.json")
+    rapor = _yukle("rapor.json")["rapor"]
+    temiz = _pano.rapor_temizle({**rapor, "yonetim": ornek["yonetim"]})
+    assert temiz["yonetim"] == ornek["yonetim"]
+
+
+def test_bilgisayar_ret_sebepleri_aynen_gosterilir():
+    """Programın her ret metni rapordan değişmeden geçer ve istek reddedilince
+    yöneticiye aynen söylenir (409 yapilamaz)."""
+    ornek = _yukle("bilgisayar-yeniden-baslatma.json")
+    rapor = _yukle("rapor.json")["rapor"]
+    for sebep in ornek["ret_sebepleri"]:
+        yonetim = {
+            **ornek["yonetim"],
+            "bilgisayar_yeniden_baslatma": {"mumkun": False, "sebep": sebep},
+        }
+        temiz = _pano.rapor_temizle({**rapor, "yonetim": yonetim})
+        assert temiz["yonetim"]["bilgisayar_yeniden_baslatma"]["sebep"] == sebep
+        veri = {"baglanti": "canli", "rapor": temiz}
+        try:
+            _pano.komut_olustur(
+                _pano.BellekDepo(),
+                veri,
+                {"tur": "bilgisayari_yeniden_baslat"},
+                1000,
+                {"ad": "kurucu", "rol": "yonetici"},
+            )
+        except _pano.PanoHatasi as hata:
+            assert (hata.kod, hata.hata, hata.mesaj) == (409, "yapilamaz", sebep)
+        else:
+            raise AssertionError("yapılamaz denen iş kuyruğa girdi")
+
+
+def test_bilgisayar_sonuclari_yazilir_ve_onaylanir():
+    ornek = _yukle("bilgisayar-yeniden-baslatma.json")["sonuclar"]
+    depo = _pano.BellekDepo()
+    for kimlik in {s["id"] for s in ornek}:
+        kayit = {
+            "id": kimlik,
+            "tur": "bilgisayari_yeniden_baslat",
+            "durum": "iletildi",
+            "guncellendi": 0,
+        }
+        depo.boru_hatti([["SET", _pano.KOMUT_KAYIT_ONEKI + kimlik, json.dumps(kayit)]])
+    alinan = _pano.sonuclari_yaz(depo, ornek, 1000)
+    assert set(alinan) == {s["id"] for s in ornek}
+    for s in ornek[1:]:  # suruyor'dan sonra yapildi; ikinci kayıt hata
+        (ham,) = depo.al_coklu([_pano.KOMUT_KAYIT_ONEKI + s["id"]])
+        yazilan = json.loads(ham)
+        assert (yazilan["durum"], yazilan["mesaj"]) == (s["durum"], s["mesaj"])
