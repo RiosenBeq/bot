@@ -14,7 +14,7 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
    sonra Redeploy. Hobby'de cron günde bir çalışır: cron-job.org'da her 5 dakikada
    `/api/bekci` adresine `Authorization: Bearer <BEKCI_ANAHTARI>` başlığıyla istek kurun
    (UptimeRobot ücretsiz planı başlık ekleyemez, `?anahtar=` kullanın). Ayrıntı: README,
-   "Bekçi" bölümü.
+   "Bekçi" bölümü. Sahibi onayladı (19.11.2026, G46); Vercel'de yazılmayı bekliyor.
 2. **İkinci fabrika gelince.** Her programa farklı `UZAK_PANO_TESIS_ID`; ana tesisi
    sabitlemek için Vercel'de `ANA_TESIS`. Kimlik göndermeyen (eski) bir program canlı
    rapor gönderdikçe hiçbir tesis komut almaz; Tesisler ekranı bunu uyarıyla söyler.
@@ -22,7 +22,8 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
    açılmadıysa günde bir 403 satırı (Vercel Cron, CRON_SECRET yok) olağandır.
 4. **Ayrı oturum anahtarı (isteğe bağlı, önerilir; 08.11.2026).** Vercel'e en az 32
    karakterlik rastgele bir `OTURUM_ANAHTARI` yazıp Redeploy edin: çerez imzasına katılır,
-   aşağıdaki güvenlik maddesi 4 kapanır. Eklendiği an bütün oturumlar bir kez düşer.
+   aşağıdaki güvenlik maddesi 4 kapanır. Eklendiği an bütün oturumlar bir kez düşer. Sahibi
+   onayladı (19.11.2026, G46); Vercel'de yazılmayı bekliyor.
 5. **İki adımlı doğrulama (isteğe bağlı, yöneticiler için önerilir).** Her kişi kendi
    hesabında açar: Sistem, İki adımlı doğrulama, Aç (Google Authenticator ya da Microsoft
    Authenticator, "anahtarı elle gir"). Telefonu kaybedenin iki adımını yönetici
@@ -63,7 +64,12 @@ Bilgisayar kartında seçilen donanım ile kart notu bu dalda (`site-entegrasyon
    kurulumu artık "(git)" bilgisini göstermez (adı program yazar)~~ Yapıldı (19.11.2026, G46):
    `yonetim.kurulum` `git` ise ada "git" eklenir ("Kaynak kurulumu (Başlat betiği, git)").
 6. **Otomatik güncelleme panoda yalnız Olaylar ve Teşhis'te görünür** (DALSAN docs/19 §5.6,
-   17.11.2026). Yönetim kartına ayar ve son sonuç satırı eklemek rapora alan ekler (iki depo).
+   17.11.2026). Sahibi Yönetim kartındaki satırı onayladı (19.11.2026, G46), ama rapor ayarı da
+   son sonucu da taşımıyor: önce program. DALSAN `uzak_yonetim.yonetim_durumu` `yonetim`
+   bloğuna Teşhis'teki satırı (`otomatik_guncelleme.ozet`, ör. "Otomatik güncelleme: açık, her
+   gün 04:30; son: ...") yazar; docs/19 §4.1 tablosu, docs/15 §4.4 ve `tests/sozlesme/` ortak
+   örneği birlikte. Sonra site: `_pano.py` alanı 200 karakterde keser ve maskeler, Yönetim kartı
+   satırı gösterir (alan yoksa satır çıkmaz).
 
 ## Güvenlik incelemesinden kalanlar (02.11.2026, hepsi düşük)
 
