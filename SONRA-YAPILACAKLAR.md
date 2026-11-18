@@ -58,8 +58,9 @@ Bilgisayar kartında seçilen donanım ile kart notu bu dalda (`site-entegrasyon
    tutulması (`KARE_SECIM_SURESI_SN`). Yük tablosu tek bakan kişiyle ve 45 KB'lık kareyle bir
    tahmindir; gerçek Upstash ve Vercel'de ölçülmedi.
 5. **Görünüm:** ~~Bilgisayar kartında uzun "Kart notu"nun yanındaki etiket satırın dikey ortasında
-   durur~~ (17.11.2026: etiket değerin ilk satırıyla hizalanır); Yönetim kartında git kaynak
-   kurulumu artık "(git)" bilgisini göstermez (adı program yazar): sahibine sorulur.
+   durur~~ (17.11.2026: etiket değerin ilk satırıyla hizalanır); ~~Yönetim kartında git kaynak
+   kurulumu artık "(git)" bilgisini göstermez (adı program yazar)~~ Yapıldı (19.11.2026, G46):
+   `yonetim.kurulum` `git` ise ada "git" eklenir ("Kaynak kurulumu (Başlat betiği, git)").
 6. **Otomatik güncelleme panoda yalnız Olaylar ve Teşhis'te görünür** (DALSAN docs/19 §5.6,
    17.11.2026). Yönetim kartına ayar ve son sonuç satırı eklemek rapora alan ekler (iki depo).
 

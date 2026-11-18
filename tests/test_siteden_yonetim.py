@@ -3,7 +3,13 @@ ekranları, kurucu/önizleme/şifre bantları ve docs/19 §3.9 ile O10'daki yetk
 Türkçe metinler sayfada gerçekten var mı. Yalnız ön yüz dosyalarına bakar;
 arka uç (api/*) sözleşmesi öteki testlerdedir."""
 
+import json
+import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
 PANO_HTML = (PUBLIC / "pano.html").read_text(encoding="utf-8")
@@ -139,9 +145,10 @@ def test_yonetim_karti_kurulum_adini_bilgisayar_kartindan_alir():
     assert "const b = (rapor && rapor.bilgisayar) || {};" in govde
     # Kurulum adı yalnız yönetim bloğu kurulum bildirirken yazılır; yönetim
     # kapalıyken bilgisayar.kurulum_turu tek başına ad yazdırmaz.
+    assert "if (y && y.kurulum) meta.push(kurulumAdi(y, b));" in govde
     assert (
-        "if (y && y.kurulum) meta.push(b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum);"
-        in govde
+        "const ad = b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum;"
+        in _fonksiyon_govdesi("kurulumAdi")
     )
     assert "meta.push(" in govde and ".textContent = " in govde
     # Bilgisayar kartı aynı alanı gösterir
@@ -154,3 +161,31 @@ def test_kurulum_adlari_icin_ikinci_tablo_yok():
     assert PANO_JS.count("KURULUM_ADLARI = ") == 1
     for ad in ("Docker kapsayıcısı", "Sunucu hizmeti", "Kaynak kurulumu", "Windows uygulaması"):
         assert ad not in PANO_JS, ad
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
+def test_yonetim_karti_git_kaynak_kurulumunu_soyler():
+    """G46 (sahibinin onayı 19.11.2026): adı program yazınca ("Kaynak kurulumu
+    (Başlat betiği)") Yönetim kartı git kaynak kurulumunu söylemiyordu; eski
+    "Kaynak (git)" bilgisi geri gelir. Git dışındaki kurulumun adı ve eski
+    programın adı değişmez; ad zaten git diyorsa ikinci kez eklenmez."""
+    tablo = re.search(r"^  const KURULUM_ADLARI = [^;\n]+;$", PANO_JS, re.M).group(0)
+    islev = re.search(r"function kurulumAdi\(y, b\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    durumlar = [
+        ("git", "Kaynak kurulumu (Başlat betiği)", "Kaynak kurulumu (Başlat betiği, git)"),
+        ("git", "Sunucu hizmeti (systemd)", "Sunucu hizmeti (systemd, git)"),
+        ("git", "Kaynak", "Kaynak (git)"),
+        ("git", "Git kaynağı", "Git kaynağı"),
+        ("git", "", "Kaynak (git)"),
+        ("paket", "Windows uygulaması", "Windows uygulaması"),
+        ("diger", "Docker kapsayıcısı", "Docker kapsayıcısı"),
+        ("diger", "", "Diğer"),
+        ("yeni_tur", "", "yeni_tur"),
+    ]
+    girdiler = [[{"kurulum": k}, {"kurulum_turu": ad} if ad else {}] for k, ad, _ in durumlar]
+    cagri = f"{json.dumps(girdiler)}.map((g) => kurulumAdi(g[0], g[1]))"
+    betik = tablo + "\n" + islev + f"\nconsole.log(JSON.stringify({cagri}));"
+    cikti = subprocess.run(
+        ["node", "-e", betik], capture_output=True, text=True, timeout=20, check=True
+    ).stdout
+    assert json.loads(cikti) == [beklenen for _, _, beklenen in durumlar]

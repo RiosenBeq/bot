@@ -506,7 +506,8 @@ Yönetim kartındaki kurulum adı Bilgisayar kartındakiyle aynıdır: rapor
 `bilgisayar.kurulum_turu` taşıyorsa o ("Docker kapsayıcısı", "Sunucu hizmeti
 (systemd)", "Windows uygulaması" gibi; adı program yazar, sitede ikinci bir ad
 tablosu yoktur), taşımıyorsa `yonetim.kurulum`'un adı ("Paket (Windows)",
-"Kaynak (git)", "Diğer").
+"Kaynak (git)", "Diğer"). `yonetim.kurulum` `git` ise ada "git" eklenir
+(19.11.2026): "Kaynak kurulumu (Başlat betiği, git)"; ad zaten git diyorsa eklenmez.
 
 ### Komut sözleşmesi (`/api/komut`)
 

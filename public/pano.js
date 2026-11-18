@@ -2703,18 +2703,26 @@ function panoyuBaslat() {
 
   const KURULUM_ADLARI = { paket: "Paket (Windows)", git: "Kaynak (git)", diger: "Diğer" };
 
+  /* Kurulum adı Bilgisayar kartıyla aynı: programın gönderdiği kurulum_turu;
+     eski program göndermezse yonetim.kurulum'un adı (paket/git/diger). Adı
+     program yazınca git kaynak kurulumu söylenmiyordu: "git" adın parantezine
+     (yoksa sonuna) eklenir (sahibinin onayı 19.11.2026, G46). */
+  function kurulumAdi(y, b) {
+    const ad = b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum;
+    if (y.kurulum !== "git" || !b.kurulum_turu || /\bgit\b/i.test(ad)) return ad;
+    return ad.endsWith(")") ? ad.slice(0, -1) + ", git)" : ad + " (git)";
+  }
+
   function yonetimProgramCiz(rapor) {
     const p = (rapor && rapor.program) || {};
     const yapi = p.yapi || {};
     const y = rapor && rapor.yonetim;
-    // Kurulum adı Bilgisayar kartıyla aynı: programın gönderdiği kurulum_turu;
-    // eski program göndermezse yonetim.kurulum'un adı (paket/git/diger).
     const b = (rapor && rapor.bilgisayar) || {};
     $("program-adi").textContent = rapor ? (p.ad || "Program") + (p.surum ? " " + p.surum : "") : "Program";
     const meta = [];
     if (yapi.commit) meta.push("Yapı " + yapi.commit.slice(0, 7));
     if (yapi.tarih) meta.push(gunMetni(yapi.tarih));
-    if (y && y.kurulum) meta.push(b.kurulum_turu || KURULUM_ADLARI[y.kurulum] || y.kurulum);
+    if (y && y.kurulum) meta.push(kurulumAdi(y, b));
     $("yonetim-program").textContent = rapor
       ? meta.join(" · ") || "Yapı bilgisi gönderilmiyor"
       : "Fabrikadan henüz rapor gelmedi";
