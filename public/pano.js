@@ -44,6 +44,7 @@ function panoyuBaslat() {
   const KARE_BAYAT_SN = 35;
   // Ekranın bu kadar üstü ve altı da "görünüyor" sayılır: kaydırınca gelen
   // kutucuğun görüntüsü çoktan istenmiş olsun (fabrika listeyi raporla öğrenir).
+  // Yarım ekran sahibinin onayıyla karardır (19.11.2026, G46).
   const GORUNUR_PAY = 0.5;
   // Kameralar ekranının ilk okuması kutucuklar çizilmeden gider (liste boş: site
   // o okumada fabrikadan görüntü istemez). Kutucuklar çizilince liste bu kadar

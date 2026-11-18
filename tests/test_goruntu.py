@@ -499,3 +499,15 @@ def test_sistem_olayinin_ayrintisina_adres_girmez():
     ayrinti = temiz["son_olaylar"][0]["ayrinti"]
     assert ayrinti == "Ulaşılamıyor: (adres) ve (adres) (10 sn)"
     assert "gizli" not in ayrinti and "10.0.0.5" not in ayrinti
+
+
+def test_gorunur_pay_ve_secim_suresi_sahibin_kararidir():
+    """Yarım ekran payı ve seçimin 45 sn tutulması belgede karar olarak yoktu;
+    sahibi 19.11.2026'da onayladı (G46). Değer ya da onay notu sessizce
+    değişmesin: ikisi de tanımının hemen üstündeki yorumda anılır."""
+    pay = re.search(r"((?:  //[^\n]*\n)+)  const GORUNUR_PAY = 0\.5;\n", PANO_JS)
+    assert pay and "G46" in pay.group(1)
+    assert _pano.KARE_SECIM_SURESI_SN == 45
+    kaynak = Path(_pano.__file__).read_text(encoding="utf-8")
+    secim = re.search(r"((?:#[^\n]*\n)+)KARE_SECIM_SURESI_SN = ", kaynak)
+    assert secim and "G46" in secim.group(1)

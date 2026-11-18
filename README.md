@@ -326,7 +326,9 @@ ve sınırı aşanı depoya hiç yazmaz.
   128'den uzun liste yok sayılır. Kaydırınca yeni görünen kutucuğun görüntüsü
   en geç bir rapor aralığı (30 sn) ve 10 saniye içinde gelir; o arada son
   görüntü (2 dakikaya kadar) ya da "Görüntü bekleniyor" görünür. Ekrandan
-  çıkan kamera 45 saniyeye kadar istenmeye devam eder.
+  çıkan kamera 45 saniyeye kadar istenmeye devam eder. Yarım ekran payı
+  (`GORUNUR_PAY = 0.5`) ve 45 saniye (`KARE_SECIM_SURESI_SN`) sahibinin
+  onayıyla karardır (19.11.2026).
 
 Raporun cevabı: `{tamam, alindi, komut: {hizli}, kare: {iste, kameralar?},
 foto: {var: []}}`. Cevapta `foto` ya da `kare` yoksa site eskidir: fabrika görüntü

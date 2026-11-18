@@ -401,7 +401,8 @@ KARE_SECIM_ANAHTARI = "dalsan:kare:secim"
 KARE_HEPSI_ANAHTARI = "dalsan:kare:hepsi"
 # Seçim "ekran açık" işaretinden (son okumadan IZLEYEN_SURESI_SN) önce düşmesin:
 # yeniden yazım kalan süre IZLEYEN_SURESI_SN'e inince olur, yeni bitiş 1,5 katıdır.
-# Ekrandan çıkan kamera en çok bu kadar daha istenir.
+# Ekrandan çıkan kamera en çok bu kadar daha istenir. 45 sn sahibinin onayıyla
+# karardır (19.11.2026, G46).
 KARE_SECIM_SURESI_SN = IZLEYEN_SURESI_SN + IZLEYEN_SURESI_SN // 2
 KARE_EN_BUYUK_BAYT = 300 * 1024
 KARE_SAKLAMA_SN = 120
