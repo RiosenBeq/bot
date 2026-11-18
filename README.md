@@ -6,7 +6,7 @@ Vercel'de duran sitesi. İki sayfası var:
 | Adres | Ne |
 |---|---|
 | `/` | Tanıtım: sistemin ne yaptığı, nasıl çalıştığı, veri güvenliği notu |
-| `/pano` | **Kişisel hesapla** giren uzak izleme ve yönetim panosu: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve role göre **Müdahale** (anons, hoparlör denemesi, olay inceleme) ile **Yönetim** (teşhis, yeniden başlatma, güncelleme) |
+| `/pano` | **Kişisel hesapla** giren uzak izleme ve yönetim panosu: bugünün özeti, son 14 günün eğilimi, kameraların anlık görüntüsü, kanıt fotoğraflı son olaylar, kurulu olduğu bilgisayar ve role göre **Müdahale** (anons, hoparlör denemesi, olay inceleme) ile **Yönetim** (teşhis, yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma) |
 | `/demo` | Aynı pano, **örnek verilerle** ve girişsiz: tasarımı denetlemek için (aşağıda Demo) |
 
 ## Demo
@@ -65,6 +65,7 @@ olmayan bir iş hiçbir role açılmaz: varsayılan reddir.
 | Kendi şifresini değiştirme, kendi iki adımlı doğrulamasını açma / kapatma | var | var | var |
 | Hazır anons, hoparlör denemesi, olay inceleme | | var | var |
 | Teşhis, yeniden başlatma, güncelleme | | | var |
+| Bilgisayarı yeniden başlatma (18.11.2026; bu yetki başka role verilemez) | | | var |
 | Hesap açma, rol, yeni şifre, girişi kapatma / açma, silme, iki adımı sıfırlama | | | var |
 | İşlem kaydını görme | | | var |
 
@@ -75,7 +76,8 @@ olmayan bir iş hiçbir role açılmaz: varsayılan reddir.
 - **Operatör** - izleyiciye ek olarak hazır anons çaldırır, hoparlörü dener,
   olayları İncelendi ya da Yanlış alarm diye işaretler.
 - **Yönetici** - operatöre ek olarak programı yeniden başlatır, günceller, teşhis
-  alır, hesapları ve işlem kaydını yönetir.
+  alır, hesapları ve işlem kaydını yönetir; fabrika bilgisayarını da yeniden
+  başlatabilir (Windows; yalnız program kendiliğinden geri gelecekse).
 
 ### Roller ve yetkiler (kurucu ayarlar)
 
@@ -90,6 +92,10 @@ anons alınabilir.
 - **Kilitli iki satır** hiçbir ayarla taşınmaz: *Kullanıcılar ve işlem kaydını
   görme* ile *hesap açma, rol, şifre, kapatma, silme* yalnız yöneticide kalır.
   Taşınabilseydi kurucu dışında kimsenin açamayacağı bir site kalırdı.
+- **Yalnız yöneticiye verilebilen satır** (18.11.2026): *Bilgisayarı yeniden
+  başlatma* yöneticiden alınabilir ama Operatör ya da İzleyici'ye verilemez
+  (kutusu kapalıdır; sunucu da yazmaz). Fabrika programı da yalnız Yönetici
+  rolündeki istekle yapar.
 - Değişiklik **hemen** geçerlidir; açık oturumlar düşmez. Kuyrukta bekleyen bir
   komut, sahibinin yetkisi o arada alınırsa gönderilmez ("İsteyen hesabın
   yetkisi kalmadı").
@@ -251,11 +257,13 @@ sayılı iş istenebilir. Hepsi aşağıdaki tabloyla sınırlıdır:
 | Teşhis (`teshis`) | Yönetim | Yönetici | Programdan tek seferlik durum metni ister (adres ve dosya yolu süzülür) | Tek dokunuş |
 | Yeniden başlat (`yeniden_baslat`) | Yönetim | Yönetici | Programı yeniden başlatır (1-3 dakika kameralar izlenmez) | Kendi şifresi |
 | Güncelle (`guncelle`) | Yönetim | Yönetici | GitHub'daki resmi son sürüme günceller (önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür) | Kendi şifresi |
+| Bilgisayarı yeniden başlat (`bilgisayari_yeniden_baslat`, 18.11.2026) | Yönetim | Yalnız Yönetici (yetkisi başka role verilemez) | Fabrika bilgisayarını (Windows) yeniden başlatır; birkaç dakika kameralar izlenmez. Fabrika programı yalnız bilgisayar kendiliğinden geri gelecekse (Windows açılışında kayıt + aynı hesaba otomatik oturum) kabul eder; değilse kartta sebebi yazar. Komut programda sabittir (DALSAN docs/19 §4.9) | Kendi şifresi |
 
 **Hâlâ yapılamayanlar (sözleşme §0).** Serbest metin okutma; kural, kamera,
-bölge ya da ayar değiştirme; fabrikada keyfi komut ya da betik çalıştırma; dosya
-yükleme; GitHub'daki resmi depo dışından kod ya da paket kurma; siteden fabrikaya
-bağlanma. Yeni bir iş eklemek ayrı karardır.
+bölge ya da ayar değiştirme; fabrikada keyfi komut ya da betik çalıştırma (bilgisayarı
+yeniden başlatma programın içindeki tek sabit komuttur; siteden komut satırına hiçbir
+değer gitmez); dosya yükleme; GitHub'daki resmi depo dışından kod ya da paket kurma;
+siteden fabrikaya bağlanma. Yeni bir iş eklemek ayrı karardır.
 
 Nasıl yürür:
 
@@ -267,10 +275,12 @@ Nasıl yürür:
   dinleme bekler.
 - Komut 2 dakika içinde alınmazsa düşer. Sınırlar (site ve program aynı sayıyla):
   anons ve hoparlör denemesi 5 dakikada 10; olay inceleme 5 dakikada 60; teşhis
-  5 dakikada 3; yeniden başlatma ve güncelleme birlikte saatte 3, aynı anda tek
-  iş.
-- Yeniden başlatma, güncelleme ve her hesap işi, işi yapanın **kendi şifresini**
-  ister (cepte yanlışlıkla iş yapılmasın; çalınan açık bir oturum tek başına
+  5 dakikada 3; yeniden başlatma, güncelleme ve bilgisayarı yeniden başlatma
+  birlikte saatte 3, aynı anda tek iş. Sonuç beklemesi yeniden başlatmada 10,
+  bilgisayarı yeniden başlatmada 20, güncellemede 30 dakikadır; dolunca komut
+  "Sonuç gelmedi" görünür.
+- Yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma ve her hesap işi,
+  işi yapanın **kendi şifresini** ister (cepte yanlışlıkla iş yapılmasın; çalınan açık bir oturum tek başına
   fabrikayı yeniden başlatamasın).
 - Her müdahale ve yönetim işi fabrikadaki Olaylar'a ve sitedeki işlem kaydına
   kim yaptığıyla yazılır. Teşhis izleme ekranında bant göstermez (fabrikada bir
@@ -475,7 +485,7 @@ tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
 | `son_olaylar[]` | `{id, zaman, tur, baslik, yer, onem, onem_adi, durum_adi, durum, suruyor, sure, ayrinti}` (`id` kanıt fotoğrafının anahtarı; `ayrinti` sistem olayının açıklaması, en çok 300 karakter, adres ve dosya yolu çıkarılmış; `durum` = `new` / `reviewed` / `false_alarm`) |
 | `mudahale` | `{acik, isler, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}`; `isler` ⊆ (`anons`, `ses_dene`, `olay_incele`) |
-| `yonetim` | `{acik, isler, kurulum, yeniden_baslatma: {mumkun, sebep}, guncelleme: {mumkun, sebep}}`; `isler` ⊆ (`teshis`, `yeniden_baslat`, `guncelle`), `kurulum` = `paket` / `git` / `diger` |
+| `yonetim` | `{acik, isler, kurulum, yeniden_baslatma: {mumkun, sebep}, guncelleme: {mumkun, sebep}, bilgisayar_yeniden_baslatma: {mumkun, sebep}}`; `isler` ⊆ (`teshis`, `yeniden_baslat`, `guncelle`, `bilgisayari_yeniden_baslat`), `kurulum` = `paket` / `git` / `diger`. `bilgisayar_yeniden_baslatma` 18.11.2026'da eklendi: eski programda yoktur, kapalı sayılır; programın ret metinleri `tests/sozlesme/bilgisayar-yeniden-baslatma.json`'da |
 | `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
 | `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
 | `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
@@ -512,7 +522,8 @@ program imzası ya da `nonce`'u tutmayan cevaptaki komutu yürütmez.
 - **Komut** alan alan kurulur; başka alan gitmez: `{id, tur, son_gecerlilik,
   kalan_sn, kim: {ad, rol}}` ve türe özgü alanlar (`anons` → `mesaj_id`,
   `kanal_id`; `ses_dene` → `kanal_id`; `olay_incele` → `olay_id`, `olay_zaman`,
-  `karar`; `teshis` / `yeniden_baslat` / `guncelle` → yok).
+  `karar`; `teshis` / `yeniden_baslat` / `guncelle` / `bilgisayari_yeniden_baslat` →
+  yok).
 - **Sonuç:** `{id: "<16 hex>", durum: "yapildi" | "hata" | "suruyor", mesaj:
   "<tek satır, en çok 300>", ek: "<yalnız teshis; çok satır, en çok 8192 bayt>"}`.
   Site `mesaj`'ı tek satıra indirir; `ek`'teki denetim karakterlerini atar, kalan
@@ -638,7 +649,7 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 | `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir / iki adımı sıfırlar, herkes kendi şifresini değiştirir ve kendi iki adımlı doğrulamasını açar / kapatır (onay şifresiyle) |
 | `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
-| `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme); rol ve onay şifresi |
+| `api/mudahale.py` | Panodan komut (anons, hoparlör denemesi, olay inceleme, teşhis, yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma); rol ve onay şifresi |
 | `api/komut.py` | Fabrika programının komut yoklaması (imzalı istek + `nonce`, imzalı cevap) |
 | `api/_pano.py` | Ortak çekirdek (adres değildir): imza, depo, hesap, rol, kilit, komut, rapor biçimi |
 | `public/` | Sayfalar: `index.html`, `pano.html`, `pano.js`, `pano.css` (pano), `stil.css` (tanıtım ve 404), `404.html`; `tema.js` açık / koyu tema (her sayfada); `demo.js` yalnız `/demo`'da örnek veri verir |
@@ -707,7 +718,8 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
 - **Şifre saklama:** Hesap şifreleri açık değil, hesap başına rastgele tuzla
   `scrypt` (yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma sabit sürede
   yapılır. Kurucunun şifresi (`PANO_SIFRESI`) yalnız Vercel'dedir.
-- **Onay şifresi:** Yeniden başlatma, güncelleme ve her hesap işi (ekleme, rol,
+- **Onay şifresi:** Yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma ve
+  her hesap işi (ekleme, rol,
   yeni şifre, kapatma, silme) işi yapanın kendi şifresini ister; yanlış ya da
   eksikse iş yapılmaz ve kilit sayaçlarına girer. Aynı hesapta 15 dakikada 5
   yanlışta hesabın bütün oturumları, kurucuda o oturum düşer: çalınan bir oturum

@@ -1,0 +1,67 @@
+{
+  "aciklama": "Bilgisayarı yeniden başlatma (sahibinin kararı 18.11.2026; docs/19 §4.9). 'komut' sitenin teslim ettiği biçimdir: türe özgü alan yoktur, program siteden gelen hiçbir değeri komut satırına koymaz. 'kimsiz_komut' reddedilir. 'yonetim' raporun yönetim bloğudur. 'ret_sebepleri' bu işe özgü ret metinleridir; program bilgisayar_yeniden_baslatma.sebep alanına yazar, site değiştirmeden gösterir (Kontrol Paneli yoksa ya da yanıt vermiyorsa programı yeniden başlatmanın sebebi gelir). 'sonuclar' fabrikanın bildirdiği sonuçlardır.",
+  "komut": {
+    "id": "eb1b2c3d4e5f6071",
+    "tur": "bilgisayari_yeniden_baslat",
+    "son_gecerlilik": 1793450120,
+    "kalan_sn": 117,
+    "kim": {
+      "ad": "mehmet",
+      "rol": "yonetici"
+    }
+  },
+  "kimsiz_komut": {
+    "id": "fb1b2c3d4e5f6071",
+    "tur": "bilgisayari_yeniden_baslat",
+    "son_gecerlilik": 1793450120,
+    "kalan_sn": 117
+  },
+  "yonetim": {
+    "acik": true,
+    "isler": [
+      "teshis",
+      "yeniden_baslat",
+      "guncelle",
+      "bilgisayari_yeniden_baslat"
+    ],
+    "kurulum": "paket",
+    "yeniden_baslatma": {
+      "mumkun": true,
+      "sebep": ""
+    },
+    "guncelleme": {
+      "mumkun": true,
+      "sebep": ""
+    },
+    "bilgisayar_yeniden_baslatma": {
+      "mumkun": true,
+      "sebep": ""
+    }
+  },
+  "ret_sebepleri": [
+    "Bilgisayarı yeniden başlatma yalnız Windows'taki fabrika bilgisayarında yapılır; bu kurulumda siteden yapılamaz.",
+    "Program Windows açılışına kayıtlı değil; bilgisayar yeniden başlarsa program açılmaz. Kontrol Paneli'ndeki Sürekli çalışma satırına bakın.",
+    "Program Windows açılışında kapatılmış (Görev Yöneticisi > Başlangıç uygulamaları); bilgisayar yeniden başlarsa program açılmaz.",
+    "Windows otomatik oturum açmıyor; bilgisayar yeniden başlarsa program açılmaz. Kontrol Paneli > Bakım > Fabrika bilgisayarını hazırla ile kurun.",
+    "Windows otomatik oturumu başka bir Windows hesabına açıyor; bilgisayar yeniden başlarsa program açılmaz. Hazırlığı programın açık olduğu hesapla yapın.",
+    "Windows otomatik oturumu denetlenemedi; bilgisayar siteden yeniden başlatılamaz.",
+    "Kontrol Paneli bilgisayar yeniden başlayınca programın kendiliğinden açılıp açılmayacağını bildirmiyor; siteden yapılamaz."
+  ],
+  "sonuclar": [
+    {
+      "id": "eb1b2c3d4e5f6071",
+      "durum": "suruyor",
+      "mesaj": "Kontrol Paneli'ne iletildi; bilgisayar birazdan yeniden başlatılacak."
+    },
+    {
+      "id": "eb1b2c3d4e5f6071",
+      "durum": "yapildi",
+      "mesaj": "Bilgisayar yeniden başlatıldı; sistem ayakta."
+    },
+    {
+      "id": "fb1b2c3d4e5f6071",
+      "durum": "hata",
+      "mesaj": "Bilgisayar yeniden başlamadı (Windows'ta iptal edilmiş olabilir); sistem çalışmaya devam ediyor."
+    }
+  ]
+}
