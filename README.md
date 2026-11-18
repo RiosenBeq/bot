@@ -1,6 +1,6 @@
 # NextGen Detector · Uzak izleme sitesi
 
-DALSAN İSG Görüntü Analiz Sistemi'nin ([RiosenBeq/DALSAN](https://github.com/RiosenBeq/DALSAN))
+DALSAN İSG Görüntü Analiz Sistemi'nin ([okanberk-dev/DALSAN](https://github.com/okanberk-dev/DALSAN))
 Vercel'de duran sitesi. İki sayfası var:
 
 | Adres | Ne |
@@ -540,7 +540,7 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
 ## Vercel'e kurulum (bir kez)
 
 1. **Projeyi açın.** [vercel.com](https://vercel.com)'a GitHub hesabıyla girin:
-   **Add New → Project → `RiosenBeq/bot` → Import**. Ayarlara dokunmadan
+   **Add New → Project → `okanberk-dev/dalsansite` → Import**. Ayarlara dokunmadan
    **Deploy**'a basın (Framework Preset "Other" kalır, derleme adımı yoktur).
 2. **Veri deposunu bağlayın.** Projede **Storage** sekmesi → **Create Database** →
    **Upstash** (Redis). Bölge olarak Avrupa'yı (Frankfurt) seçin ve bu projeye
