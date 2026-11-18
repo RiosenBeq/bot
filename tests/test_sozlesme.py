@@ -69,6 +69,8 @@ def test_eski_rapor_guvenli_varsayilanlara_duser():
         "kurulum": "",
         "yeniden_baslatma": {"mumkun": False, "sebep": ""},
         "guncelleme": {"mumkun": False, "sebep": ""},
+        # 18.11.2026: bilgisayarı yeniden başlatmanın kapısı da kapalı (DALSAN docs/19 §4.9)
+        "bilgisayar_yeniden_baslatma": {"mumkun": False, "sebep": ""},
     }
 
 

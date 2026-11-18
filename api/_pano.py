@@ -133,7 +133,17 @@ EKRAN_YETKISI = {
 
 # ---- uzaktan müdahale ve yönetim (docs/19 §3.5-§3.7)
 # Pano yalnız bu işleri isteyebilir; fabrika programı da yalnız bunları tanır.
-KOMUT_TURLERI = ("anons", "ses_dene", "olay_incele", "teshis", "yeniden_baslat", "guncelle")
+# bilgisayari_yeniden_baslat: fabrika bilgisayarını (Windows) yeniden başlatır;
+# sahibinin kararı 18.11.2026 (DALSAN docs/19 §4.9).
+KOMUT_TURLERI = (
+    "anons",
+    "ses_dene",
+    "olay_incele",
+    "teshis",
+    "yeniden_baslat",
+    "guncelle",
+    "bilgisayari_yeniden_baslat",
+)
 # Rol kapısı TEK yerde: komut türü başına gereken en az rol. KOMUT_TURLERI'ndeki
 # her tür burada olmak ZORUNDADIR; tabloda olmayan bir tür hiçbir role açılmaz
 # (varsayılan red). Yeni bir iş eklenip burada sınıflanmazsa test kırmızı olur.
@@ -144,10 +154,23 @@ KOMUT_EN_AZ_ROL = {
     "teshis": "yonetici",
     "yeniden_baslat": "yonetici",
     "guncelle": "yonetici",
+    "bilgisayari_yeniden_baslat": "yonetici",
 }
 # Yönetim işleri tablodan türer: ikinci bir liste elle tutulmaz.
 YONETIM_TURLERI = tuple(t for t in KOMUT_TURLERI if KOMUT_EN_AZ_ROL.get(t) == "yonetici")
-AGIR_TURLERI = ("yeniden_baslat", "guncelle")
+AGIR_TURLERI = ("yeniden_baslat", "guncelle", "bilgisayari_yeniden_baslat")
+# Ağır işin raporda "yapılabilir mi" kapısı (yonetim bloğu, docs/19 §3.8) ve
+# komut listesinde görünen özeti.
+AGIR_KAPILARI = {
+    "yeniden_baslat": "yeniden_baslatma",
+    "guncelle": "guncelleme",
+    "bilgisayari_yeniden_baslat": "bilgisayar_yeniden_baslatma",
+}
+AGIR_OZETLERI = {
+    "yeniden_baslat": "Yeniden başlatma",
+    "guncelle": "Güncelleme",
+    "bilgisayari_yeniden_baslat": "Bilgisayarı yeniden başlatma",
+}
 # Raporda bildirilen açık işler ve olay durumları (docs/19 §3.8).
 MUDAHALE_ISLERI = ("anons", "ses_dene", "olay_incele")
 OLAY_DURUMLARI = ("new", "reviewed", "false_alarm")
@@ -185,9 +208,11 @@ KOMUT_SINIRI = KOMUT_GRUP_SINIRLARI["ses"]
 IZLEYEN_SURESI_SN = 30
 YOKLAMA_TOPLU = 5
 # Fabrikaya iletilip bu süre sonuç gelmezse panoda "sonuç gelmedi" yazar.
-# Ağır işler uzun sürer: güncelleme yarım saat, yeniden başlatma on dakika.
+# Ağır işler uzun sürer: güncelleme yarım saat, yeniden başlatma on dakika,
+# bilgisayarı yeniden başlatma yirmi dakika (bilgisayarın açılışı, otomatik
+# oturum, programın açılışı ve sağlık penceresi).
 SONUC_BEKLEME_SN = 180
-SONUC_BEKLEME = {"guncelle": 1800, "yeniden_baslat": 600}
+SONUC_BEKLEME = {"guncelle": 1800, "yeniden_baslat": 600, "bilgisayari_yeniden_baslat": 1200}
 KOMUT_EN_BUYUK_BAYT = 64 * 1024  # komut sorusu gövdesi en çok 64 KB (docs/19 §3.7)
 KOMUT_SONUC_EN_COK = 10  # bir istekte işlenen sonuç sayısı
 EK_EN_BUYUK_BAYT = 8192  # teshis ek metni (docs/19 §3.7)
@@ -226,6 +251,7 @@ YETKILER = (
     "ekran.yonetim",
     "komut.teshis",
     "komut.yeniden_baslat",
+    "komut.bilgisayari_yeniden_baslat",
     "komut.guncelle",
     "ekran.tesisler",
     "ekran.kullanicilar",
@@ -240,6 +266,7 @@ YETKI_ADLARI = {
     "ekran.yonetim": "Yönetim ekranını görme",
     "komut.teshis": "Teşhis alma",
     "komut.yeniden_baslat": "Programı yeniden başlatma",
+    "komut.bilgisayari_yeniden_baslat": "Bilgisayarı yeniden başlatma",
     "komut.guncelle": "Programı güncelleme",
     "ekran.tesisler": "Tesisler ekranını görme",
     "ekran.kullanicilar": "Kullanıcılar ve işlem kaydını görme",
@@ -249,13 +276,27 @@ YETKI_ADLARI = {
 YETKI_GRUPLARI = (
     ("Müdahale", ("ekran.mudahale", "komut.anons", "komut.ses_dene", "komut.olay_incele")),
     ("Bilgi", ("veri.bilgisayar", "ekran.tesisler")),
-    ("Yönetim", ("ekran.yonetim", "komut.teshis", "komut.yeniden_baslat", "komut.guncelle")),
+    (
+        "Yönetim",
+        (
+            "ekran.yonetim",
+            "komut.teshis",
+            "komut.yeniden_baslat",
+            "komut.bilgisayari_yeniden_baslat",
+            "komut.guncelle",
+        ),
+    ),
     ("Hesaplar", ("ekran.kullanicilar", "hesap.yonet")),
 )
 # Hiçbir ayarla değişmeyen yetkiler: yalnız yöneticide olur, yöneticiden alınamaz.
 # Hesapları ve işlem kaydını yönetmek bunlara bağlı; ayarla kapatılabilseydi
 # kurucu dışında kimsenin açamayacağı bir site kalırdı (kendini kilitleme).
 KILITLI_YETKILER = frozenset({"ekran.kullanicilar", "hesap.yonet"})
+# Yalnız yöneticiye verilebilen yetkiler (sahibinin kararı 18.11.2026): kurucu
+# yöneticiden alabilir ama başka role veremez. Bilgisayarı yeniden başlatmak
+# güvenlik sistemini birkaç dakika kapatır; fabrika programı da yalnız Yönetici
+# rolündeki istekle yapar.
+YALNIZ_YONETICI_YETKILERI = frozenset({"komut.bilgisayari_yeniden_baslat"})
 # /api/mudahale'nin kaba kapısı: hiçbir komut yetkisi olmayan oturum gövde
 # okunmadan 403 alır (docs/19 §3.4 sırası: yetki, sifre_degismeli'den önce).
 # İşe özgü denetim gövde okununca yapılır.
@@ -1216,6 +1257,7 @@ def _yonetim(ham: object) -> dict:
         "kurulum": _secim(ham.get("kurulum"), KURULUM_TURLERI),
         "yeniden_baslatma": _is_kapisi(ham.get("yeniden_baslatma")),
         "guncelleme": _is_kapisi(ham.get("guncelleme")),
+        "bilgisayar_yeniden_baslatma": _is_kapisi(ham.get("bilgisayar_yeniden_baslatma")),
     }
 
 
@@ -2167,6 +2209,8 @@ def yetki_kumesi_duzelt(ham: object, rol: str) -> frozenset[str]:
     kume -= KILITLI_YETKILER
     if rol == "yonetici":
         kume |= KILITLI_YETKILER
+    else:
+        kume -= YALNIZ_YONETICI_YETKILERI
     return frozenset(kume)
 
 
@@ -2363,8 +2407,9 @@ def _incele_komutu(rapor: dict, istek: dict) -> tuple[dict, str]:
 
 
 def _yonetim_komutu(rapor: dict, tur: str) -> tuple[dict, str]:
-    """teshis / yeniden_baslat / guncelle: yönetim açık, iş destekli ve (ağır
-    işlerde) fabrika yapılabilir demiş olmalı (docs/19 §3.5)."""
+    """teshis / yeniden_baslat / guncelle / bilgisayari_yeniden_baslat: yönetim
+    açık, iş destekli ve (ağır işlerde) fabrika yapılabilir demiş olmalı (docs/19
+    §3.5). Ağır işin yükünde türünden başka alan yoktur."""
     yonetim = _sozluk(rapor.get("yonetim"))
     if yonetim.get("acik") is not True:
         raise PanoHatasi(
@@ -2379,10 +2424,10 @@ def _yonetim_komutu(rapor: dict, tur: str) -> tuple[dict, str]:
         )
     if tur == "teshis":
         return {}, "Teşhis"
-    kapi = _sozluk(yonetim.get("yeniden_baslatma" if tur == "yeniden_baslat" else "guncelleme"))
+    kapi = _sozluk(yonetim.get(AGIR_KAPILARI[tur]))
     if kapi.get("mumkun") is not True:
         raise PanoHatasi(409, "yapilamaz", kapi.get("sebep") or "Bu iş şu an yapılamıyor.")
-    return {}, ("Yeniden başlatma" if tur == "yeniden_baslat" else "Güncelleme")
+    return {}, AGIR_OZETLERI[tur]
 
 
 def _zaman_listesi(ham: object) -> list[int]:
@@ -3757,7 +3802,8 @@ def _durum_degistiren(
 
 def mudahale(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/mudahale - anons, ses_dene, olay_incele (operatör+); teshis,
-    yeniden_baslat, guncelle (yönetici). Ağır işler onay şifresi ister."""
+    yeniden_baslat, guncelle, bilgisayari_yeniden_baslat (yönetici). Ağır işler onay
+    şifresi ister."""
     # Kaba kapı: hiç komut yetkisi olmayan oturum gövde okunmadan 403 alır
     # (sıra docs/19 §3.4). İşe özgü yetki gövde okununca aşağıda denetlenir.
     ayar, simdi, oturum, govde = _durum_degistiren(istek, MUDAHALE_YETKILERI, "müdahale")
@@ -3847,6 +3893,7 @@ def yetki_gorunumu(depo: UpstashDepo | BellekDepo) -> dict:
             for ad, yetkiler in YETKI_GRUPLARI
         ],
         "kilitli": sorted(KILITLI_YETKILER),
+        "yalniz_yonetici": sorted(YALNIZ_YONETICI_YETKILERI),
         "roller": [
             {
                 "id": rol,
