@@ -1238,7 +1238,12 @@ def _yapi(ham: object) -> dict:
 def _yonetim(ham: object) -> dict:
     """Uzaktan yönetimin durumu: açık mı, hangi işler, kurulum türü ve yeniden
     başlatma / güncelleme yapılabilir mi (docs/19 §3.8). Eski program göndermez:
-    her şey kapalı döner, düğmeler pasif kalır."""
+    her şey kapalı döner, düğmeler pasif kalır.
+
+    `otomatik_guncelleme` (19.11.2026, sahibinin onayı G46): fabrikanın Teşhis'indeki
+    "Otomatik güncelleme" satırı, başlıksız ("açık, her gün 04:30; son: ..."). Program
+    onu süzüp gönderir; site yine metin ve adres süzgecinden geçirir, en çok 200
+    karakter. Eski program göndermez: boş, Yönetim kartında satır çıkmaz."""
     ham = _sozluk(ham)
 
     def _is_kapisi(deger: object) -> dict:
@@ -1259,6 +1264,9 @@ def _yonetim(ham: object) -> dict:
         "yeniden_baslatma": _is_kapisi(ham.get("yeniden_baslatma")),
         "guncelleme": _is_kapisi(ham.get("guncelleme")),
         "bilgisayar_yeniden_baslatma": _is_kapisi(ham.get("bilgisayar_yeniden_baslatma")),
+        "otomatik_guncelleme": _metin(
+            adres_maskele(_metin(ham.get("otomatik_guncelleme"), 400)), 200
+        ),
     }
 
 

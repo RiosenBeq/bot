@@ -1,0 +1,69 @@
+{
+  "aciklama": "Raporun yonetim.otomatik_guncelleme alanı (19.11.2026; docs/19 §3.8 ve §5.6): Teşhis'teki 'Otomatik güncelleme' satırı, başlıksız. Panonun Yönetim kartı 'Otomatik güncelleme' satırında gösterir; alan yoksa (eski program ya da uzaktan yönetim kapalı) satır çıkmaz. Her durumda 'ayar' programın ayarı, 'durum_dosyasi' <veri>/yonetim/otomatik-guncelleme.json'un içeriği (null: dosya yok), 'otomatik_guncelleme' programın gönderdiği metindir. Son sonucun ayrıntısı teşhisin süzgecinden geçer: gizli kelime geçerse ayrıntının tamamı gizlenir, adres ve yol maskelenir; metin tek satır, en çok 200 karakter. Site metni aynen gösterir (kendi süzgeci onu değiştirmez).",
+  "durumlar": {
+    "ilk": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "acik",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": null,
+      "otomatik_guncelleme": "açık, her gün 04:30"
+    },
+    "son_sonuc": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "acik",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": {
+        "sonuc": "hata",
+        "mesaj": "Zaten son sürüm (abc1234); bir şey yapılmadı.",
+        "zaman": "2026-11-18T01:31:00+00:00"
+      },
+      "otomatik_guncelleme": "açık, her gün 04:30; son: 18.11 04:31 - Zaten son sürüm (abc1234); bir şey yapılmadı."
+    },
+    "maskeli": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "acik",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": {
+        "sonuc": "hata",
+        "mesaj": "GitHub'a ulaşılamadı: https://github.com/okanberk-dev/DALSAN.git; klasör C:\\NextGen\\veri\\yonetim, sunucu 192.168.1.20",
+        "zaman": "2026-11-18T01:31:00+00:00"
+      },
+      "otomatik_guncelleme": "açık, her gün 04:30; son: 18.11 04:31 - GitHub'a ulaşılamadı: (adres) klasör (dosya) sunucu (adres)"
+    },
+    "gizli": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "acik",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": {
+        "sonuc": "hata",
+        "mesaj": "Ayarlar'da GitHub indirme anahtarı yazılı değil.",
+        "zaman": "2026-11-18T01:31:00+00:00"
+      },
+      "otomatik_guncelleme": "açık, her gün 04:30; son: 18.11 04:31 - ayrıntı gizlendi (fabrikadaki Teşhis'te)"
+    },
+    "uzun": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "acik",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": {
+        "sonuc": "hata",
+        "mesaj": "Kontrol Paneli yanıt vermiyor;\nsiteden yapılamaz. Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı ",
+        "zaman": "2026-11-18T01:31:00+00:00"
+      },
+      "otomatik_guncelleme": "açık, her gün 04:30; son: 18.11 04:31 - Kontrol Paneli yanıt vermiyor; siteden yapılamaz. Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzun ayrıntı Uzu..."
+    },
+    "kapali": {
+      "ayar": {
+        "OTOMATIK_GUNCELLEME": "kapali",
+        "OTOMATIK_GUNCELLEME_SAATI": "04:30"
+      },
+      "durum_dosyasi": null,
+      "otomatik_guncelleme": "kapalı"
+    }
+  }
+}

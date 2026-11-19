@@ -71,6 +71,8 @@ def test_eski_rapor_guvenli_varsayilanlara_duser():
         "guncelleme": {"mumkun": False, "sebep": ""},
         # 18.11.2026: bilgisayarı yeniden başlatmanın kapısı da kapalı (DALSAN docs/19 §4.9)
         "bilgisayar_yeniden_baslatma": {"mumkun": False, "sebep": ""},
+        # 19.11.2026: otomatik güncelleme satırı boş (Yönetim kartında çıkmaz)
+        "otomatik_guncelleme": "",
     }
 
 
@@ -162,7 +164,8 @@ def test_bilgisayar_yonetim_ornegi_temizlenince_aynen_kalir():
     ornek = _yukle("bilgisayar-yeniden-baslatma.json")
     rapor = _yukle("rapor.json")["rapor"]
     temiz = _pano.rapor_temizle({**rapor, "yonetim": ornek["yonetim"]})
-    assert temiz["yonetim"] == ornek["yonetim"]
+    # Bu örneğin programı otomatik güncelleme satırını göndermez: boş gelir (19.11.2026)
+    assert temiz["yonetim"] == {**ornek["yonetim"], "otomatik_guncelleme": ""}
 
 
 def test_bilgisayar_ret_sebepleri_aynen_gosterilir():
@@ -209,3 +212,40 @@ def test_bilgisayar_sonuclari_yazilir_ve_onaylanir():
         (ham,) = depo.al_coklu([_pano.KOMUT_KAYIT_ONEKI + s["id"]])
         yazilan = json.loads(ham)
         assert (yazilan["durum"], yazilan["mesaj"]) == (s["durum"], s["mesaj"])
+
+
+def test_otomatik_guncelleme_satiri_suzgecten_bozulmadan_gecer():
+    """rapor-otomatik-guncelleme.json (19.11.2026, G46): programın gönderdiği
+    otomatik güncelleme satırı (dosya yok, son sonuç, maskelenmiş adres ve yol,
+    gizlenmiş ayrıntı, 200 karakterde kesilmiş, kapalı) sitenin süzgecinden
+    değişmeden geçer; yönetim bloğunun öteki alanları da değişmez."""
+    ornek = _yukle("rapor-otomatik-guncelleme.json")
+    rapor = _yukle("rapor.json")["rapor"]
+    # Yönetim bloğunun bütün alanları bilgisayar-yeniden-baslatma.json'dadır
+    tam_blok = _yukle("bilgisayar-yeniden-baslatma.json")["yonetim"]
+    assert set(ornek["durumlar"]) == {"ilk", "son_sonuc", "maskeli", "gizli", "uzun", "kapali"}
+    for ad, durum in ornek["durumlar"].items():
+        metin = durum["otomatik_guncelleme"]
+        yonetim = {**tam_blok, "otomatik_guncelleme": metin}
+        temiz = _pano.rapor_temizle({**rapor, "yonetim": yonetim})["yonetim"]
+        assert temiz == yonetim, ad
+
+
+def test_eski_programin_yonetimi_otomatik_guncelleme_satirini_bos_sayar():
+    """rapor.json'un programı alanı göndermez: boş gelir, Yönetim kartında satır
+    çıkmaz. Metin olmayan değer de boş sayılır; uzun metin 200'de kesilir, adres
+    maskelenir."""
+    rapor = _yukle("rapor.json")["rapor"]
+    assert "otomatik_guncelleme" not in rapor["yonetim"]
+    assert _pano.rapor_temizle(rapor)["yonetim"]["otomatik_guncelleme"] == ""
+    for bozuk in (None, 12, ["açık"], {"metin": "açık"}):
+        yonetim = {**rapor["yonetim"], "otomatik_guncelleme": bozuk}
+        temiz = _pano.rapor_temizle({**rapor, "yonetim": yonetim})["yonetim"]
+        assert temiz["otomatik_guncelleme"] == "", bozuk
+    yonetim = {
+        **rapor["yonetim"],
+        "otomatik_guncelleme": "açık;\nson: http://10.0.0.5/x " + "a" * 400,
+    }
+    metin = _pano.rapor_temizle({**rapor, "yonetim": yonetim})["yonetim"]["otomatik_guncelleme"]
+    assert len(metin) == 200 and "\n" not in metin
+    assert "10.0.0.5" not in metin and "(adres)" in metin

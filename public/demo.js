@@ -812,6 +812,7 @@
         yeniden_baslatma: { mumkun: true, sebep: "" },
         guncelleme: { mumkun: true, sebep: "" },
         bilgisayar_yeniden_baslatma: { mumkun: true, sebep: "" },
+        otomatik_guncelleme: "açık, her gün 04:30; son: 04:31 - Zaten son sürüm (abc1234); bir şey yapılmadı.",
       },
       // Bu ayın çalışma oranı (isteğe bağlı alan): ayın başından bu yana ölçülen saat
       calisma: {

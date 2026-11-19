@@ -487,7 +487,7 @@ tanır; gerisini atar. Her alan tip ve uzunluk denetiminden geçer.
 | `ogeler[]` | son 7 günün ihlal türleri `{ad, sayi}` |
 | `son_olaylar[]` | `{id, zaman, tur, baslik, yer, onem, onem_adi, durum_adi, durum, suruyor, sure, ayrinti}` (`id` kanıt fotoğrafının anahtarı; `ayrinti` sistem olayının açıklaması, en çok 300 karakter, adres ve dosya yolu çıkarılmış; `durum` = `new` / `reviewed` / `false_alarm`) |
 | `mudahale` | `{acik, isler, mesajlar[{id, metin}], kanallar[{id, ad, bolum}]}`; `isler` ⊆ (`anons`, `ses_dene`, `olay_incele`) |
-| `yonetim` | `{acik, isler, kurulum, yeniden_baslatma: {mumkun, sebep}, guncelleme: {mumkun, sebep}, bilgisayar_yeniden_baslatma: {mumkun, sebep}}`; `isler` ⊆ (`teshis`, `yeniden_baslat`, `guncelle`, `bilgisayari_yeniden_baslat`), `kurulum` = `paket` / `git` / `diger`. `bilgisayar_yeniden_baslatma` 18.11.2026'da eklendi: eski programda yoktur, kapalı sayılır; programın ret metinleri `tests/sozlesme/bilgisayar-yeniden-baslatma.json`'da |
+| `yonetim` | `{acik, isler, kurulum, yeniden_baslatma: {mumkun, sebep}, guncelleme: {mumkun, sebep}, bilgisayar_yeniden_baslatma: {mumkun, sebep}, otomatik_guncelleme}`; `isler` ⊆ (`teshis`, `yeniden_baslat`, `guncelle`, `bilgisayari_yeniden_baslat`), `kurulum` = `paket` / `git` / `diger`. `bilgisayar_yeniden_baslatma` 18.11.2026'da eklendi: eski programda yoktur, kapalı sayılır; programın ret metinleri `tests/sozlesme/bilgisayar-yeniden-baslatma.json`'da. `otomatik_guncelleme` (19.11.2026): fabrikanın Teşhis'indeki otomatik güncelleme satırı, başlıksız ("açık, her gün 04:30; son: ..."), en çok 200 karakter, adres ve dosya yolu çıkarılmış; Güncelle kartında "Otomatik güncelleme: ..." olarak görünür, eski programda yoktur (boş, satır çıkmaz); örnekler `tests/sozlesme/rapor-otomatik-guncelleme.json`'da |
 | `gunluk` | son 14 günün ihlal sayısı, en eskisi başta, sonuncusu bugün (Türkiye günü) |
 | `yedi_gun` | `{ihlal, incelenen, yanlis_alarm}`: son 7 gün |
 | `yerler[]` | son 7 gün, kamera başına `{ad, bolum, sayi}`, çoktan aza, en çok 10 |
@@ -510,6 +510,11 @@ Yönetim kartındaki kurulum adı Bilgisayar kartındakiyle aynıdır: rapor
 tablosu yoktur), taşımıyorsa `yonetim.kurulum`'un adı ("Paket (Windows)",
 "Kaynak (git)", "Diğer"). `yonetim.kurulum` `git` ise ada "git" eklenir
 (19.11.2026): "Kaynak kurulumu (Başlat betiği, git)"; ad zaten git diyorsa eklenmez.
+
+Güncelle kartında fabrikanın otomatik güncellemesi de görünür (19.11.2026, sahibinin
+onayı): "Otomatik güncelleme: açık, her gün 04:30; son: 04:31 - Zaten son sürüm ...".
+Metni program yazar ve süzer (gizli kelime taşıyan ayrıntı "ayrıntı gizlendi" olur);
+site yine süzer. Yönetim kapalıysa ya da eski program göndermiyorsa satır çıkmaz.
 
 ### Komut sözleşmesi (`/api/komut`)
 

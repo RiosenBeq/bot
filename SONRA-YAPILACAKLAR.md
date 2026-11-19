@@ -63,13 +63,11 @@ Bilgisayar kartında seçilen donanım ile kart notu bu dalda (`site-entegrasyon
    durur~~ (17.11.2026: etiket değerin ilk satırıyla hizalanır); ~~Yönetim kartında git kaynak
    kurulumu artık "(git)" bilgisini göstermez (adı program yazar)~~ Yapıldı (19.11.2026, G46):
    `yonetim.kurulum` `git` ise ada "git" eklenir ("Kaynak kurulumu (Başlat betiği, git)").
-6. **Otomatik güncelleme panoda yalnız Olaylar ve Teşhis'te görünür** (DALSAN docs/19 §5.6,
-   17.11.2026). Sahibi Yönetim kartındaki satırı onayladı (19.11.2026, G46), ama rapor ayarı da
-   son sonucu da taşımıyor: önce program. DALSAN `uzak_yonetim.yonetim_durumu` `yonetim`
-   bloğuna Teşhis'teki satırı (`otomatik_guncelleme.ozet`, ör. "Otomatik güncelleme: açık, her
-   gün 04:30; son: ...") yazar; docs/19 §4.1 tablosu, docs/15 §4.4 ve `tests/sozlesme/` ortak
-   örneği birlikte. Sonra site: `_pano.py` alanı 200 karakterde keser ve maskeler, Yönetim kartı
-   satırı gösterir (alan yoksa satır çıkmaz).
+6. ~~**Otomatik güncelleme panoda yalnız Olaylar ve Teşhis'te görünür**~~ Yapıldı (19.11.2026,
+   G46): program raporun `yonetim.otomatik_guncelleme`'sinde Teşhis'teki satırı (başlıksız,
+   ayrıntısı süzülmüş, en çok 200 karakter) gönderir; site onu süzer ve Yönetim ekranının
+   Güncelle kartında "Otomatik güncelleme: ..." olarak gösterir. Ortak örnek
+   `tests/sozlesme/rapor-otomatik-guncelleme.json`.
 
 ## Güvenlik incelemesinden kalanlar (02.11.2026, hepsi düşük)
 

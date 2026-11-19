@@ -2736,6 +2736,11 @@ function panoyuBaslat() {
     return "";
   }
 
+  function otomatikGuncellemeMetni(acik, y) {
+    const metin = acik && y && typeof y.otomatik_guncelleme === "string" ? y.otomatik_guncelleme : "";
+    return metin ? "Otomatik güncelleme: " + metin : "";
+  }
+
   function sebepGoster(kimlik, metin) {
     $(kimlik).textContent = metin;
     $(kimlik).hidden = !metin;
@@ -2780,6 +2785,9 @@ function panoyuBaslat() {
     sebepGoster("yeniden-sebep", hal.agir ? "" : yonetimSebep(acik, y, "yeniden_baslat", yrb));
     sebepGoster("guncelle-sebep", hal.agir ? "" : yonetimSebep(acik, y, "guncelle", gnc));
     sebepGoster("bilgisayar-sebep", hal.agir ? "" : yonetimSebep(acik, y, "bilgisayari_yeniden_baslat", bil));
+    // Otomatik güncellemenin ayarı ve son sonucu (19.11.2026, G46): programın
+    // gönderdiği metin, sitede süzülmüş; eski program göndermez, satır çıkmaz
+    sebepGoster("guncelle-otomatik", otomatikGuncellemeMetni(acik, y));
     $("islem-notu").hidden = !hal.agir;
     if (!yenidenVar) yenidenOnayiniKapat();
     if (!guncelleVar) guncelleOnayiniKapat();

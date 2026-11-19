@@ -189,3 +189,50 @@ def test_yonetim_karti_git_kaynak_kurulumunu_soyler():
         ["node", "-e", betik], capture_output=True, text=True, timeout=20, check=True
     ).stdout
     assert json.loads(cikti) == [beklenen for _, _, beklenen in durumlar]
+
+
+DEMO_JS = (PUBLIC / "demo.js").read_text(encoding="utf-8")
+
+
+def test_guncelle_kartinda_otomatik_guncelleme_satiri():
+    """G46 (sahibinin onayı 19.11.2026): Güncelle kartında programın gönderdiği
+    otomatik güncelleme satırı. textContent ile yazılır (sebepGoster), alan yoksa
+    gizli; yönetim kapalıyken de çıkmaz. Demo örnekle gösterir."""
+    assert 'id="guncelle-otomatik"' in PANO_HTML
+    kart = PANO_HTML[PANO_HTML.index('aria-labelledby="guncelle-baslik"') :]
+    kart = kart[: kart.index("</section>")]
+    assert '<p id="guncelle-otomatik" class="not" hidden></p>' in kart
+    assert kart.index('id="guncelle-otomatik"') < kart.index('id="guncelle-sebep"')
+    govde = _fonksiyon_govdesi("yonetimiCiz")
+    assert 'sebepGoster("guncelle-otomatik", otomatikGuncellemeMetni(acik, y));' in govde
+    assert "textContent = metin" in _fonksiyon_govdesi("sebepGoster")
+    assert "innerHTML" not in _fonksiyon_govdesi("otomatikGuncellemeMetni")
+    blok = re.search(r"yonetim: \{.*?\n      \},", DEMO_JS, re.S).group(0)
+    assert 'otomatik_guncelleme: "açık, her gün 04:30; son: ' in blok
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
+def test_otomatik_guncelleme_metni_yalniz_acik_yonetimde_ve_metinse():
+    islev = re.search(
+        r"function otomatikGuncellemeMetni\(acik, y\) \{.*?\n  \}", PANO_JS, re.S
+    ).group(0)
+    durumlar = [
+        (
+            True,
+            {"otomatik_guncelleme": "açık, her gün 04:30"},
+            "Otomatik güncelleme: açık, her gün 04:30",
+        ),
+        (True, {"otomatik_guncelleme": "kapalı"}, "Otomatik güncelleme: kapalı"),
+        (True, {"otomatik_guncelleme": ""}, ""),
+        (True, {}, ""),
+        (True, {"otomatik_guncelleme": 12}, ""),
+        (True, None, ""),
+        (False, {"otomatik_guncelleme": "açık, her gün 04:30"}, ""),
+    ]
+    girdiler = [[acik, y] for acik, y, _ in durumlar]
+    cagri = f"{json.dumps(girdiler)}.map((g) => otomatikGuncellemeMetni(g[0], g[1]))"
+    betik = islev + f"\nconsole.log(JSON.stringify({cagri}));"
+    cikti = subprocess.run(
+        ["node", "-e", betik], capture_output=True, text=True, timeout=20, check=True
+    ).stdout
+    assert json.loads(cikti) == [beklenen for _, _, beklenen in durumlar]
