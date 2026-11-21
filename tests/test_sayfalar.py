@@ -208,3 +208,20 @@ def test_kod_kutusunda_ok_tuslari_ve_kaydedilmemis_yetki_isareti():
     # Roller ve yetkiler: kaydedilmemiş değişiklik Kaydet'in yanında, durum bölgesinde
     assert re.search(r'id="yetki-kaydedilmedi"[^>]*role="status"', html)
     assert "Kaydedilmemiş değişiklik" in PANO_JS
+
+
+@pytest.mark.parametrize("dosya", sorted(PUBLIC.glob("*.js")), ids=lambda p: p.name)
+def test_eski_safaride_ayristirilamayan_duzenli_ifade_yok(dosya):
+    """Düzenli ifadede geriye bakış ((?<= / (?<!) Safari 16.4'ten eskisinde
+    erken hatadır: dosyanın tamamı çalışmaz (iOS 15'te pano açılmazdı)."""
+    metin = dosya.read_text(encoding="utf-8")
+    assert not re.search(r"\(\?<[=!]", metin), "geriye bakış var"
+
+
+def test_gizlenen_formdan_odak_dusmez_ve_kod_kutusunda_harf_imleci_kaydirmaz():
+    # "Diğer cihazlardan çık" başarılıyken form gizlenir: odak açan düğmeye döner
+    basari = PANO_JS.split('eylem: "diger_cihazlardan_cik"', 1)[1].split("} catch", 1)[0]
+    assert '$("cihazlar-ac").focus()' in basari
+    # Kod kutusu: imleç, önündeki rakam sayısına göre yerleşir
+    girdi = PANO_JS.split('$("giris-kod").addEventListener("input"', 1)[1].split("});", 1)[0]
+    assert "slice(0, this.selectionStart)" in girdi

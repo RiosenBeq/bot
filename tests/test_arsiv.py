@@ -1,7 +1,7 @@
 """Olay arşivi (Kod maddesi 5) ve inceleme modu (Kod maddesi 6).
 
-Raporlarla gelen olaylar sıralı kümede birikir: olay başına tek üye (tesis +
-olay kimliği), durum değişince üye yenilenir, küme 90 gün / ARSIV_EN_COK ile
+Raporlarla gelen olaylar sıralı kümede birikir: olay başına tek üye (olay
+kimliği + zamanı), durum değişince üye yenilenir, küme 90 gün / ARSIV_EN_COK ile
 aynı boru hattında kırpılır ve olaylar değişmedikçe rapor başına komut
 eklenmez. GET /api/durum?arsiv=1 süzer ve sayfalar; `&bicim=csv` Excel'in
 açtığı dosyayı indirir. Ekranın kablolaması (Olaylar > Arşiv, inceleme modu)
@@ -120,7 +120,7 @@ def test_arsiv_kirpilir_doksan_gun_ve_en_cok(monkeypatch):
     assert depo.komut("TTL", _pano.ARSIV_IZ_ANAHTARI) == _pano.ARSIV_SAKLAMA_SN
 
 
-def test_arsiv_tesis_ve_kimlikle_tekillesir_kimliksiz_olay_atlanir():
+def test_arsiv_kimlik_ve_zamanla_tekillesir_kimliksiz_olay_atlanir():
     depo = _pano.BellekDepo(lambda: T0)
     _pano.rapor_kaydet(depo, _rapor([_olay(5), {**_olay(None), "id": None}]), T0)
     # Ana tesis değişti (eski program sustu): aynı kimlik başka tesisin olayıdır
@@ -132,6 +132,32 @@ def test_arsiv_tesis_ve_kimlikle_tekillesir_kimliksiz_olay_atlanir():
     rapor = _rapor([_olay(77)], tesis={"id": "izmir", "ad": "İzmir"})
     _pano.rapor_kaydet(depo, rapor, T0 + 630, _pano.ayar_oku({"ANA_TESIS": "gebze"}))
     assert 77 not in [o["id"] for o in _arsiv(depo)]
+
+
+def test_yeniden_kurulan_programin_ayni_kimlikli_olayi_eskisini_gizlemez():
+    """Program yeni bilgisayara kurulunca olay kimlikleri 1'den başlar: arşivdeki
+    40 günlük olay 7 ile yeni olay 7 ayrı olaylardır (zamanları farklı)."""
+    depo = _pano.BellekDepo(lambda: T0)
+    eski = _olay(7, 40 * 86400, baslik="Baret yok", durum="reviewed")
+    _pano.rapor_kaydet(depo, _rapor([eski]), T0)
+    yeni = _olay(7, 60, T0 + 600, baslik="Yasak bölge", suruyor=True)
+    _pano.rapor_kaydet(depo, _rapor([yeni]), T0 + 600)
+    olaylar = _arsiv(depo)
+    assert [(o["id"], o["baslik"], o["suruyor"]) for o in olaylar] == [
+        (7, "Yasak bölge", True),
+        (7, "Baret yok", False),
+    ]
+
+
+def test_tesis_kimligi_sonradan_yazilinca_son_olaylar_cift_gorunmez():
+    depo = _pano.BellekDepo(lambda: T0)
+    olaylar = [_olay(5), _olay(4, 600)]
+    _pano.rapor_kaydet(depo, _rapor(olaylar), T0)
+    # Aynı program tesis kimliğiyle yeniden açıldı (eski akış sustu, ana tesis oldu)
+    rapor = _rapor(olaylar, tesis={"id": "gebze", "ad": "Gebze"})
+    _pano.rapor_kaydet(depo, rapor, T0 + 600, _pano.ayar_oku({"ANA_TESIS": "gebze"}))
+    assert depo.komut("ZCARD", _pano.ARSIV_ANAHTARI) == 2
+    assert [(o["tesis"], o["id"]) for o in _arsiv(depo)] == [("gebze", 5), ("gebze", 4)]
 
 
 def test_eski_programin_durumu_adindan_cikarilir():
@@ -261,6 +287,33 @@ def test_arsiv_suzgecleri_ve_sayfalama(site, monkeypatch):  # noqa: F811
     assert (a["sayfa"], a["sayfa_sayisi"], [o["id"] for o in a["olaylar"]]) == (3, 3, [26])
 
 
+def test_sayfaya_bolunen_gunun_basligi_butun_gunu_sayar(site, monkeypatch):  # noqa: F811
+    """Arşiv 25'lik sayfadır: `gunler` sayfadaki her günün süzgeçteki toplamını
+    verir, iki sayfaya bölünen günün başlığı iki sayfada da aynı sayıyı gösterir."""
+    simdi = time.time()
+    gun = 86400
+    oglen = _pano.arsiv_baslangici("bugun", simdi) - 3 * gun + 12 * 3600  # 3 gün önce 12:00
+    olaylar = [_olay(40 + k, simdi - (oglen + k * 60), simdi) for k in range(3)]
+    olaylar.append(_olay(39, simdi - (oglen - 2 * gun), simdi))  # 5 gün önce
+    assert _rapor_gonder(site, {"surum": 1, "son_olaylar": olaylar})[0] == 200
+    cerez = _kurucu(site)
+    monkeypatch.setattr(_pano, "ARSIV_SAYFA", 2)
+    uc_gun_once = _pano._turkiye_gunu(oglen)
+    bes_gun_once = _pano._turkiye_gunu(oglen - 2 * gun)
+    a = json.loads(_arsiv_al(site, cerez)[2])["arsiv"]
+    assert [o["id"] for o in a["olaylar"]] == [42, 41]
+    assert a["gunler"] == {uc_gun_once: 3}
+    a = json.loads(_arsiv_al(site, cerez, "&sayfa=2")[2])["arsiv"]
+    assert [o["id"] for o in a["olaylar"]] == [40, 39]
+    assert a["gunler"] == {uc_gun_once: 3, bes_gun_once: 1}
+    # Süzgeç sayıya da uygulanır
+    a = json.loads(_arsiv_al(site, cerez, "&ara=41")[2])["arsiv"]
+    assert a["gunler"] == {uc_gun_once: 1}
+    # Başlık bu sayıyı kullanır (sayfadaki olay sayısını değil); demo da verir
+    assert 'grupSayisi(grup, arsiv) + " olay"' in PANO_JS
+    assert "gunler: gunler," in DEMO_JS
+
+
 def test_arsiv_csv_excel_icin_ve_her_rol_indirir(site):  # noqa: F811
     _ornek_arsiv(site)
     kurucu = _kurucu(site)
@@ -352,6 +405,20 @@ def test_inceleme_modu_yalniz_inceleyebilene_ve_klavyeyle():
     # Mevcut komut yolu: olay_incele
     gonder = re.search(r"async function incelemeKarari\(karar\) \{.*?\n  \}", PANO_JS, re.S)
     assert 'tur: "olay_incele"' in gonder.group(0) and "mudahaleGonder(" in gonder.group(0)
+    # Karar düğmesi silinince odak <body>'ye düşse de kısayollar çalışır (belgeye
+    # bağlı) ve odak pencereye geri konur
+    assert 'document.addEventListener("keydown", incelemeTusu)' in PANO_JS
+    ciz = re.search(r"function incelemeyiCiz\(tam\) \{.*?\n  \}", PANO_JS, re.S).group(0)
+    assert "incelemeOdagi()" in ciz
+
+
+def test_arsiv_yuklenmeden_sayfalama_ve_csv_gorunmez():
+    """İlk yükleme başarısızsa "okunuyor" yazısı kalmaz; Önceki / Sonraki ve CSV
+    yalnız veri gelince görünür (arsiviCiz açar)."""
+    assert re.search(r'<a id="arsiv-csv"[^>]*\shidden>', PANO_HTML)
+    assert re.search(r'<nav class="arsiv-sayfalar"[^>]*\shidden>', PANO_HTML)
+    yukle = re.search(r"async function arsiviYukle\(sayfaDegisti\) \{.*?\n  \}", PANO_JS, re.S)
+    assert yukle.group(0).count('if (!arsivVerisi) yaz($("arsiv-sonuc"), "")') == 2
 
 
 def test_arsiv_ve_inceleme_telefonda_tasmaz():

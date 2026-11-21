@@ -339,12 +339,12 @@
             </form>
             <div class="arsiv-ozet">
               <p id="arsiv-sonuc" class="ikincil-metin" role="status"></p>
-              <a id="arsiv-csv" class="dugme ikincil kucuk" href="/api/durum?arsiv=1&amp;bicim=csv" download><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg><span>CSV indir</span></a>
+              <a id="arsiv-csv" class="dugme ikincil kucuk" href="/api/durum?arsiv=1&amp;bicim=csv" download hidden><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg><span>CSV indir</span></a>
             </div>
             <p id="arsiv-hatasi" class="hata" role="alert"></p>
             <div id="arsiv-listesi" class="olay-gruplari" aria-busy="false"></div>
             <div id="arsiv-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-inceleme"/></svg><b>Bu süzgeçle olay yok</b><span>Dönemi genişletin ya da süzgeci temizleyin.</span></div>
-            <nav class="arsiv-sayfalar" aria-label="Arşiv sayfaları">
+            <nav class="arsiv-sayfalar" aria-label="Arşiv sayfaları" hidden>
               <button id="arsiv-onceki" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg><span>Önceki</span></button>
               <span id="arsiv-sayfa" class="sayi"></span>
               <button id="arsiv-sonraki" class="dugme ikincil" type="button"><span>Sonraki</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>

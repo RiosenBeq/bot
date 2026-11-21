@@ -49,7 +49,11 @@ göstermez.
 3. **DALSAN `docs/19` site içi ayrıntısı (20.11.2026):** §3.1 yeni özetin n'sini 2^14
    yazıyor (site artık 2^15 yazar, 2^14..2^17 okur), §3.3 `komut_red`'i
    `dalsan:kayit:oturum`'da sayıyor (artık `dalsan:kayit:red`, 200 satır). Program bu
-   ayrıntıları kullanmaz, sözleşme değişmedi; belge DALSAN'da düzeltilmeli.
+   ayrıntıları kullanmaz, sözleşme değişmedi; belge DALSAN'da düzeltilmeli. Aynı
+   düzeltmeye (inceleme 20.11.2026): olay arşivi sıralı küme kullanır
+   (`dalsan:olay:arsiv`, §3.1'deki "küme kullanılmaz" cümlesinin istisnası) ve
+   `GET /api/hesap` dört listeyi birleştirir; 300'lük kesme yalnız başarılı
+   satırlara uygulanır (reddedilen ve hatalı satırlar kesilmez, toplam 300'ü aşabilir).
 
 ## Kameralar ekranı, Yönetim ve Bilgisayar kartından kalanlar (17.11.2026)
 
@@ -107,8 +111,10 @@ rol düşürme geri yazılamıyor. Kalanlar tasarım kararıdır:
    300 satırlık kesme yalnız başarılı satırlara uygulanır.
 3. ~~**Şifre özeti:** scrypt n=2^14; OWASP en az 2^17 öneriyor.~~ Yapıldı (20.11.2026):
    yeni özet n=2^15 (~32 MB, ~65 ms); eski özet geçerli ve ilk başarılı girişte hesap
-   kilidi altında yeniden yazılır. Kalan: 2^17 (128 MB, ~0,3 sn) Vercel'de ölçülmedi;
-   girişte yenilenmemiş eski hesap bilinmeyen addan biraz hızlı cevap verir.
+   kilidi altında yeniden yazılır. ~~Girişte yenilenmemiş eski hesap bilinmeyen addan
+   biraz hızlı cevap verir.~~ Yapıldı (20.11.2026): eski özetli hesapta yanlış şifre,
+   sahte doğrulamanın ölçülen süresine kadar bekletilir. Kalan: 2^17 (128 MB, ~0,3 sn)
+   Vercel'de ölçülmedi.
 4. **Oturum anahtarı:** ~~`PANO_SIFRESI` ve `RAPOR_ANAHTARI`'ndan türer~~ İsteğe bağlı
    `OTURUM_ANAHTARI` eklendi (08.11.2026); Vercel'e yazılınca kapanır (yukarıda 4).
 5. **Bekçi anahtarı adreste:** `?anahtar=` Vercel ve izleme servisi günlüğüne düşer;
@@ -160,18 +166,24 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
    (20.11.2026): `HAFTALIK_OZET=acik` (alıcılar `HAFTALIK_OZET_ALICILAR`, boşsa
    `BEKCI_ALICILAR`); bekçinin günlük çağrısına biner, pazartesi 08:00'den sonra hafta
    başına bir kez gider; düz metin + HTML, olay arşivinden sayılar, fotoğraf ve sır yok;
-   Kurulum denetimi kartında durumu ve son gönderimi. Kalan: sayılar arşivden geldiği
-   için arşivin boşlukları (madde 5) özete de yansır.
+   Kurulum denetimi kartında durumu ve son gönderimi. Yapıldı (20.11.2026, inceleme):
+   pazartesi gidemeyen özet salı-pazar sabahları yeniden denenir; işaretin uzatması
+   düşerse gönderimden sonra bir kez daha denenir (ikinci gönderim olmaz). Kalan:
+   sayılar arşivden geldiği için arşivin boşlukları (madde 5) özete de yansır.
 5. ~~**Olay arşivi, süzgeç, arama ve CSV:** site gelen raporlardaki olayları biriktirebilir
    (sıralı küme), fabrika değişmeden.~~ Yapıldı (20.11.2026): Olaylar > Arşiv, son 90 gün
    (en çok 5.000), dönem / tür / kamera / durum süzgeci, arama, 25'lik sayfalar ve Excel'in
    açtığı CSV (`/api/durum?arsiv=1&bicim=csv`); olaylar değişmedikçe rapor başına komut
-   eklemez. Kalan: arşiv raporlardaki son 20 olaydan birikir (iki rapor arasında 20'den
+   eklemez. Yapıldı (20.11.2026, inceleme): olay kimlik + zamanla tekilleşir (yeniden
+   kurulan programın aynı kimlikli olayı eskisini gizlemez), bölünen günün başlığı bütün
+   günü sayar, ilk yükleme düşerse sayfalama ve CSV görünmez; demo arşivi Genel bakışın
+   sayılarıyla aynı. Kalan: arşiv raporlardaki son 20 olaydan birikir (iki rapor arasında 20'den
    fazla olay ya da site kesintisi boşluk bırakır; tam geçmiş için sözleşmeye toplu
    gönderim gerekir) ve yalnız ana tesisi tutar.
 6. ~~**İnceleme modu:** bekleyen ihlaller büyük kanıtla sırayla; klavye kısayolları~~;
    Yapıldı (20.11.2026): fotoğraf penceresinde "3 / 12", I / Y / oklar, telefonda iki büyük
-   düğme, mevcut `olay_incele` yolu. Kalan: **toplu inceleme** (bir komutta çok olay
+   düğme, mevcut `olay_incele` yolu; karardan sonra odak pencerede kalır, kısayollar
+   odak kaybolsa da çalışır (inceleme 20.11.2026). Kalan: **toplu inceleme** (bir komutta çok olay
    sözleşme ister; tek tek göndermek 5 dakikada 60 inceleme sınırına takılır).
 7. ~~**"Diğer cihazlardan çık"**~~ Yapıldı (20.11.2026): Sistem hesap kartında, şifreyle
    onaylanır; oturum sürümü artar, bu cihaz yeni çerezle sürer, işlem kaydına girer; altında
@@ -188,8 +200,11 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
     görünmüyor~~ Yapıldı (20.11.2026): radyo grupları ve Kullanıcılar sekmeleri (oklar,
     Home, End), "Olayların tümü" / "Kameraların tümü", kod kutularında ok tuşları ve
     hane üzerine yazma, "Kaydedilmemiş değişiklik: N kutu"; telefon geçişinde üç küçük
-    hedef ve harf ortasından bölünen adlar düzeldi. Kalan: ekran okuyucuyla gerçek
-    kullanıcı denemesi (bir insan yapmalı).
+    hedef ve harf ortasından bölünen adlar düzeldi. İnceleme (20.11.2026): ad bölme
+    artık geriye bakışsız (Safari 16.4'ten eskisinde pano.js hiç çalışmıyordu), kod
+    kutusunda reddedilen harf imleci kaydırmaz, "Diğer cihazlardan çık"tan sonra odak
+    düğmeye döner, rolü düşüp dönen yöneticide Kurulum kartında eski hata kalmaz.
+    Kalan: ekran okuyucuyla gerçek kullanıcı denemesi (bir insan yapmalı).
 11. ~~**E-posta Resend ve tasarım:** bekçi ve özet yalnız SMTP ile, düz biçimde gidiyor.~~
     Yapıldı (20.11.2026): `RESEND_API_KEY` yazılıysa Resend (stdlib, sabit ve anahtarsız hata
     metni), yoksa SMTP bugünkü gibi; bütün e-postalar ortak tasarımda (düz metin + HTML,

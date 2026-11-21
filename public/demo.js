@@ -869,9 +869,11 @@
 
   // ------------------------------------------------------------ olay arşivi
 
-  /* Olaylar > Arşiv (api/_pano.py arsiv_getir): son 20 olay ve onlardan önceki
-     90 günün tohumlu örnekleri. Süzgeç, arama, sayfa ve CSV sunucunun
-     kurallarıyla; inceleme yapılınca arşivdeki durum da değişir (aynı nesne). */
+  /* Olaylar > Arşiv (api/_pano.py arsiv_getir): son 20 olay ve 90 günün
+     tohumlu örnekleri. Günlük ihlal sayısı Genel bakışla aynıdır (bugün
+     saatlik(), önceki 13 gün ONCEKI_GUNLER; son 20 olaydakiler dahil). Süzgeç,
+     arama, sayfa ve CSV sunucunun kurallarıyla; inceleme yapılınca arşivdeki
+     durum da değişir (aynı nesne). */
   const ARSIV_GUN = 90;
   const ARSIV_SAYFA = 25;
   const ARSIV_DONEMLERI = { bugun: 1, 7: 7, 30: 30, 90: 90 };
@@ -886,24 +888,38 @@
   ];
   const TURKCE = { İ: "i", ı: "i", Ç: "c", ç: "c", Ğ: "g", ğ: "g", Ö: "o", ö: "o", Ş: "s", ş: "s", Ü: "u", ü: "u" };
   let arsivOrnekleri = null;
+  let arsivAnahtari = "";
 
-  function arsivOrnekleriniKur() {
+  function arsivOrnekleriniKur(simdi) {
     const r = tohumlu(9090);
     const torba = ARSIV_IHLALLERI.flatMap(([ad, onem, agirlik]) => Array(agirlik).fill([ad, onem]));
-    const enEski = olaylar[olaylar.length - 1].zamanMs;
+    const bugunBas = arsivBaslangici("bugun", simdi);
+    const saat = turkiyeSaati(simdi);
     const liste = [];
     let id = olaylar[olaylar.length - 1].id - 1;
     for (let gun = 0; gun < ARSIV_GUN; gun++) {
-      const adet = 4 + Math.floor(r() * 9);
-      const zamanlar = [];
-      for (let i = 0; i < adet; i++) {
+      const bas = bugunBas - gun * 24 * SA;
+      const zamanlar = []; // [zamanMs, sistem mi]
+      if (gun === 0) {
+        // Bugün saatlik() ile aynı: geçen her saatte SAAT_AGIRLIGI kadar ihlal
+        SAAT_AGIRLIGI.forEach(function (adet, s) {
+          for (let i = 0; i < (s < saat ? adet : 0); i++) zamanlar.push([bas + s * SA + Math.floor(r() * 59) * DK, false]);
+        });
+      } else {
+        const hedef = gun <= ONCEKI_GUNLER.length ? ONCEKI_GUNLER[ONCEKI_GUNLER.length - gun] : 4 + Math.floor(r() * 9);
+        const sonYirmide = olaylar.filter((o) => o.tur === "ihlal" && o.zamanMs >= bas && o.zamanMs < bas + 24 * SA).length;
         // Vardiya saatlerinde (07-19)
-        zamanlar.push(enEski - gun * 24 * SA - Math.floor((1 + r() * 11) * SA) - Math.floor(r() * 59) * DK);
+        for (let i = sonYirmide; i < hedef; i++) {
+          zamanlar.push([bas + Math.floor((7 + r() * 12) * SA) + Math.floor(r() * 59) * DK, false]);
+        }
       }
-      zamanlar.sort((a, b) => b - a);
-      for (const zamanMs of zamanlar) {
+      // Arada bir sistem olayı (ihlal sayısına girmez)
+      const sistem = bas + Math.floor((7 + r() * 12) * SA);
+      if (r() < 0.6 && sistem < simdi) zamanlar.push([sistem, true]);
+      zamanlar.sort((a, b) => b[0] - a[0]);
+      for (const [zamanMs, sistemMi] of zamanlar) {
         const kamera = KAMERALAR[Math.floor(r() * KAMERALAR.length)];
-        if (r() < 0.08) {
+        if (sistemMi) {
           liste.push({
             id: id--,
             zamanMs: zamanMs,
@@ -945,9 +961,16 @@
     return liste;
   }
 
-  function arsivTumu() {
-    if (!arsivOrnekleri) arsivOrnekleri = arsivOrnekleriniKur();
-    return [...olaylar, ...arsivOrnekleri];
+  // Saat dönünce yeniden kurulur: Genel bakışın bugünkü sayısı her saat büyür
+  function arsivTumu(simdi) {
+    const an = simdi || Date.now();
+    const anahtar = arsivBaslangici("bugun", an) + ":" + turkiyeSaati(an);
+    if (!arsivOrnekleri || anahtar !== arsivAnahtari) {
+      arsivOrnekleri = arsivOrnekleriniKur(an);
+      arsivAnahtari = anahtar;
+    }
+    // Bugünün örnekleri son 20 olayın arasına düşebilir: sunucudaki gibi yeniden eskiye
+    return [...olaylar, ...arsivOrnekleri].sort((a, b) => b.zamanMs - a.zamanMs);
   }
 
   function katla(metin) {
@@ -972,7 +995,7 @@
     const bas = arsivBaslangici(donem, simdi);
     const s = (ad) => (sorgu.get(ad) || "").trim();
     const ara = katla(s("ara").slice(0, 80));
-    const donemde = arsivTumu().filter((o) => o.zamanMs >= bas);
+    const donemde = arsivTumu(simdi).filter((o) => o.zamanMs >= bas);
     const uyan = donemde.filter(function (o) {
       if (s("tur") && o.tur !== s("tur")) return false;
       if (s("tip") && olayTipi(o.baslik) !== s("tip")) return false;
@@ -1015,8 +1038,18 @@
     const { donem, bas, donemde, uyan } = arsivSuz(simdi, sorgu);
     const sayfaSayisi = Math.max(1, Math.ceil(uyan.length / ARSIV_SAYFA));
     const sayfa = Math.min(sayfaSayisi, Math.max(1, parseInt(sorgu.get("sayfa"), 10) || 1));
+    const gosterilen = uyan.slice((sayfa - 1) * ARSIV_SAYFA, sayfa * ARSIV_SAYFA);
+    // Sayfadaki günlerin süzgeçteki toplamı (sunucudaki gibi, Türkiye günü "YYYY-AA-GG")
+    const gunAnahtari = (o) => turkiyeGunu(o.zamanMs).split(".").reverse().join("-");
+    const sayfadaki = new Set(gosterilen.map(gunAnahtari));
+    const gunler = {};
+    for (const o of uyan) {
+      const gun = gunAnahtari(o);
+      if (sayfadaki.has(gun)) gunler[gun] = (gunler[gun] || 0) + 1;
+    }
     return {
-      olaylar: uyan.slice((sayfa - 1) * ARSIV_SAYFA, sayfa * ARSIV_SAYFA).map((o) => arsivOlayi(o, simdi)),
+      olaylar: gosterilen.map((o) => arsivOlayi(o, simdi)),
+      gunler: gunler,
       toplam: uyan.length,
       donemde: donemde.length,
       sayfa: sayfa,

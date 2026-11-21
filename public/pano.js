@@ -631,11 +631,19 @@ function panoyuBaslat() {
   // -------------------------------------------------------------- hesabım
 
   /* Kullanıcı adı dar ekranda harf ortasından değil noktadan bölünsün
-     ("fabrika." / "muduru"): ayraçtan sonra <wbr> (metin yine textContent). */
+     ("fabrika." / "muduru"): ayraçtan sonra <wbr> (metin yine textContent).
+     Düzenli ifadede geriye bakış (lookbehind) yok: Safari 16.4'ten eskisi onu
+     ayrıştıramaz ve bütün pano.js çalışmazdı. */
   function adYaz(oge, ad) {
     if (oge.textContent === ad) return;
     temizle(oge);
-    ad.split(/(?<=[._-])/).forEach(function (parca, i) {
+    const parcalar = [""];
+    for (const harf of ad) {
+      parcalar[parcalar.length - 1] += harf;
+      if ("._-".includes(harf)) parcalar.push("");
+    }
+    parcalar.forEach(function (parca, i) {
+      if (!parca) return;
       if (i) oge.appendChild(document.createElement("wbr"));
       oge.appendChild(document.createTextNode(parca));
     });
@@ -723,6 +731,7 @@ function panoyuBaslat() {
       $("cihazlar-ac").hidden = false;
       $("cihazlar-sonuc").textContent = CIHAZLAR_SONUC;
       $("cihazlar-sonuc").hidden = false;
+      $("cihazlar-ac").focus(); // form gizlendi: odak <body>'ye düşmesin
       duyur(CIHAZLAR_SONUC);
     } catch (hata) {
       $("cihazlar-hatasi").textContent = hata.message;
@@ -2135,6 +2144,15 @@ function panoyuBaslat() {
     if (inceleme) incelemeyiCiz(false);
   }
 
+  /* Arşiv sayfası 25 olaydır: bölünen günün başlığı sunucunun bütün gün
+     sayısını gösterir (arsiv.gunler, Türkiye günü "YYYY-AA-GG"). */
+  function grupSayisi(grup, arsiv) {
+    const gunler = arsiv && arsivVerisi && arsivVerisi.gunler;
+    const o = grup.olaylar[0];
+    const anahtar = o.zaman ? gunMetni(o.zaman).split(".").reverse().join("-") : "";
+    return (gunler && gunler[anahtar]) || grup.olaylar.length;
+  }
+
   function olayGruplariniKur(kap, gorunen, arsiv) {
     temizle(kap);
     // Olaylar güne göre gruplanır: Bugün, Dün, 21.10.2026 ...
@@ -2151,7 +2169,7 @@ function panoyuBaslat() {
     for (const grup of gruplar) {
       const bolum = el("section", "olay-grubu");
       bolum.setAttribute("aria-label", grup.gun);
-      bolum.appendChild(el("h2", "", grup.gun + " · " + grup.olaylar.length + " olay"));
+      bolum.appendChild(el("h2", "", grup.gun + " · " + grupSayisi(grup, arsiv) + " olay"));
       const liste = el("ul");
       for (const o of grup.olaylar) liste.appendChild(olaySatiri(o, arsiv));
       bolum.appendChild(liste);
@@ -2267,6 +2285,7 @@ function panoyuBaslat() {
       }
       if (!yanit.ok || !veri.arsiv) {
         $("arsiv-hatasi").textContent = veri.mesaj || "Arşiv yüklenemedi (HTTP " + yanit.status + ").";
+        if (!arsivVerisi) yaz($("arsiv-sonuc"), ""); // "okunuyor" kalmasın
         return;
       }
       arsivVerisi = veri.arsiv;
@@ -2276,7 +2295,9 @@ function panoyuBaslat() {
       // Sayfa değişince liste başına dönülür (telefonda düğme listenin altında)
       if (sayfaDegisti) $("arsiv-paneli").scrollIntoView({ block: "start" });
     } catch (hata) {
-      if (sira === arsivSirasi) $("arsiv-hatasi").textContent = "Siteye ulaşılamıyor.";
+      if (sira !== arsivSirasi) return;
+      $("arsiv-hatasi").textContent = "Siteye ulaşılamıyor.";
+      if (!arsivVerisi) yaz($("arsiv-sonuc"), "");
     } finally {
       if (sira === arsivSirasi) $("arsiv-listesi").setAttribute("aria-busy", "false");
     }
@@ -2361,6 +2382,24 @@ function panoyuBaslat() {
   /* `tam`: olay değişti (fotoğraf ve başlık yeniden); değilse yalnız karar
      alanı ve sayaç (tazelemede fotoğraf yeniden inmesin). */
   function incelemeyiCiz(tam) {
+    incelemeAlaniniCiz(tam);
+    incelemeOdagi();
+  }
+
+  /* Karar düğmesi silinince ya da "Sonraki" sonda kapanınca odak <body>'ye
+     düşmesin: pencerenin içinde kalır (Tab sırası ve ekran okuyucu). */
+  function incelemeOdagi() {
+    const pencere = $("foto-penceresi");
+    const odak = document.activeElement;
+    if (!pencere.open || (odak && odak !== document.body && pencere.contains(odak) && !odak.disabled)) return;
+    const aday =
+      pencere.querySelector(".inceleme-kararlari button:not(:disabled)") ||
+      [$("inceleme-sonraki"), $("inceleme-onceki")].find((d) => !d.disabled) ||
+      $("foto-kapat");
+    aday.focus();
+  }
+
+  function incelemeAlaniniCiz(tam) {
     const o = incelemeOlayi();
     const sayi = inceleme.liste.length;
     if (tam) {
@@ -2473,7 +2512,7 @@ function panoyuBaslat() {
   }
 
   function incelemeTusu(olay) {
-    if (!inceleme || olay.altKey || olay.ctrlKey || olay.metaKey || olay.repeat) return;
+    if (!inceleme || !$("foto-penceresi").open || olay.altKey || olay.ctrlKey || olay.metaKey || olay.repeat) return;
     if (olay.target && /^(INPUT|TEXTAREA|SELECT)$/.test(olay.target.tagName)) return;
     const tus = olay.key;
     if (tus === "ArrowRight") incelemeGit(1);
@@ -2484,7 +2523,8 @@ function panoyuBaslat() {
     olay.preventDefault();
   }
 
-  $("foto-penceresi").addEventListener("keydown", incelemeTusu);
+  // Belgeye bağlı: odak bir an <body>'de kalsa da kısayollar çalışır
+  document.addEventListener("keydown", incelemeTusu);
 
   // ------------------------------------------------------- bilgisayar
 
@@ -4176,6 +4216,11 @@ function panoyuBaslat() {
   function kurulumuCiz() {
     const kart = $("denetim-karti");
     kart.hidden = !yetkili("ekran.kullanicilar");
+    if (kart.hidden) {
+      // Yetki düştü: eski veri ve hata kalmasın; yetki dönünce kart yeniden okunur
+      kurulumVerisi = null;
+      $("denetim-hatasi").textContent = "";
+    }
     // Deneme e-postası yalnız bir e-posta yolu varken (sunucu da yalnız yöneticiye gönderir)
     $("deneme-eposta").hidden = kart.hidden || !kurulumVerisi || !kurulumVerisi.eposta;
     if (kart.hidden || !kurulumVerisi) return;
@@ -4211,6 +4256,13 @@ function panoyuBaslat() {
       const veri = await yanit.json().catch(() => ({}));
       if (yanit.status === 401) {
         oturumuKapat();
+        return;
+      }
+      if (yanit.status === 403) {
+        // İstek eski rolle gitti (rol bu arada düştü): kart sonraki tazelemede gizlenir,
+        // yetki dönünce yeniden okunur; yöneticiye yanlış bir hata kalmasın
+        kurulumVerisi = null;
+        $("denetim-hatasi").textContent = "";
         return;
       }
       if (!yanit.ok || !veri.kurulum) {
@@ -4503,7 +4555,9 @@ function panoyuBaslat() {
   $("giris-kod").addEventListener("input", function () {
     const temiz = this.value.replace(/\D/g, "").slice(0, 6);
     if (temiz !== this.value) {
-      const yer = Math.min(this.selectionStart === null ? temiz.length : this.selectionStart, temiz.length);
+      // İmleç, önündeki rakam sayısı kadar ilerde kalır: atılan harf imleci kaydırmaz
+      const once = this.selectionStart === null ? this.value : this.value.slice(0, this.selectionStart);
+      const yer = Math.min(once.replace(/\D/g, "").length, temiz.length);
       this.value = temiz;
       this.setSelectionRange(yer, yer);
     }

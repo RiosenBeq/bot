@@ -537,8 +537,9 @@ DENEME_EPOSTA_SAYAC_ONEKI = "dalsan:kayit:sinir:eposta:"
 # ---- Haftalık özet e-postası (Kod maddesi 4) - opt-in: HAFTALIK_OZET=acik
 # Yeni cron ya da işlev yok: bekçinin çağrısına (Vercel Cron günde bir, 08:00
 # Türkiye) biner. Pazartesi HAFTALIK_OZET_SAAT'ten sonraki ilk çağrı geçen
-# haftanın (pazartesi-pazar) özetini gönderir; işaret hafta başına SET NX EX'tir,
-# aynı hafta ikinci kez gitmez. SMTP ayarları ve gönderim bekçiyle ortaktır.
+# haftanın (pazartesi-pazar) özetini gönderir (gidemezse sonraki sabahlar yeniden
+# dener); işaret hafta başına SET NX EX'tir, aynı hafta ikinci kez gitmez. SMTP
+# ayarları ve gönderim bekçiyle ortaktır.
 HAFTALIK_OZET_DEGERLERI = ("acik", "kapali")
 HAFTALIK_OZET_ONEKI = "dalsan:haftalik_ozet:"  # + haftanın pazartesisi (YYYY-AA-GG)
 HAFTALIK_OZET_SON_ANAHTARI = "dalsan:haftalik_ozet:son"  # son gönderimin anı
@@ -1742,7 +1743,7 @@ def _uye_metni(kayit: dict) -> str:
 
 
 def arsiv_uyeleri(rapor: dict) -> dict[str, tuple[int, str]]:
-    """Raporun olayları arşiv üyesi olarak: {"<tesis>|<id>": (zaman, üye)}.
+    """Raporun olayları arşiv üyesi olarak: {"<id>|<zaman>": (zaman, üye)}.
     Üye yalnız ekranın ve CSV'nin gösterdiği kısa alanlardır (fotoğraf değil).
     Kimliği ya da zamanı olmayan olay atlanır (tekilleştirilemez). Süren olayın
     süresi yazılmaz: program onu her raporda büyütür, arşiv her raporda yeniden
@@ -1777,12 +1778,17 @@ def arsiv_uyeleri(rapor: dict) -> dict[str, tuple[int, str]]:
         if tesis:
             kayit["tesis"] = tesis
         kisa = {ad: deger for ad, deger in kayit.items() if deger != "" and deger is not False}
-        uyeler[f"{tesis}|{olay['id']}"] = (an, _uye_metni(kisa))
+        uyeler[_uye_anahtari(kisa)] = (an, _uye_metni(kisa))
     return uyeler
 
 
 def _uye_anahtari(kayit: dict) -> str:
-    return f"{kayit.get('tesis') or ''}|{kayit.get('id')}"
+    """Tekilleştirme anahtarı: olay kimliği + olayın zamanı (program zamanı hiç
+    değiştirmez). Yalnız kimlik yetmez: program yeniden kurulup kimlikler 1'den
+    başlarsa yeni olay 90 günlük arşivdeki eskisinin altında kaybolurdu. Tesis
+    girmez: arşive yalnız ana tesisin raporu yazar; tesis kimliği sonradan
+    yazılınca son olaylar çift görünmesin (inceleme 20.11.2026)."""
+    return f"{kayit.get('id')}|{kayit.get('zaman')}"
 
 
 def arsiv_komutlari(rapor: dict, ham_iz: object, simdi: float) -> list[list[str]]:
@@ -1790,8 +1796,8 @@ def arsiv_komutlari(rapor: dict, ham_iz: object, simdi: float) -> list[list[str]
 
     İz (ARSIV_IZ_ANAHTARI) son yazılan raporun üyeleridir (JSON dizisi) ve
     raporun MGET'inde okunur. Değişen olayın (bitti, incelendi, kamera adı
-    değişti) eski üyesi ZREM ile çıkar, yenisi ZADD ile girer: tesis + olay
-    kimliği başına tek üye.
+    değişti) eski üyesi ZREM ile çıkar, yenisi ZADD ile girer: olay kimliği +
+    zamanı başına tek üye (_uye_anahtari).
     Yeni olay geldiyse küme aynı boru hattında kırpılır: ARSIV_GUN'den eskiler
     ve ARSIV_EN_COK'tan fazlası (en eskiler) gider; anahtarlar ARSIV_GUN sonra
     kendiliğinden düşer (rapor gelmezse). Komutlar: yeni olayda 5, durum
@@ -2803,13 +2809,17 @@ def bekci_isle(
 
 def haftalik_ozet_haftasi(simdi: float) -> str | None:
     """Gönderim zamanıysa bu haftanın pazartesisi ("YYYY-AA-GG"), değilse None:
-    Türkiye saatiyle pazartesi, HAFTALIK_OZET_SAAT ve sonrası. Vercel Cron
-    05:00 UTC'de (08:00 Türkiye) çağırır; 5 dakikada bir çağıran dış izleme
-    servisi varsa özet gece yarısı değil sabah gider."""
+    Türkiye saatiyle pazartesi HAFTALIK_OZET_SAAT ve sonrası; o hafta gidemediyse
+    salı-pazar her sabah HAFTALIK_OZET_SAAT'in saati içinde yeniden denenir
+    (inceleme 20.11.2026: tek tetikleyici günde bir çalışan Vercel Cron'dur,
+    pazartesi gidemeyen özet yoksa hiç gitmezdi). Vercel Cron 05:00 UTC'de
+    (08:00 Türkiye; Hobby'de o saatin içinde) çağırır; 5 dakikada bir çağıran
+    dış izleme servisi varsa özet gece yarısı değil sabah gider, öbür günler
+    yalnız o bir saatte işaret yoklanır (SET NX, çağrı başına bir komut)."""
     an = datetime.fromtimestamp(simdi, TURKIYE_SAATI)
-    if an.weekday() != 0 or an.hour < HAFTALIK_OZET_SAAT:
+    if an.hour < HAFTALIK_OZET_SAAT or (an.weekday() and an.hour != HAFTALIK_OZET_SAAT):
         return None
-    return an.strftime("%Y-%m-%d")
+    return (an - timedelta(days=an.weekday())).strftime("%Y-%m-%d")
 
 
 def _pazartesi_gecesi(simdi: float) -> int:
@@ -2949,12 +2959,13 @@ def haftalik_ozet_isle(
     gonder: Callable[..., int] | None = None,
 ) -> dict:
     """Haftalık özetin çekirdeği (HTTP'siz, test edilebilir); bekçinin çağrısı
-    çalıştırır. Kapalıysa ya da gönderim zamanı değilse komut harcamaz. Pazartesi
-    08:00'den sonra işaret bekçideki gibi önce kısa bir kilittir (SET NX EX):
-    eşzamanlı ikinci çağrı göndermez; ilk e-posta gidince işaret bir haftayı aşar
-    ve son gönderim anı yazılır (Kurulum denetimi kartı okur), hiçbiri gidemezse
-    silinir (sonraki çağrı yeniden dener). Veri tek boru hattında okunur: arşivin
-    son 14 günü ve panonun son raporu."""
+    çalıştırır. Kapalıysa ya da gönderim zamanı değilse (haftalik_ozet_haftasi)
+    komut harcamaz. Gönderim zamanında işaret bekçideki gibi önce kısa bir
+    kilittir (SET NX EX): eşzamanlı ikinci çağrı göndermez; ilk e-posta gidince
+    işaret bir haftayı aşar ve son gönderim anı yazılır (Kurulum denetimi kartı
+    okur; uzatma düştüyse gönderimden sonra bir kez daha denenir), hiçbiri
+    gidemezse silinir (sonraki çağrı yeniden dener). Veri tek boru hattında
+    okunur: arşivin son 14 günü ve panonun son raporu."""
     if ayar.haftalik_ozet != "acik":
         return {"atlandi": True}
     hafta = haftalik_ozet_haftasi(simdi)
@@ -2976,13 +2987,16 @@ def haftalik_ozet_isle(
     veri = pano_verisi(depo, ayar, simdi, okunan)
     ozet = haftalik_ozet_icerigi(arsiv_coz(ham_olaylar), veri, gece)
     konu, metin, html_metni = haftalik_ozet_metni(ozet, ayar.pano_adresi)
-    uzat = partial(
-        depo.boru_hatti,
-        [
-            ["EXPIRE", isaret, str(HAFTALIK_OZET_ISARET_SN)],
-            _set_komutu(HAFTALIK_OZET_SON_ANAHTARI, str(int(simdi)), None),
-        ],
-    )
+    uzatma = [
+        ["EXPIRE", isaret, str(HAFTALIK_OZET_ISARET_SN)],
+        _set_komutu(HAFTALIK_OZET_SON_ANAHTARI, str(int(simdi)), None),
+    ]
+    uzatildi: list[bool] = []
+
+    def uzat() -> None:
+        depo.boru_hatti(uzatma)
+        uzatildi.append(True)
+
     gonder = gonder or bekci_uyari_gonder
     sayi = gonder(
         ayar,
@@ -2996,6 +3010,13 @@ def haftalik_ozet_isle(
     if not sayi:
         depo.sil(isaret)  # hiçbiri gidemedi: sonraki çağrı yeniden denesin
         return {"gonderildi": False, "sebep": "gidemedi"}
+    if not uzatildi:
+        # İlk e-postadan sonraki uzatma geçici bir depo hatasıyla düştüyse bir kez
+        # daha (bekçideki gibi): yoksa kilit 5 dakikada kalkar, özet ikinci kez gider
+        try:
+            uzat()
+        except DepoHatasi as hata:
+            print(f"Haftalık özet işareti uzatılamadı: {_hata_ozeti(hata)}", file=sys.stderr)
     print(f"Haftalık özet {sayi} alıcıya gönderildi.", file=sys.stderr)
     return {"gonderildi": True, "gonderilen": sayi, "hafta": hafta}
 
@@ -3815,19 +3836,40 @@ def _sifre_yenile(depo: UpstashDepo | BellekDepo, ad: str, eski: dict, sifre: st
         return
 
 
+def _maliyeti_tamamla(kayit_sifre: object, basladi: float) -> None:
+    """Eski (n < SCRYPT_N) özetli hesapta yanlış şifre, bilinmeyen addaki sahte
+    doğrulamadan (SCRYPT_N) kısa sürmesin: cevap, sahte doğrulamanın bu işlevde
+    ölçülen süresine kadar bekletilir; varlık zamanlamadan sızmaz (docs/19 §3.2;
+    inceleme 20.11.2026). scrypt'in süresi n ile doğrusal değil (2^15 bu makinede
+    2^14'ün ~2,4 katı): eksik maliyeti n ile ödemek farkı kapatmazdı. Ölçü yoksa
+    (işlevin ilk denemesi) sahte doğrulama bir kez çalışıp ölçüyü kurar."""
+    if not sifre_yenilenmeli(kayit_sifre):
+        return
+    if _SAHTE_SURE is None:
+        _sahte_dogrula("")
+        return
+    kalan = _SAHTE_SURE - (time.monotonic() - basladi)
+    if kalan > 0:
+        time.sleep(kalan)
+
+
 _SAHTE_KAYIT: dict | None = None
+_SAHTE_SURE: float | None = None  # sahte doğrulamanın son ölçülen süresi (sn)
 
 
 def _sahte_dogrula(sifre: object) -> None:
     """Bilinmeyen ad ve kurucuda da gerçek hesapla aynı maliyette çalışır:
     varlık, zamanlamadan sızmaz (docs/19 §3.2). Yeni bir işlevin ilk çağrısında
     kaydı kurmak da tek özet çalıştırır; o çağrı ayrıca doğrulamaz (iki özet,
-    soğuk başlangıçta adın olmadığını sızdırırdı)."""
-    global _SAHTE_KAYIT
+    soğuk başlangıçta adın olmadığını sızdırırdı). Süresi _maliyeti_tamamla
+    için ölçülür."""
+    global _SAHTE_KAYIT, _SAHTE_SURE
+    basladi = time.monotonic()
     if _SAHTE_KAYIT is None:
         _SAHTE_KAYIT = sifre_ozetle("sahte-parola-zaman-esitleme")
-        return
-    sifre_dogrula(_SAHTE_KAYIT, sifre if isinstance(sifre, str) else "")
+    else:
+        sifre_dogrula(_SAHTE_KAYIT, sifre if isinstance(sifre, str) else "")
+    _SAHTE_SURE = time.monotonic() - basladi
 
 
 # -------------------------------------------- iki adımlı doğrulama (öneri 6)
@@ -4332,6 +4374,7 @@ def giris_dene(
         ):
             oturum_bilgi, rol = (KURUCU_AD, "kurucu", 0), "yonetici"
     elif hesap is not None and _ad_gecerli_mi(ad) and hesap.get("acik") is True:
+        basladi = time.monotonic()
         if sifre_dogrula(hesap.get("sifre"), sifre):
             oturum_bilgi = (
                 ad,
@@ -4339,6 +4382,8 @@ def giris_dene(
                 _tam(hesap.get("oturum_surumu"), 0, 10**12),
             )
             rol = _secim(hesap.get("rol"), ROLLER)
+        else:
+            _maliyeti_tamamla(hesap.get("sifre"), basladi)
     else:
         _sahte_dogrula(sifre)
     hata, hata_ozeti = ("giris_hatali", GIRIS_HATALI_METNI), ""
@@ -4853,11 +4898,19 @@ def durum(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     return 200, veri, None
 
 
+def _arsiv_gunu(olay: dict) -> str:
+    try:
+        return _turkiye_gunu(datetime.fromisoformat(olay["zaman"]).timestamp())
+    except (TypeError, ValueError):
+        return ""
+
+
 def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     """GET /api/durum?arsiv=1 - olay arşivi (Olaylar > Arşiv); olayları gören
     her rol (oturum yeter). Süzgeç: `donem` (bugun, 7, 30, 90), `tur`, `tip`,
     `yer`, `durum`, `ara`; `sayfa` (ARSIV_SAYFA'lık). Dönemdeki türler ve
-    kameralar süzgeç seçenekleri olarak gelir. `&bicim=csv`: süzgeçten geçen
+    kameralar süzgeç seçenekleri olarak gelir; `gunler` sayfadaki her günün
+    süzgeçteki toplamıdır (gün başlığı). `&bicim=csv`: süzgeçten geçen
     bütün olaylar CSV dosyası olarak iner (Content-Disposition: attachment;
     iPhone Safari'de de bağlantıyla iner).
     İki okuma: oturum ve fotoğraf listesi tek MGET'te, dönem tek ZREVRANGEBYSCORE."""
@@ -4892,12 +4945,21 @@ def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     gosterilen = olaylar[(sayfa - 1) * ARSIV_SAYFA : sayfa * ARSIV_SAYFA]
     for olay in gosterilen:
         olay["foto"] = olay["tur"] == "ihlal" and olay["id"] in fotolar
+    # Sayfadaki günlerin süzgeçteki toplamı: sayfaya bölünen günün başlığı da
+    # bütün günü sayar (Türkiye günü, "YYYY-AA-GG"; pano.js olayGruplariniKur)
+    gunler: dict[str, int] = {}
+    sayfadaki = {_arsiv_gunu(olay) for olay in gosterilen}
+    for olay in olaylar:
+        gun = _arsiv_gunu(olay)
+        if gun and gun in sayfadaki:
+            gunler[gun] = gunler.get(gun, 0) + 1
     tipler = {olay_tipi(o["baslik"]) for o in donemdeki if o["tur"] == "ihlal"}
     return (
         200,
         {
             "arsiv": {
                 "olaylar": gosterilen,
+                "gunler": gunler,
                 "toplam": len(olaylar),
                 "donemde": len(donemdeki),
                 "sayfa": sayfa,

@@ -182,6 +182,43 @@ def test_yeni_ozet_daha_guclu_eski_ozet_gecerli_ve_giriste_yenilenir(monkeypatch
     assert _pano.hesap_oku(depo, "ali")["sifre"] == yeni  # ikinci kez özetlenmez
 
 
+def test_eski_ozetli_hesapta_yanlis_sifre_bilinmeyen_ad_kadar_surer(monkeypatch):
+    """docs/19 §3.2: varlık zamanlamadan sızmaz. Eski (n=2^14) özetli hesapta
+    yanlış şifre, bilinmeyen addaki sahte doğrulamanın (n=2^15) ölçülen süresine
+    kadar bekletilir; yeni özetli hesapta ve bilinmeyen adda bekleme yok."""
+    with monkeypatch.context() as m:
+        m.setattr(_pano, "SCRYPT_N", 2**14)
+        eski = _pano.sifre_ozetle("dogru-sifre-1")
+    depo, ayar = _pano.BellekDepo(), _ayar()
+    _yaz_hesap(depo, {**_hesap("ali"), "sifre": eski})
+    _yaz_hesap(depo, _hesap("veli", sifre="dogru-sifre-2"))
+    beklemeler = []
+    monkeypatch.setattr(_pano.time, "sleep", beklemeler.append)
+    monkeypatch.setattr(_pano, "_SAHTE_SURE", 5.0)
+    for sira, ad in enumerate(("veli", "ali", "yok-boyle-biri")):
+        with pytest.raises(_pano.PanoHatasi):
+            _pano.giris_dene(depo, ayar, f"10.0.0.{sira}", ad, "yanlis-sifre", T0)
+    assert len(beklemeler) == 1 and 4.5 < beklemeler[0] < 5.0
+    # Ölçü yoksa (işlevin ilk denemesi) sahte doğrulama bir kez çalışıp ölçüyü kurar
+    monkeypatch.setattr(_pano, "_SAHTE_SURE", None)
+    with pytest.raises(_pano.PanoHatasi):
+        _pano.giris_dene(depo, ayar, "10.0.0.9", "ali", "yanlis-sifre", T0)
+    assert len(beklemeler) == 1 and _pano._SAHTE_SURE > 0
+    # Gerçek süre: eski özetli yanlış şifre, sahte doğrulamadan belirgin kısa değil
+    monkeypatch.undo()
+    _pano._sahte_dogrula("isitma")
+
+    def sure(ad, sira):
+        basladi = time.perf_counter()
+        with pytest.raises(_pano.PanoHatasi):
+            _pano.giris_dene(depo, ayar, f"10.0.1.{sira}", ad, "yanlis-sifre", T0)
+        return time.perf_counter() - basladi
+
+    eski_sure = min(sure("ali", sira) for sira in range(3))
+    yok_sure = min(sure("yok-boyle-biri", 10 + sira) for sira in range(3))
+    assert eski_sure > 0.7 * yok_sure, (eski_sure, yok_sure)  # düzeltmeden önce ~0,4
+
+
 def test_yeniden_ozet_arada_degisen_sifreye_dokunmaz():
     depo = _pano.BellekDepo()
     _yaz_hesap(depo, _hesap("ali", sifre="yeni-sifre-2"))

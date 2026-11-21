@@ -254,13 +254,16 @@ Buradan alınanlar, sade haliyle:
   olayları; dönem (bugün, 7, 30, 90 gün), Tümü / İhlal / Sistem, olay türü
   (ölçümsüz başlık: "Araç-yaya yakınlığı"), kamera ve durum süzgeci, metin
   arama (büyük/küçük ve Türkçe harf farkı gözetmez; ayrıntıda ve olay
-  numarasında da arar), 25'lik sayfalar. **CSV indir** süzgeçten geçen bütün
+  numarasında da arar), 25'lik sayfalar (sayfaya bölünen günün başlığı bütün
+  günün sayısını gösterir). **CSV indir** süzgeçten geçen bütün
   olayları Excel'in açtığı dosya olarak indirir (UTF-8 BOM, `;` ayraç, Türkçe
   başlık, Türkiye saati; formül gibi başlayan hücre `'` ile etkisizleşir):
   `GET /api/durum?arsiv=1&...&bicim=csv`, `Content-Disposition: attachment`,
   yani iPhone Safari'de de bağlantıyla iner. Olayları gören her rol indirir.
-  Arşiv yalnız ana tesisin olaylarını tutar (pano da yalnız onu gösterir) ve
-  raporlardaki son 20 olaydan birikir: site kapalıyken ya da iki rapor arasında
+  Arşiv yalnız ana tesisin olaylarını tutar (pano da yalnız onu gösterir),
+  olayı kimliği ve zamanıyla tekilleştirir (program yeniden kurulup kimlikler
+  1'den başlasa da eski olay yenisini gizlemez) ve raporlardaki son 20 olaydan
+  birikir: site kapalıyken ya da iki rapor arasında
   20'den fazla olay olursa aradakiler eksik kalır (asılları fabrikadadır).
 - **İnceleme modu** (operatör+, 20.11.2026): bekleyen ihlal varken Olaylar'da
   "İncelemeye başla" çıkar; ihlaller fotoğraf penceresinde büyük kanıtla tek
@@ -515,7 +518,8 @@ gelmemiş kurulumda uyarmaz.
 yoktur: özet bekçinin çağrısına biner (Vercel Cron 08:00 Türkiye; dış izleme
 servisi de çağırıyorsa pazartesi 08:00'den sonraki ilk çağrı). Hafta başına bir
 işaret tutulur (`SET NX`): aynı hafta ikinci kez gitmez; hiçbir alıcıya
-gidemezse işaret silinir ve sonraki çağrı yeniden dener. `BEKCI` kapalı olsa da
+gidemezse işaret silinir ve sonraki çağrı yeniden dener (pazartesi gidemezse
+salı-pazar her sabah 08:00-09:00 arası; o haftanın özeti yine geçen haftadır). `BEKCI` kapalı olsa da
 çalışır; çağıracak anahtar (`CRON_SECRET` ya da `BEKCI_ANAHTARI`) gerekir.
 
 | Ad | Not |
@@ -745,8 +749,9 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   35 bin. `BEKCI=acik` rapor başına komut eklemez: "haber yok" işareti raporun
   zaten yaptığı okumayla (aynı `MGET`) okunur; yalnız bir kesintiden sonraki ilk
   raporda bir `DEL` gider. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder;
-  site 10 kullanır. **Haftalık özet** pazartesi dışında komut harcamaz;
-  pazartesi 08:00'den sonraki her bekçi çağrısı 1 komut (hafta işareti),
+  site 10 kullanır. **Haftalık özet** pazartesi 08:00'den sonraki ve öbür
+  günler 08:00-09:00 arasındaki her bekçi çağrısında 1 komut (hafta işareti),
+  başka zaman hiç komut harcamaz;
   gönderim 3 istekte 5 komut (işaret, arşivin son 14 günü ve son rapor tek boru
   hattında, işaretin uzaması ve son gönderim anı).
 - **Birden çok tesis:** tesis kimliği taşıyan rapor 3 yerine 10 komuttur (2
@@ -861,7 +866,9 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
 - **Şifre saklama:** Hesap şifreleri açık değil, hesap başına rastgele tuzla
   `scrypt` (n=2^15, ~32 MB; yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma
   sabit sürede yapılır. Eski n=2^14 özetler geçerlidir ve sahibinin ilk başarılı
-  girişinde yeni maliyetle yeniden yazılır (20.11.2026). Kurucunun şifresi
+  girişinde yeni maliyetle yeniden yazılır (20.11.2026); o zamana kadar yanlış
+  şifrenin cevabı bilinmeyen addaki sahte doğrulamanın süresine kadar bekletilir
+  (hesabın varlığı zamanlamadan sızmaz). Kurucunun şifresi
   (`PANO_SIFRESI`) yalnız Vercel'dedir.
 - **Onay şifresi:** Yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma ve
   her hesap işi (ekleme, rol,

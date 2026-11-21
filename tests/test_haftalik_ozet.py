@@ -3,7 +3,8 @@
 Opt-in (HAFTALIK_OZET=acik); yeni cron ya da işlev yok: bekçinin çağrısına
 biner. Türkiye saatiyle pazartesi 08:00'den sonraki ilk çağrı geçen haftanın
 (pazartesi-pazar) özetini bir kez gönderir; aynı hafta ikinci çağrı göndermez,
-hiçbir alıcıya gidemezse sonraki çağrı yeniden dener. İçerik arşivdeki olayların
+hiçbir alıcıya gidemezse sonraki çağrı (öbür günler 08:00-09:00 arası) yeniden
+dener. İçerik arşivdeki olayların
 sayılarıdır: fotoğraf, olay ayrıntısı ve sır girmez. Ağ yok: gönderenler sahtedir."""
 
 import json
@@ -120,15 +121,18 @@ def test_ayar_opt_in_turkce_yazilabilir_alicilar_bekciden_duser():
     )
 
 
-def test_gonderim_zamani_yalniz_pazartesi_sabahi_turkiye_saatiyle():
+def test_gonderim_zamani_pazartesi_sabahi_turkiye_saatiyle_sonra_her_sabah_bir_saat():
     def an(gun, saat, dakika=0):
         return datetime(2026, 11, gun, saat, dakika, tzinfo=TR).timestamp()
 
     assert _pano.haftalik_ozet_haftasi(an(23, 7, 59)) is None
     assert _pano.haftalik_ozet_haftasi(an(23, 8)) == "2026-11-23"
     assert _pano.haftalik_ozet_haftasi(an(23, 23, 59)) == "2026-11-23"
-    for gun in range(24, 30):  # salı-pazar
+    for gun in range(24, 30):  # salı-pazar: yalnız 08:00-08:59, aynı haftanın pazartesisi
+        assert _pano.haftalik_ozet_haftasi(an(gun, 7, 59)) is None
+        assert _pano.haftalik_ozet_haftasi(an(gun, 8, 30)) == "2026-11-23"
         assert _pano.haftalik_ozet_haftasi(an(gun, 9)) is None
+    assert _pano.haftalik_ozet_haftasi(an(30, 8)) == "2026-11-30"
     # Vercel Cron 05:00 UTC = 08:00 Türkiye
     utc = datetime.fromisoformat("2026-11-23T05:00:00+00:00").timestamp()
     assert _pano.haftalik_ozet_haftasi(utc) == "2026-11-23"
@@ -184,8 +188,8 @@ def test_bos_hafta_ve_calisma_yoksa_da_okunur_ozet():
 def test_hafta_basina_bir_kez_baska_gun_komut_harcamaz():
     depo = _arsivli_depo()
     ayar, gonder = _ozet_ayari(), OzetGonderici()
-    # Pazartesi 08:00'den önce ve salı: hiçbir komut yok
-    for simdi in (PAZARTESI - 11 * 60, PAZARTESI + GUN):
+    # Pazartesi 08:00'den önce ve salı 09:10: hiçbir komut yok
+    for simdi in (PAZARTESI - 11 * 60, PAZARTESI + GUN + 3600):
         assert _pano.haftalik_ozet_isle(depo, ayar, simdi, gonder)["sebep"] == "zamani_degil"
     assert depo.istek == 0 and gonder.cagrilar == []
     # Kapalıyken de
@@ -203,6 +207,10 @@ def test_hafta_basina_bir_kez_baska_gun_komut_harcamaz():
     sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + 3600, gonder)
     assert sonuc == {"gonderildi": False, "sebep": "bu_hafta_gitti"} and depo.istek == 1
     assert len(gonder.cagrilar) == 1
+    # Salı sabahı (yeniden deneme saati) gitmiş haftada tek SET NX
+    depo.istek = 0
+    sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + GUN, gonder)
+    assert sonuc == {"gonderildi": False, "sebep": "bu_hafta_gitti"} and depo.istek == 1
     # Ertesi pazartesi yeniden gider
     assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + 7 * GUN, gonder)["gonderildi"]
     assert len(gonder.cagrilar) == 2
@@ -224,6 +232,58 @@ def test_hic_gidemezse_isaret_silinir_sonraki_cagri_yeniden_dener():
         "gonderildi": False,
         "sebep": "alici_yok",
     }
+
+
+def test_pazartesi_gidemeyen_ozet_sali_sabahi_gider():
+    """Tek tetikleyici günde bir çalışan Vercel Cron'dur: pazartesi hiçbir
+    alıcıya gidemeyen özet salı 08:00 çağrısında aynı hafta için gider."""
+    depo = _arsivli_depo()
+    ayar = _ozet_ayari()
+    assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, OzetGonderici(sonuc=0))["sebep"] == (
+        "gidemedi"
+    )
+    gonder = OzetGonderici()
+    sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + GUN, gonder)
+    assert sonuc == {"gonderildi": True, "gonderilen": 1, "hafta": "2026-11-23"}
+    # İçerik yine geçen haftadır (16-22.11), salı değil
+    assert gonder.cagrilar[0][1] == "Haftalık özet: Fabrika, 16.11 - 22.11.2026: 4 ihlal"
+    assert depo.komut("GET", _pano.HAFTALIK_OZET_SON_ANAHTARI) == str(int(PAZARTESI + GUN))
+
+
+def test_isaret_uzatilamazsa_gonderimden_sonra_bir_kez_daha_denenir():
+    """İlk e-postadan sonraki uzatma geçici bir depo hatasıyla düşerse işaret
+    gönderimden sonra yeniden uzatılır: 5 dakikalık kilit kalkıp özet bütün
+    alıcılara ikinci kez gitmez."""
+
+    class BirKezDusen(SayanDepo):
+        dustu = False
+
+        def boru_hatti(self, komutlar):
+            if komutlar[0][0] == "EXPIRE" and not self.dustu:
+                self.dustu = True
+                raise _pano.DepoHatasi("Upstash geçici hata")
+            return super().boru_hatti(komutlar)
+
+    giden = []
+
+    def gonder(ayar, alicilar, konu, metin, basarida=None, html_metni="", ne=""):
+        # Gerçek alıcı döngüsü (basarida'nın hatasını yutar), sahte e-posta
+        return _pano._alicilara_gonder(
+            ayar, alicilar, konu, metin, lambda _a, alici, *_: giden.append(alici), basarida, ne
+        )
+
+    saat = [PAZARTESI]
+    depo = BirKezDusen(lambda: saat[0])
+    ayar = _ozet_ayari()
+    assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, gonder)["gonderilen"] == 2
+    assert depo.dustu
+    assert depo.komut("TTL", "dalsan:haftalik_ozet:2026-11-23") > 7 * GUN
+    assert depo.komut("GET", _pano.HAFTALIK_OZET_SON_ANAHTARI) == str(int(PAZARTESI))
+    # Kilit süresi (300 sn) geçtikten sonraki çağrı göndermez
+    saat[0] = PAZARTESI + 301
+    sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + 301, gonder)
+    assert sonuc == {"gonderildi": False, "sebep": "bu_hafta_gitti"}
+    assert giden == ["sef@ornek.com.tr", "mudur@ornek.com.tr"]
 
 
 def test_eposta_duz_metin_ve_html_tek_smtp_oturumunda_ek_yok(monkeypatch, capsys):
