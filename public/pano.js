@@ -151,6 +151,7 @@ function panoyuBaslat() {
     iki_adim_ac: "İki adımlı doğrulama açıldı",
     iki_adim_kapat: "İki adımlı doğrulama kapatıldı",
     iki_adim_sifirla: "İki adımlı doğrulama sıfırlandı",
+    diger_cihazlardan_cik: "Diğer cihazlardan çıkıldı",
     komut: "Komut gönderildi",
     komut_sonuc: "Komut sonucu",
     komut_dustu: "Komut düştü",
@@ -222,6 +223,8 @@ function panoyuBaslat() {
   let onizleme = false; // önizleme yayını mı
   let hesapVerisi = null; // GET /api/hesap (kullanıcılar + işlem kaydı)
   let hesapIstekSuruyor = false;
+  let kurulumVerisi = null; // GET /api/hesap?islem=kurulum (Kurulum denetimi kartı)
+  let kurulumIstekSuruyor = false;
   let kullaniciBolumu = "hesaplar";
   let acikHesap = null; // işlem paneli açık hesabın adı
   let acikIslem = null; // açık paneldeki iş: rol | sifre | durum | iki_adim | sil
@@ -518,6 +521,7 @@ function panoyuBaslat() {
     sonVeri = null;
     oturum = null;
     hesapVerisi = null;
+    kurulumVerisi = null;
     tekEkranGoster("giris");
     girisAdiminaDon();
     $("oturum-bandi").hidden = !oturumDustu;
@@ -606,6 +610,14 @@ function panoyuBaslat() {
     if (kurucu) $("hesabim-formu").hidden = true;
     $("hesabim-kurucu").hidden = !kurucu;
     if (kurucu) $("hesabim-kurucu").textContent = KURUCU_HESABIM;
+    // Diğer cihazlar: kurucunun oturum sürümü yoktur (PANO_SIFRESI değişince
+    // bütün oturumları düşer; KURUCU_HESABIM bunu söyler)
+    $("cihazlar-karti").hidden = kurucu;
+    if (kurucu) $("cihazlar-formu").hidden = true;
+    $("cihazlar-ac").hidden = kurucu || !$("cihazlar-formu").hidden;
+    const son = oturum.son_giris;
+    $("son-giris").hidden = !son;
+    if (son) yaz($("son-giris"), "Hesabınıza son giriş: " + (gunEtiketi(son) ? "" : "bugün ") + tarihSaatMetni(son));
     ikiAdimCiz();
   }
 
@@ -623,6 +635,55 @@ function panoyuBaslat() {
     $("yeni-sifre").value = "";
     $("sifre-ac").hidden = false;
     $("sifre-ac").focus();
+  });
+
+  // ------------------------------------------------------ diğer cihazlar
+
+  const CIHAZLAR_SONUC = "Diğer cihazlardaki oturumlarınız kapatıldı; bu cihaz açık kalır.";
+
+  /* Kendi hesabının öbür bütün oturumlarını kapatır (Kod maddesi 7): şifreyle
+     onaylanır; sunucu bu cihaza yeni çerez verir, sayfa yenilenmeden sürer. */
+  $("cihazlar-ac").addEventListener("click", function () {
+    $("cihazlar-sonuc").hidden = true;
+    $("cihazlar-hatasi").textContent = "";
+    $("cihazlar-formu").hidden = false;
+    this.hidden = true;
+    $("cihazlar-sifre").focus();
+  });
+
+  $("cihazlar-vazgec").addEventListener("click", function () {
+    $("cihazlar-formu").hidden = true;
+    $("cihazlar-sifre").value = "";
+    $("cihazlar-hatasi").textContent = "";
+    $("cihazlar-ac").hidden = false;
+    $("cihazlar-ac").focus();
+  });
+
+  $("cihazlar-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("cihazlar-hatasi").textContent = "";
+    const sifre = $("cihazlar-sifre").value;
+    $("cihazlar-sifre").toggleAttribute("aria-invalid", !sifre);
+    if (!sifre) {
+      $("cihazlar-hatasi").textContent = "Onaylamak için şu anki şifrenizi yazın.";
+      $("cihazlar-sifre").focus();
+      return;
+    }
+    const dugme = $("cihazlar-dugmesi");
+    dugme.disabled = true;
+    try {
+      await hesapIslem({ eylem: "diger_cihazlardan_cik", sifre: sifre });
+      $("cihazlar-sifre").value = "";
+      $("cihazlar-formu").hidden = true;
+      $("cihazlar-ac").hidden = false;
+      $("cihazlar-sonuc").textContent = CIHAZLAR_SONUC;
+      $("cihazlar-sonuc").hidden = false;
+      duyur(CIHAZLAR_SONUC);
+    } catch (hata) {
+      $("cihazlar-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
   });
 
   // ------------------------------------------------- iki adımlı doğrulama
@@ -910,6 +971,7 @@ function panoyuBaslat() {
     }
     if (g === "olaylar" && sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
     if (g === "kullanicilar" && gorunumYetkili("kullanicilar")) hesaplariYukle();
+    if (kurulumAcik()) kurulumuYukle();
     if (tesislerAcik()) {
       if (!sonVeri || !sonVeri.filo) tesisIskeleti();
       yukle();
@@ -3535,6 +3597,173 @@ function panoyuBaslat() {
     if (adres) bag.href = adres;
   }
 
+  // ------------------------------------------------------ kurulum denetimi
+
+  /* Sistem ekranındaki "Kurulum denetimi" kartı (yalnız yönetici; sunucuda da
+     ekran.kullanicilar). Sunucu yalnız evet/hayır ve sayı verir, hiçbir ayarın
+     değerini vermez; cümleleri burası kurar. Fabrika raporu satırı panonun
+     kendi bağlantı durumundan gelir, her tazelemede güncellenir. */
+  function kurulumAcik() {
+    return aktifGorunum === "sistem" && yetkili("ekran.kullanicilar");
+  }
+
+  const VERCEL_AYARI = "Vercel > Settings > Environment Variables";
+
+  /* [ad, tamam mı, ne yapılacağı] satırları */
+  function kurulumSatirlari(k, baglanti) {
+    const satirlar = [];
+    satirlar.push(
+      k.oturum_anahtari
+        ? ["Oturum anahtarı", true, "OTURUM_ANAHTARI yazılı; oturum çerezinin imzasına katılıyor."]
+        : [
+            "Oturum anahtarı",
+            false,
+            (k.oturum_anahtari_kisa ? "OTURUM_ANAHTARI 32 karakterden kısa olduğu için yok sayılıyor. " : "") +
+              VERCEL_AYARI +
+              ": en az 32 karakterlik rastgele bir OTURUM_ANAHTARI yazın, sonra Redeploy. Bütün oturumlar bir kez kapanır.",
+          ]
+    );
+    let bekci;
+    if (k.bekci_gecersiz) {
+      bekci = [false, "BEKCI değeri tanınmıyor. " + VERCEL_AYARI + ": BEKCI=acik yazın, sonra Redeploy."];
+    } else if (!k.bekci) {
+      bekci = [
+        false,
+        VERCEL_AYARI +
+          ": BEKCI=acik ve en az 16 karakterlik BEKCI_ANAHTARI ekleyin, sonra Redeploy. Fabrikadan haber kesilince uyarı gelir (README, Bekçi).",
+      ];
+    } else if (!k.bekci_anahtari) {
+      bekci = [
+        false,
+        "Bekçi açık ama /api/bekci'yi çağıracak anahtar yok. " +
+          VERCEL_AYARI +
+          ": en az 16 karakterlik BEKCI_ANAHTARI (ya da CRON_SECRET) ekleyin, sonra Redeploy.",
+      ];
+    } else {
+      bekci = [true, "Açık. İzleme servisi (cron-job.org) /api/bekci'yi 5 dakikada bir çağırmalı."];
+    }
+    satirlar.push(["Bekçi (haber yok uyarısı)", ...bekci]);
+    // E-posta yalnız bekçi açılınca (ya da yanlış yazılınca) anlamlı: kapalıyken
+    // satır çıkmaz, yukarıdaki satır zaten ne yapılacağını söyler
+    if (k.bekci || k.bekci_gecersiz) {
+      let eposta;
+      if (!k.eposta) {
+        eposta = [
+          false,
+          "Uyarı e-postası için " +
+            VERCEL_AYARI +
+            ": SMTP_SUNUCU, SMTP_KULLANICI, SMTP_SIFRESI ve SMTP_KIMDEN ekleyin, sonra Redeploy.",
+        ];
+      } else if (!k.alici) {
+        eposta = [false, VERCEL_AYARI + ": BEKCI_ALICILAR'a virgülle ayrılmış e-posta adreslerini yazın, sonra Redeploy."];
+      } else if (k.alici_tg) {
+        eposta = [false, "BEKCI_ALICILAR'daki eski tg: girdileri yok sayılıyor; silip Redeploy edin."];
+      } else {
+        eposta = [true, sayiMetni(k.alici) + " alıcıya gider."];
+      }
+      satirlar.push(["Bekçi e-postası", ...eposta]);
+    }
+    let ana;
+    if (k.ana_tesis_gecersiz) {
+      ana = [false, "ANA_TESIS bir tesis kimliği olmadığı için yok sayılıyor. Programdaki UZAK_PANO_TESIS_ID'yi yazın, sonra Redeploy."];
+    } else if (k.ana_tesis) {
+      ana = [true, "Yazılı; komutlar yalnız o tesise gider."];
+    } else if (k.tesis > 1) {
+      ana = [
+        false,
+        sayiMetni(k.tesis) +
+          " tesis rapor gönderiyor. " +
+          VERCEL_AYARI +
+          ": komut alacak tesisin kimliğini ANA_TESIS'e yazın, sonra Redeploy.",
+      ];
+    } else {
+      ana = [true, "Tek fabrika için gerekmez. İkinci fabrika gelince komut alacak tesisin kimliğini ANA_TESIS'e yazın."];
+    }
+    satirlar.push(["Ana tesis", ...ana]);
+    let kapali = sayiMetni(k.iki_adim_kapali) + " yönetici hesabında kapalı.";
+    if (!k.kurucu_iki_adim) {
+      kapali = k.iki_adim_kapali > 1 ? "Kurucu dahil " + kapali : "Kurucu hesabında kapalı.";
+    }
+    satirlar.push(
+      k.iki_adim_kapali
+        ? [
+            "Yöneticilerde iki adım",
+            false,
+            kapali + " Her yönetici kendi hesabında açar: Sistem > İki adımlı doğrulama > Aç.",
+          ]
+        : ["Yöneticilerde iki adım", true, "Bütün yönetici hesaplarında (" + sayiMetni(k.yonetici) + ") açık."]
+    );
+    const rapor = {
+      canli: [true, "Canlı; rapor düzenli geliyor."],
+      yok: [false, "Rapor kesildi. Fabrika bilgisayarının ve internetin açık olduğuna bakın."],
+      kapandi: [false, "Fabrika programı kapatıldı; bilgisayarda programı yeniden başlatın."],
+      hic: [
+        false,
+        "Henüz rapor gelmedi. Programda Ayarlar > Uzak izleme panosu: site adresini ve RAPOR_ANAHTARI'nın aynısını yazıp sistemi yeniden başlatın.",
+      ],
+    }[baglanti];
+    if (rapor) satirlar.push(["Fabrika raporu", ...rapor]);
+    return satirlar;
+  }
+
+  function kurulumuCiz() {
+    const kart = $("denetim-karti");
+    kart.hidden = !yetkili("ekran.kullanicilar");
+    if (kart.hidden || !kurulumVerisi) return;
+    const satirlar = kurulumSatirlari(kurulumVerisi, sonVeri ? baglantiDurumu(sonVeri) : "");
+    // Yalnız bir şey değişince yeniden kurulur (her tazelemede çağrılır)
+    const liste = $("denetim-listesi");
+    const imza = JSON.stringify(satirlar);
+    if (liste.dataset.imza === imza) return;
+    liste.dataset.imza = imza;
+    temizle(liste);
+    for (const [ad, tamam, metin] of satirlar) {
+      const satir = el("li", tamam ? "tamam" : "");
+      satir.appendChild(simge(tamam ? "i-tamam" : "i-uyari"));
+      const govde = el("div");
+      const baslik = el("span", "denetim-adi");
+      baslik.append(el("span", "", ad), rozet(tamam ? "Tamam" : "Bakılmalı", tamam ? "basari" : "uyari"));
+      govde.append(baslik, el("p", "", metin));
+      satir.appendChild(govde);
+      liste.appendChild(satir);
+    }
+    const eksik = satirlar.filter((s) => !s[1]).length;
+    yaz($("denetim-ozet"), (eksik ? sayiMetni(eksik) + " madde bakılmalı" : "Hepsi tamam") + "; değerler gösterilmez");
+  }
+
+  async function kurulumuYukle() {
+    if (kurulumIstekSuruyor) return;
+    kurulumIstekSuruyor = true;
+    const dugme = $("denetim-yenile");
+    dugme.disabled = true;
+    if (!kurulumVerisi) iskeletSatirlari($("denetim-listesi"), 3);
+    try {
+      const yanit = await fetch("/api/hesap?islem=kurulum", { credentials: "same-origin", cache: "no-store" });
+      const veri = await yanit.json().catch(() => ({}));
+      if (yanit.status === 401) {
+        oturumuKapat();
+        return;
+      }
+      if (!yanit.ok || !veri.kurulum) {
+        $("denetim-hatasi").textContent = veri.mesaj || "Yüklenemedi (HTTP " + yanit.status + ").";
+        return;
+      }
+      kurulumVerisi = veri.kurulum;
+      $("denetim-hatasi").textContent = "";
+      $("denetim-listesi").dataset.imza = "";
+      kurulumuCiz();
+    } catch (hata) {
+      $("denetim-hatasi").textContent = "Siteye ulaşılamıyor.";
+    } finally {
+      // Yüklenemediyse iskelet kalmasın
+      if (!kurulumVerisi) temizle($("denetim-listesi"));
+      kurulumIstekSuruyor = false;
+      dugme.disabled = false;
+    }
+  }
+
+  $("denetim-yenile").addEventListener("click", kurulumuYukle);
+
   // ------------------------------------------------------------ hepsi
 
   function panoyuCiz(veri) {
@@ -3563,6 +3792,7 @@ function panoyuBaslat() {
     }
     kareleriCiz(veri);
     sistemiCiz(veri);
+    kurulumuCiz();
     mudahaleyiCiz(veri);
     if (yetkili("ekran.yonetim")) yonetimiCiz(veri);
     if (veri.filo) tesisleriCiz(veri.filo);
@@ -3664,6 +3894,7 @@ function panoyuBaslat() {
       if (aktifGorunum === "kullanicilar" && gorunumYetkili("kullanicilar") && !hesapVerisi) {
         hesaplariYukle();
       }
+      if (kurulumAcik() && !kurulumVerisi) kurulumuYukle();
     } catch (hata) {
       // Ağ hatası ya da çizimdeki bir hata: ikincisi geliştirici konsolunda görünsün
       if (!(hata instanceof TypeError && /fetch/i.test(hata.message)) && hata.name !== "AbortError") {
@@ -3886,6 +4117,7 @@ function panoyuBaslat() {
   $("yenile").addEventListener("click", function () {
     yukle();
     if (aktifGorunum === "kullanicilar" && gorunumYetkili("kullanicilar")) hesaplariYukle();
+    if (kurulumAcik()) kurulumuYukle();
   });
 
   // Görünmeyen sekme sunucuyu yormaz; sekmeye dönünce hemen tazelenir.

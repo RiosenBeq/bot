@@ -614,6 +614,9 @@ class Ayar:
     # İsteğe bağlı OTURUM_ANAHTARI (en az 32 karakter): çerez imzasına katılır.
     # Yoksa imza bugünkü gibi yalnız PANO_SIFRESI ve RAPOR_ANAHTARI'ndan türer.
     oturum_anahtari: str = field(default="", repr=False)
+    # OTURUM_ANAHTARI yazılmış ama 32 karakterden kısa: yok sayılır, Kurulum
+    # denetimi kartı söyler (değerin kendisi hiçbir yere çıkmaz).
+    oturum_anahtari_kisa: bool = False
 
 
 def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
@@ -689,6 +692,7 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         ana_tesis=ana_tesis if ana_gecerli else "",
         ana_tesis_gecersiz=bool(ana_tesis) and not ana_gecerli,
         oturum_anahtari=_oturum_anahtari_ortam(ortam.get("OTURUM_ANAHTARI")),
+        oturum_anahtari_kisa=0 < len((ortam.get("OTURUM_ANAHTARI") or "").strip()) < 32,
     )
 
 
@@ -3901,17 +3905,22 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     onların görüntüsünü gönderir. Sorgu hiç yoksa (eski pano) hepsini; boşsa
     (yeni pano, ekranda kutucuk yok) görüntü istenmez.
     `?filo=1` (yönetici): Tesisler ekranı açık; her tesisin özeti gelir (docs/20 §4).
-    Oturum ve panonun verisi tek MGET'te okunur (Kod maddesi 2)."""
+    Oturum, panonun verisi ve kişinin son giriş zamanı (Sistem > hesap kartı;
+    kurucuda yok) tek MGET'te okunur (Kod maddesi 2)."""
     ayar = ayar_oku()
     kurulum_tamam_mi(ayar)
     simdi = time.time()
     depo = depo_al(ayar)
-    oturum, okunan = oturum_ve_oku(
-        depo, ayar, istek.cerez_al(CEREZ_ADI), simdi, list(PANO_ANAHTARLARI)
-    )
+    cerez = istek.cerez_al(CEREZ_ADI)
+    cozum = _cerez_coz(cerez)  # çözülemezse oturum_ve_oku zaten okumadan reddeder
+    son_anahtari = SON_GIRIS_ONEKI + (cozum[0] if cozum else "")
+    oturum, okunan = oturum_ve_oku(depo, ayar, cerez, simdi, [*PANO_ANAHTARLARI, son_anahtari])
+    *okunan, son_giris = okunan
     istek.gunluk_rol = oturum.rol
     veri = pano_verisi(depo, ayar, simdi, okunan)
     veri["oturum"] = oturum_ozeti(oturum)
+    if not oturum.kurucu and isinstance(son_giris, str) and _rakam_mi(son_giris):
+        veri["oturum"]["son_giris"] = _iso(int(son_giris))
     veri["onizleme"] = onizleme_mi()
     veri["surum"] = site_surumu()
     rapor = veri.get("rapor")
@@ -4208,16 +4217,63 @@ def hesap_verisi(depo: UpstashDepo | BellekDepo, simdi: float) -> dict:
     }
 
 
+def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
+    """Sistem ekranındaki "Kurulum denetimi" kartının verisi (yalnız yönetici):
+    isteğe bağlı Vercel ayarlarının ve yönetici hesaplarının durumu. Yalnız
+    evet/hayır ve sayı döner: hiçbir ayarın değeri, adresi ya da sırrı cevaba
+    girmez (tests/test_hesap.py denetler). Cümleleri pano kurar; fabrika
+    raporunun canlı olup olmadığını pano zaten /api/durum'dan bilir.
+    İki okuma: hesap dizini, tesis sayısı ve kurucunun iki adım kaydı tek boru
+    hattında; hesap kayıtları tek MGET'te."""
+    ham_adlar, tesis_sayisi, kurucu_kaydi = depo.boru_hatti(
+        [
+            ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
+            ["LLEN", TESISLER_ANAHTARI],
+            ["GET", IKI_ADIM_KURUCU_ANAHTARI],
+        ]
+    )
+    # Kullanıcılar listesi ve oturum özetiyle aynı ölçü (GET bir şey silmez)
+    kurucu_iki_adim = _json_sozluk(kurucu_kaydi) is not None
+    adlar = [a for a in ham_adlar if isinstance(a, str)] if isinstance(ham_adlar, list) else []
+    kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
+    yoneticiler = [
+        kayit
+        for kayit in map(_json_sozluk, kayitlar)
+        if kayit is not None and kayit.get("acik") is True and kayit.get("rol") == "yonetici"
+    ]
+    return {
+        "oturum_anahtari": bool(ayar.oturum_anahtari),
+        "oturum_anahtari_kisa": ayar.oturum_anahtari_kisa,
+        "bekci": ayar.bekci == "acik",
+        "bekci_gecersiz": ayar.bekci == "gecersiz",
+        "bekci_anahtari": max(len(ayar.bekci_anahtari), len(ayar.cron_sirri))
+        >= BEKCI_ANAHTAR_EN_AZ,
+        "eposta": bool(ayar.smtp_sunucu),
+        "alici": len(ayar.bekci_alicilar),
+        "alici_tg": ayar.bekci_tg_yok_sayildi,  # Tesisler ekranının uyarısıyla aynı
+        "ana_tesis": bool(ayar.ana_tesis),
+        "ana_tesis_gecersiz": ayar.ana_tesis_gecersiz,
+        "tesis": tesis_sayisi if isinstance(tesis_sayisi, int) else 0,
+        "yonetici": 1 + len(yoneticiler),  # kurucu dahil, giriş kapalılar hariç
+        "iki_adim_kapali": int(not kurucu_iki_adim)
+        + sum(1 for kayit in yoneticiler if _iki_adim_siri(kayit) is None),
+        "kurucu_iki_adim": kurucu_iki_adim,
+    }
+
+
 def hesap_getir(istek: Isleyici) -> tuple[int, dict, str | None]:
     """GET /api/hesap - kullanıcılar ve işlem kaydı; yönetici. Yetkisi yetmeyen
     deneme, durum değiştiren POST'lardaki gibi komut_red olarak kayda girer
     (docs/19 §3.3): çalınan bir izleyici / operatör çerezi bütün hesapları ve
-    işlem kaydını döken bu ucu iz bırakmadan yoklayamaz."""
+    işlem kaydını döken bu ucu iz bırakmadan yoklayamaz.
+    `?islem=kurulum`: yalnız Kurulum denetimi kartının verisi (kurulum_denetimi)."""
     ayar, simdi, oturum = _oturumlu(istek)
     depo = depo_al(ayar)
     if not oturum.yetkili("ekran.kullanicilar"):
         _komut_red_yaz(depo, oturum, "Yetki yetmedi: hesap listesi", simdi)
         raise PanoHatasi(403, "yetki", "Bu sayfa için yönetici yetkisi gerekir.")
+    if istek.sorgu("islem") == "kurulum":
+        return 200, {"kurulum": kurulum_denetimi(depo, ayar)}, None
     return 200, hesap_verisi(depo, simdi), None
 
 
@@ -4319,6 +4375,54 @@ def _hesap_sifre_degistir(
         )
         yeni_cerez = cerez_uret(
             ayar, oturum.ad, hesap["hesap_kimligi"], hesap["oturum_surumu"], simdi
+        )
+        return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
+
+
+def _diger_cihazlardan_cik(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    oturum: Oturum,
+    govde: dict,
+    simdi: float,
+    istek: Isleyici,
+) -> tuple[int, dict, str | None]:
+    """Kendi hesabının öbür bütün oturumlarını kapatır (Kod maddesi 7): oturum
+    sürümü bir artar, bu cihaz cevaptaki yeni çerezle açık kalır. Onay şifresi
+    ister (her hesap işi gibi, docs/19 §3.4): çalınan bir çerez sahibini
+    dışarıda bırakamaz. Kurucunun oturum sürümü yoktur: PANO_SIFRESI değişince
+    bütün oturumları düşer."""
+    if oturum.kurucu:
+        raise PanoHatasi(
+            400,
+            "kurucu",
+            "Kurucu hesabında öbür cihazları kapatmak için Vercel'de Settings > Environment "
+            "Variables > PANO_SIFRESI'ni değiştirip Redeploy edin. Bütün oturumlar kapanır.",
+        )
+    with _hesap_kilidi(depo, oturum.ad):
+        hesap = hesap_oku(depo, oturum.ad)
+        if (
+            hesap is None
+            or hesap.get("acik") is not True
+            or hesap.get("hesap_kimligi") != oturum.hesap_kimligi
+            or _tam(hesap.get("oturum_surumu"), 0, 10**12) != oturum.oturum_surumu
+        ):
+            # Bu oturum arada düştü (rol, kapatma): yeni çerez onu diriltmesin
+            raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+        sifre = govde.get("sifre")
+        if not sifre_dogrula(hesap.get("sifre"), sifre if isinstance(sifre, str) else ""):
+            _onay_hatasi_isle(depo, oturum, istek, kurucu=False)
+            raise PanoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.")
+        hesap["oturum_surumu"] = oturum.oturum_surumu + 1
+        satir = _islem_satiri(simdi, oturum.ad, oturum.rol, "diger_cihazlardan_cik", "", "tamam")
+        depo.boru_hatti(
+            [
+                _hesap_yaz_komutu(oturum.ad, hesap, simdi),
+                *kayit_komutlari(KAYIT_ANAHTARI, satir, KAYIT_EN_COK),
+            ]
+        )
+        yeni_cerez = cerez_uret(
+            ayar, oturum.ad, oturum.hesap_kimligi, hesap["oturum_surumu"], simdi
         )
         return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
 
@@ -4681,8 +4785,8 @@ def _rol_yetkileri_yaz(
 
 
 def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/hesap - {"eylem", ...}; sifre_degistir ve kendi iki adımı
-    (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) herkese, ötekiler
+    """POST /api/hesap - {"eylem", ...}; sifre_degistir, diger_cihazlardan_cik ve
+    kendi iki adımı (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) herkese, ötekiler
     yönetici (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON ->
     sifre_degismeli -> önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
     ayar, simdi, oturum, govde = _durum_degistiren(istek, None, "hesap")
@@ -4696,6 +4800,8 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
         return _hesap_sifre_degistir(depo, ayar, oturum, govde, simdi, istek)
     if eylem in IKI_ADIM_KENDI_EYLEMLERI:
         return _iki_adim_kendi(depo, ayar, oturum, eylem, govde, simdi, istek)
+    if eylem == "diger_cihazlardan_cik":
+        return _diger_cihazlardan_cik(depo, ayar, oturum, govde, simdi, istek)
     if not oturum.yetkili("hesap.yonet"):
         _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {_metin(eylem, 40)}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")

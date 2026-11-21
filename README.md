@@ -62,12 +62,12 @@ olmayan bir iş hiçbir role açılmaz: varsayılan reddir.
 | İş | İzleyici | Operatör | Yönetici |
 |---|:-:|:-:|:-:|
 | Durum, özet, olaylar, kanıt fotoğrafı, kameraların anlık görüntüsü | var | var | var |
-| Kendi şifresini değiştirme, kendi iki adımlı doğrulamasını açma / kapatma | var | var | var |
+| Kendi şifresini değiştirme, kendi iki adımlı doğrulamasını açma / kapatma, diğer cihazlardan çıkma | var | var | var |
 | Hazır anons, hoparlör denemesi, olay inceleme | | var | var |
 | Teşhis, yeniden başlatma, güncelleme | | | var |
 | Bilgisayarı yeniden başlatma (18.11.2026; bu yetki başka role verilemez) | | | var |
 | Hesap açma, rol, yeni şifre, girişi kapatma / açma, silme, iki adımı sıfırlama | | | var |
-| İşlem kaydını görme | | | var |
+| İşlem kaydını ve Kurulum denetimini görme | | | var |
 
 - **İzleyici** - durumu, olayları ve kamera görüntülerini görür; hiçbir şey
   değiştiremez. Bilgisayarın IP adreslerini, bilgisayar adını ve fabrika
@@ -114,6 +114,17 @@ ekranındadır. Kurucuyla girince her
 ekranda bir bant çıkar ("... Kullanıcılar ekranından herkese kendi hesabını açın,
 sonra Vercel'de PANO_SIFRESI'ni değiştirin."), çünkü ortak şifreyle yapılan işin
 sahibi işlem kaydında görünmez.
+
+### Diğer cihazlardan çık (20.11.2026)
+
+Sistem → hesap kartı → **Diğer cihazlar** → **Hepsinden çık** → şu anki şifre.
+Hesabın öbür bütün oturumları (telefon, başka bilgisayar) kapanır, bu cihaz yeni
+çerezle açık kalır; işlem kaydına "Diğer cihazlardan çıkıldı" yazılır. Aynı
+satırın altında hesabınıza **son giriş** zamanı görünür (herhangi bir cihazdan;
+tanımadığınız bir zamansa şifrenizi değiştirin). Yanlış şifre öbür onaylar gibi
+kilit sayaçlarına girer. Kurucuda yoktur: kurucunun oturumları `PANO_SIFRESI`
+değişince düşer. Sözleşme: `/api/hesap` `{"eylem": "diger_cihazlardan_cik",
+"sifre"}`.
 
 ### Geçiş sırası (ilk kurulumda bir kez)
 
@@ -576,6 +587,14 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
 6. **Panoyu açın:** `https://<projeniz>.vercel.app/pano`. Giriş ekranı gelmeli. Ayar
    eksikse sayfa neyin eksik olduğunu yazar. İlk girişte kullanıcı adı `kurucu`,
    şifresi `PANO_SIFRESI`'dir; sonra yukarıdaki **Geçiş sırası**'nı uygulayın.
+   İsteğe bağlı ayarları **Sistem → Kurulum denetimi** kartı (yalnız yönetici)
+   tek tek sayar: `OTURUM_ANAHTARI` (yazılı mı, 32 karakter var mı), bekçi
+   (`BEKCI`, `BEKCI_ANAHTARI` / `CRON_SECRET`, `SMTP_*`, `BEKCI_ALICILAR`),
+   `ANA_TESIS`, iki adımı kapalı yönetici sayısı (kurucu dahil) ve fabrika
+   raporunun canlı olup olmadığı. Her satır yeşil (tamam) ya da turuncu
+   (bakılmalı) ve ne yapılacağını söyleyen bir cümle. Sunucu
+   (`GET /api/hesap?islem=kurulum`) yalnız evet/hayır ve sayı döner, hiçbir
+   ayarın değerini göndermez.
 7. **Fabrika programını bağlayın.** Programda **Ayarlar → Uzak izleme panosu**:
    - **Site adresi:** `https://<projeniz>.vercel.app` (Vercel'in verdiği ana adres)
    - **Uzak pano anahtarı:** `RAPOR_ANAHTARI`'nın aynısı

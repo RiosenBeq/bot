@@ -910,3 +910,146 @@ def test_sifre_degistir_kaydi_kilidi_tutulur(site, monkeypatch):  # noqa: F811
         site,
     )
     assert kod == 409 and json.loads(govde)["hata"] == "mesgul"
+
+
+# ------------------------------------------ diğer cihazlardan çık (Kod maddesi 7)
+
+
+def _hazir_hesap(site, kurucu_cerezi, ad, rol, sifre):  # noqa: F811
+    """Hesap açılır, kişi ilk şifresini değiştirir; çerezi döner."""
+    _ekle(site, kurucu_cerezi, ad, rol, "ilk-parola-123")
+    c = _cerez(_giris(site, "ilk-parola-123", ad=ad)[1])
+    kod, basliklar, govde = _post(
+        site,
+        "/api/hesap",
+        {"eylem": "sifre_degistir", "eski_sifre": "ilk-parola-123", "yeni_sifre": sifre},
+        c,
+        site,
+    )
+    assert kod == 200, govde
+    return _cerez(basliklar)
+
+
+def test_diger_cihazlardan_cik_bu_cihazi_acik_birakir(site):  # noqa: F811
+    kurucu = _kurucu(site)
+    bu_cihaz = _hazir_hesap(site, kurucu, "ayse", "operator", "ayse-parola-123")
+    telefon = _cerez(_giris(site, "ayse-parola-123", ad="ayse")[1])
+    # Kendi son girişi durumda gelir (aynı MGET); kurucuda gelmez
+    kod, _, govde = _istek(f"{site}/api/durum", basliklar={"Cookie": bu_cihaz})
+    assert kod == 200 and json.loads(govde)["oturum"]["son_giris"].endswith("+00:00")
+    _, _, govde = _istek(f"{site}/api/durum", basliklar={"Cookie": kurucu})
+    assert "son_giris" not in json.loads(govde)["oturum"]
+    # Onay şifresi yanlışsa hiçbir oturum düşmez
+    istek = {"eylem": "diger_cihazlardan_cik", "sifre": "yanlis-parola"}
+    kod, _, govde = _post(site, "/api/hesap", istek, bu_cihaz, site)
+    assert kod == 400 and json.loads(govde)["hata"] == "onay_sifresi"
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": telefon})[0] == 200
+    # Doğruysa öbür cihaz ve eski çerez düşer, yeni çerezle bu cihaz sürer
+    istek["sifre"] = "ayse-parola-123"
+    kod, basliklar, govde = _post(site, "/api/hesap", istek, bu_cihaz, site)
+    assert kod == 200 and json.loads(govde) == {"tamam": True}
+    yeni = _cerez(basliklar)
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": telefon})[0] == 401
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": bu_cihaz})[0] == 401
+    assert _istek(f"{site}/api/durum", basliklar={"Cookie": yeni})[0] == 200
+    # İşlem kaydında satırı var
+    _, _, govde = _istek(f"{site}/api/hesap", basliklar={"Cookie": kurucu})
+    isler = [(r["kim"], r["is"]) for r in json.loads(govde)["kayit"]]
+    assert ("ayse", "diger_cihazlardan_cik") in isler
+
+
+def test_diger_cihazlardan_cik_kurucuda_ve_dusmus_oturumda_olmaz(site):  # noqa: F811
+    kurucu = _kurucu(site)
+    istek = {"eylem": "diger_cihazlardan_cik", "sifre": SIFRE}
+    kod, _, govde = _post(site, "/api/hesap", istek, kurucu, site)
+    assert kod == 400 and json.loads(govde)["hata"] == "kurucu"
+    # Oturum arada düştüyse (yönetici rolü değiştirdi) yeni çerez verilmez
+    c = _hazir_hesap(site, kurucu, "veli", "operator", "veli-parola-123")
+    oturum = _pano.oturum_coz(_pano.DEPO, _pano.ayar_oku(), c.split("=", 1)[1], time.time())
+    _pano._oturum_surumu_arttir(_pano.DEPO, "veli")
+    with pytest.raises(_pano.PanoHatasi) as hata:
+        _pano._diger_cihazlardan_cik(
+            _pano.DEPO, _pano.ayar_oku(), oturum, {"sifre": "veli-parola-123"}, time.time(), None
+        )
+    assert hata.value.kod == 401
+
+
+# ------------------------------------------------ kurulum denetimi (Sistem)
+
+
+def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # noqa: F811
+    sirlar = {
+        "OTURUM_ANAHTARI": "kisa-anahtar-77",
+        "BEKCI": "acik",
+        "BEKCI_ANAHTARI": "bekci-anahtari-9876543210",
+        "SMTP_SUNUCU": "smtp.gizli-sunucu.example",
+        "SMTP_SIFRESI": "smtp-sifresi-555",
+        "BEKCI_ALICILAR": "bir@ornek.example, iki@ornek.example",
+        "ANA_TESIS": "gebze",
+    }
+    for ad, deger in sirlar.items():
+        monkeypatch.setenv(ad, deger)
+    kurucu = _kurucu(site)
+    _hazir_hesap(site, kurucu, "mudur", "yonetici", "mudur-parola-123")
+    izleyici = _hazir_hesap(site, kurucu, "bekir", "izleyici", "bekir-parola-123")
+    kod, _, govde = _istek(f"{site}/api/hesap?islem=kurulum", basliklar={"Cookie": kurucu})
+    assert kod == 200, govde
+    assert json.loads(govde) == {
+        "kurulum": {
+            "oturum_anahtari": False,
+            "oturum_anahtari_kisa": True,
+            "bekci": True,
+            "bekci_gecersiz": False,
+            "bekci_anahtari": True,
+            "eposta": True,
+            "alici": 2,
+            "alici_tg": False,
+            "ana_tesis": True,
+            "ana_tesis_gecersiz": False,
+            "tesis": 0,
+            "yonetici": 2,  # kurucu + mudur
+            "iki_adim_kapali": 2,
+            "kurucu_iki_adim": False,
+        }
+    }
+    metin = govde.decode()
+    for deger in [SIFRE, *sirlar.values(), "bir@ornek", "gebze"]:
+        if deger != "acik":
+            assert deger not in metin
+    # Yönetici olmayan alamaz; deneme kayda girer
+    kod, _, govde = _istek(f"{site}/api/hesap?islem=kurulum", basliklar={"Cookie": izleyici})
+    assert kod == 403 and json.loads(govde)["hata"] == "yetki"
+    _, _, govde = _istek(f"{site}/api/hesap", basliklar={"Cookie": kurucu})
+    assert any(r["kim"] == "bekir" and r["is"] == "komut_red" for r in json.loads(govde)["kayit"])
+
+
+def test_kurulum_denetimi_yonetici_ve_ayar_sayimi():
+    """İki adımı kapalı yönetici sayısı: kurucu dahil, girişi kapalı hesap ve
+    öbür roller hariç. Uzun OTURUM_ANAHTARI tamam, tanınmayan BEKCI, eski tg:
+    alıcısı ve kimlik olamayan ANA_TESIS ayrı ayrı söylenir."""
+    depo = _pano.BellekDepo()
+    sir = _pano.iki_adim_siri_uret()
+    hesaplar = [
+        {**_hesap("ali", rol="yonetici"), "iki_adim": {"sir": sir}},
+        _hesap("can", rol="yonetici"),
+        _hesap("eda", rol="yonetici", acik=False),
+        _hesap("veli", rol="operator"),
+    ]
+    for kayit in hesaplar:
+        _yaz_hesap(depo, kayit)
+        depo.boru_hatti([["RPUSH", _pano.KULLANICILAR_ANAHTARI, kayit["ad"]]])
+    depo.boru_hatti([["SET", _pano.IKI_ADIM_KURUCU_ANAHTARI, json.dumps({"sir": sir})]])
+    ayar = _pano.ayar_oku(
+        {
+            "OTURUM_ANAHTARI": "o" * 40,
+            "BEKCI": "belki",
+            "BEKCI_ALICILAR": "tg:12345",
+            "ANA_TESIS": "Gebze Fabrikası",
+        }
+    )
+    k = _pano.kurulum_denetimi(depo, ayar)
+    assert (k["oturum_anahtari"], k["oturum_anahtari_kisa"]) == (True, False)
+    assert (k["bekci"], k["bekci_gecersiz"], k["bekci_anahtari"]) == (False, True, False)
+    assert (k["eposta"], k["alici"], k["alici_tg"]) == (False, 0, True)
+    assert (k["ana_tesis"], k["ana_tesis_gecersiz"]) == (False, True)
+    assert (k["yonetici"], k["iki_adim_kapali"], k["kurucu_iki_adim"]) == (3, 1, True)

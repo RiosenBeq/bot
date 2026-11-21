@@ -651,6 +651,28 @@
     "tamam",
   );
 
+  /* Kurulum denetimi kartının örneği: bir kısmı tamam, bir kısmı eksik. Yönetici
+     sayısı ve iki adımı kapalı olanlar örnek hesaplardan sayılır (kurucu dahil). */
+  function kurulumVerisi() {
+    const yoneticiler = kullanicilar.filter((k) => k.acik && k.rol === "yonetici");
+    return {
+      oturum_anahtari: true,
+      oturum_anahtari_kisa: false,
+      bekci: true,
+      bekci_gecersiz: false,
+      bekci_anahtari: true,
+      eposta: false,
+      alici: 2,
+      alici_tg: false,
+      ana_tesis: false,
+      ana_tesis_gecersiz: false,
+      tesis: 1,
+      yonetici: 1 + yoneticiler.length,
+      iki_adim_kapali: 1 + yoneticiler.filter((k) => !k.iki_adim).length,
+      kurucu_iki_adim: false,
+    };
+  }
+
   function hesapVerisi() {
     const kurucu = {
       ad: "kurucu",
@@ -864,6 +886,7 @@
         kurucu: false,
         sifre_degismeli: false,
         ...(oturumHesabi() && oturumHesabi().iki_adim ? { iki_adim: true } : {}),
+        ...(oturumHesabi() && oturumHesabi().sonGirisMs ? { son_giris: iso(oturumHesabi().sonGirisMs) } : {}),
         yetkiler: [...rolYetkileri[durum.rol]],
       },
       onizleme: false,
@@ -1148,6 +1171,11 @@
     if (["iki_adim_baslat", "iki_adim_onayla", "iki_adim_kapat"].includes(eylem)) {
       return ikiAdimIstegi(govde, simdi);
     }
+    if (eylem === "diger_cihazlardan_cik") {
+      if (!govde.sifre) throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
+      kayitYaz(simdi, durum.ad, durum.rol, "diger_cihazlardan_cik", "", "tamam");
+      return { tamam: true };
+    }
     if (eylem === "sifre_degistir") {
       if (!govde.eski_sifre)
         throw new DemoHatasi(400, "eski_sifre", "Eski şifreniz yanlış; işlem yapılmadı.");
@@ -1278,6 +1306,7 @@
     durum.rol = hesap ? hesap.rol : "yonetici";
     durum.ad = hesap ? hesap.ad : ROL_HESABI[durum.rol];
     durum.girisli = true;
+    if (oturumHesabi()) oturumHesabi().sonGirisMs = simdi;
     kayitYaz(simdi, durum.ad, durum.rol, "giris", "", "tamam");
     secicileriEsle();
     return { tamam: true };
@@ -1327,6 +1356,7 @@
       if (yol === "hesap") {
         if (!yetkiliMi("ekran.kullanicilar"))
           throw new DemoHatasi(403, "yetki", "Bu sayfa için yönetici yetkisi gerekir.");
+        if (url.searchParams.get("islem") === "kurulum") return yanit(200, { kurulum: kurulumVerisi() });
         return yanit(200, hesapVerisi());
       }
       throw new DemoHatasi(404, "yok", "Böyle bir adres yok.");

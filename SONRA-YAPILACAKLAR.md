@@ -8,6 +8,11 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
 
 ## Sahibin yapacakları (kod gerekmez)
 
+Panoda görünür (20.11.2026): Sistem ekranındaki **Kurulum denetimi** kartı (yalnız yönetici)
+aşağıdaki 1, 2, 4 ve 5'in durumunu ve fabrika raporunun canlı olup olmadığını yeşil /
+turuncu satırla ve ne yapılacağını söyleyen bir cümleyle gösterir; ayarların değerini
+göstermez.
+
 1. **Bekçiyi açmak (isteğe bağlı, önerilir).** Vercel, Settings, Environment Variables
    (Production): `BEKCI=acik`, `BEKCI_ESIK_DK`, `BEKCI_ALICILAR` (yalnız e-posta
    adresleri), `BEKCI_ANAHTARI`, e-posta için `SMTP_*`, Vercel Cron için `CRON_SECRET`;
@@ -151,7 +156,10 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
    (sıralı küme), fabrika değişmeden.
 6. **İnceleme modu:** bekleyen ihlaller büyük kanıtla sırayla; klavye kısayolları; toplu
    inceleme.
-7. **"Diğer cihazlardan çık"** ve oturum listesi (`oturum_surumu` hazır).
+7. ~~**"Diğer cihazlardan çık"**~~ Yapıldı (20.11.2026): Sistem hesap kartında, şifreyle
+   onaylanır; oturum sürümü artar, bu cihaz yeni çerezle sürer, işlem kaydına girer; altında
+   hesabın son giriş zamanı. Kalan: oturum listesi (cihaz başına kayıt ister; bugün tek
+   sürüm sayacı var).
 8. **Yapı:** `api/_pano.py` (4.300+ satır) ve `pano.js` (3.700+ satır) modüllere; demo.js
    sunucu kurallarını kopyalıyor (test yok); stil.css ve pano.css ortak değişkenleri ayrı.
 9. **Gözlemlenebilirlik ve yedek:** ~~istek başına JSON günlük satırı~~ (Yapıldı

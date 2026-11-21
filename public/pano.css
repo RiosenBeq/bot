@@ -3123,6 +3123,46 @@ a:hover {
 .iki-adim > .not {
   margin-bottom: 8px;
 }
+/* Kurulum denetimi: her satır simge + ad + rozet + ne yapılacağı */
+.denetim-listesi {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.denetim-listesi li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--ayrac);
+}
+.denetim-listesi li > .simge {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--uyari);
+}
+.denetim-listesi li.tamam > .simge {
+  color: var(--basari);
+}
+.denetim-listesi li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.denetim-listesi .denetim-adi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.denetim-listesi p {
+  color: var(--metin-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 .gezinme-karti {
   padding: 4px 16px;
 }

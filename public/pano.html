@@ -354,6 +354,15 @@
                 <dl id="bilgisayar-bilgisi" class="ozellikler-listesi" hidden></dl>
                 <p id="bilgisayar-yok" class="ikincil-metin" hidden>Fabrika programı bu bilgiyi henüz göndermiyor. Programın uzak pano bağlantısı güncellenince burada bilgisayarın adı, işletim sistemi, işlemcisi, belleği ve ekran kartı görünür.</p>
               </section>
+              <!-- Kurulum denetimi (yalnız yönetici): isteğe bağlı Vercel ayarları; değerleri asla gösterilmez -->
+              <section id="denetim-karti" class="kart" aria-labelledby="denetim-baslik" hidden>
+                <div class="kart-basligi tek-satir">
+                  <div><h2 id="denetim-baslik">Kurulum denetimi</h2><p id="denetim-ozet">İsteğe bağlı ayarlar; değerleri gösterilmez</p></div>
+                  <button id="denetim-yenile" class="dugme gri kucuk" type="button"><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg><span>Yenile</span></button>
+                </div>
+                <ul id="denetim-listesi" class="denetim-listesi"></ul>
+                <p id="denetim-hatasi" class="hata" role="alert"></p>
+              </section>
             </div>
             <div class="sutun">
               <div class="kart hesap-karti">
@@ -437,6 +446,28 @@
                   </form>
                   <p id="iki-adim-hatasi" class="hata" role="alert"></p>
                   <p id="iki-adim-notu" class="not" hidden></p>
+                </section>
+                <!-- Diğer cihazlardan çık: öbür oturumlar kapanır, bu cihaz açık kalır -->
+                <section id="cihazlar-karti" class="iki-adim" aria-labelledby="cihazlar-baslik">
+                  <div class="ayar-satiri">
+                    <svg class="simge" aria-hidden="true"><use href="#i-cikis"/></svg>
+                    <h3 id="cihazlar-baslik" class="ayar-adi">Diğer cihazlar</h3>
+                    <button id="cihazlar-ac" class="dugme ikincil kucuk" type="button">Hepsinden çık</button>
+                  </div>
+                  <p id="son-giris" class="ikincil-metin ayar-notu" hidden></p>
+                  <p id="cihazlar-sonuc" class="sonuc-satiri" role="status" hidden></p>
+                  <form id="cihazlar-formu" class="ic-form" novalidate hidden>
+                    <p class="ikincil-metin">Telefon, başka bilgisayar gibi öbür bütün cihazlarda oturumunuz kapanır; bu cihaz açık kalır.</p>
+                    <div class="alan">
+                      <label for="cihazlar-sifre">Onaylamak için şifreniz</label>
+                      <input id="cihazlar-sifre" name="cihazlar-sifre" type="password" autocomplete="current-password" maxlength="200" aria-describedby="cihazlar-hatasi">
+                    </div>
+                    <p id="cihazlar-hatasi" class="hata" role="alert"></p>
+                    <div class="dugmeler">
+                      <button id="cihazlar-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="cihazlar-dugmesi" class="dugme tehlike" type="submit">Diğer cihazlardan çık</button>
+                    </div>
+                  </form>
                 </section>
                 <!-- Görünüm: bu cihazda saklanır (tema.js); Sistem cihazın ayarını izler -->
                 <div id="gorunum-satiri" class="ayar-satiri gorunum-satiri">
