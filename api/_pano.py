@@ -32,6 +32,7 @@ import contextlib
 import hashlib
 import hmac
 import html
+import http.client
 import ipaddress
 import json
 import math
@@ -517,6 +518,22 @@ BEKCI_ANAHTAR_EN_AZ = 16
 TURKIYE_SAATI = timezone(timedelta(hours=3))
 EPOSTA_DESENI = re.compile(r"[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']+")
 
+# ---- E-posta yolu ve tasarımı (20.11.2026) - opt-in: RESEND_API_KEY
+# Sitenin bütün e-postaları (bekçi, haftalık özet, deneme) tek işlevden gider
+# (_eposta_gonder). RESEND_API_KEY yazılıysa Resend'in HTTPS API'si, yoksa SMTP
+# bugünkü gibi. Anahtar hiçbir cevaba, günlüğe ya da hata metnine girmez.
+RESEND_ADRESI = "https://api.resend.com/emails"
+RESEND_BEKLE_SN = 1.0  # saniyelik sınıra (429) takılınca bir kez yeniden denemeden önce
+# Gönderen: "Ad <adres@alan>" ya da yalnız adres; satır sonu ve tırnak yok.
+GONDEREN_DESENI = re.compile(r"(?:[^<>\"\r\n]{1,80}<([^<>\s]+)>|([^<>\s]+))")
+# Vercel'in kendi değişkeni VERCEL_PROJECT_PRODUCTION_URL (şemasız alan adı):
+# e-postadaki "Panoyu aç" düğmesi. Yoksa ya da alan adı değilse düğme çıkmaz.
+ALAN_ADI_DESENI = re.compile(r"(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
+# Kurulum denetimi kartındaki "Deneme e-postası gönder": hesap başına saatte 5.
+DENEME_EPOSTA_SINIRI = 5
+DENEME_EPOSTA_PENCERESI_SN = 3600
+DENEME_EPOSTA_SAYAC_ONEKI = "dalsan:kayit:sinir:eposta:"
+
 # ---- Haftalık özet e-postası (Kod maddesi 4) - opt-in: HAFTALIK_OZET=acik
 # Yeni cron ya da işlev yok: bekçinin çağrısına (Vercel Cron günde bir, 08:00
 # Türkiye) biner. Pazartesi HAFTALIK_OZET_SAAT'ten sonraki ilk çağrı geçen
@@ -664,6 +681,12 @@ class Ayar:
     # Haftalık özet (Kod maddesi 4): opt-in; alıcı listesi boşsa bekçinin alıcıları.
     haftalik_ozet: str = "kapali"
     haftalik_alicilar: tuple[str, ...] = ()
+    # E-posta yolu: RESEND_API_KEY yazılıysa Resend, yoksa SMTP (eposta_saglayicisi).
+    # Gönderen EPOSTA_KIMDEN, boşsa SMTP_KIMDEN (yalnız Resend kullanır; SMTP bugünkü gibi).
+    resend_anahtari: str = field(default="", repr=False)
+    eposta_kimden: str = ""
+    # E-postadaki "Panoyu aç" düğmesinin adresi; boşsa düğme çıkmaz.
+    pano_adresi: str = ""
 
 
 def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
@@ -746,7 +769,18 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
             (ozet if ozet in HAFTALIK_OZET_DEGERLERI else "gecersiz") if ozet else "kapali"
         ),
         haftalik_alicilar=ozet_alicilari or alicilar,
+        resend_anahtari=ortam.get("RESEND_API_KEY", "").strip(),
+        eposta_kimden=(ortam.get("EPOSTA_KIMDEN") or ortam.get("SMTP_KIMDEN") or "").strip(),
+        pano_adresi=_pano_adresi(ortam.get("VERCEL_PROJECT_PRODUCTION_URL")),
     )
+
+
+def _pano_adresi(ham: str | None) -> str:
+    """E-postadaki "Panoyu aç" düğmesinin adresi. Vercel'in kendi değişkeni
+    VERCEL_PROJECT_PRODUCTION_URL şemasız bir alan adıdır (ör. dalsan.vercel.app;
+    özel alan adı varsa o). Alan adı olamayan değer yok sayılır: düğme çıkmaz."""
+    alan = (ham or "").strip().lower().removeprefix("https://").rstrip("/")
+    return f"https://{alan}/pano" if ALAN_ADI_DESENI.fullmatch(alan) else ""
 
 
 def _fabrika_adresi(ham: str) -> str:
@@ -2319,9 +2353,83 @@ class _SmtpOturumu:
 _SMTP_OTURUMU = threading.local()
 
 
+def eposta_saglayicisi(ayar: Ayar) -> str:
+    """Etkin e-posta yolu: "resend", "smtp" ya da "" (yok). Ayarın değerini vermez."""
+    if ayar.resend_anahtari:
+        return "resend"
+    return "smtp" if ayar.smtp_sunucu else ""
+
+
+def _resend_hata_metni(kod: int, ad: str) -> str:
+    """Resend'in cevabından sabit, sırsız bir Türkçe cümle. Sunucunun kendi
+    iletisi yazılmaz (alıcının adresini taşıyabilir); yalnız durum kodu ve
+    hatanın sabit adı (ör. invalid_api_key) kullanılır."""
+    if kod == 401 or ad in ("missing_api_key", "invalid_api_key", "restricted_api_key"):
+        return "Resend anahtarı geçersiz ya da gönderme yetkisi yok (RESEND_API_KEY)"
+    if kod == 403 or ad == "invalid_from_address":
+        return (
+            "Resend gönderen adresi kabul etmedi: EPOSTA_KIMDEN'in alan adı Resend'de "
+            "doğrulanmış olmalı"
+        )
+    if kod == 429:
+        return "Resend gönderim sınırı doldu; biraz sonra yeniden deneyin"
+    if kod >= 500:
+        return f"Resend şu an cevap vermiyor (HTTP {kod})"
+    return f"Resend iletiyi kabul etmedi (HTTP {kod}); alıcı ve gönderen adresine bakın"
+
+
+def _resend_gonder(ayar: Ayar, alici: str, konu: str, govde: str, html_metni: str = "") -> None:
+    """Resend API'siyle tek alıcıya tek ileti (yalnız stdlib: urllib). Düz metin
+    her zaman gider, HTML varsa yanında. Her hata BildirimHatasi'na çevrilir:
+    iletisi sabittir, anahtarı ve sunucunun cevabını taşımaz (`from None`).
+    Saniyelik sınıra (429 rate_limit_exceeded) takılırsa bir kez yeniden dener."""
+    if not EPOSTA_DESENI.fullmatch(alici):
+        raise BildirimHatasi("E-posta adresi geçersiz")
+    eslesme = GONDEREN_DESENI.fullmatch(ayar.eposta_kimden)
+    adres = (eslesme.group(1) or eslesme.group(2)) if eslesme else ""
+    if not EPOSTA_DESENI.fullmatch(adres):
+        raise BildirimHatasi("Gönderen adres tanımlı değil ya da geçersiz (EPOSTA_KIMDEN)")
+    yuk = {"from": ayar.eposta_kimden, "to": [alici], "subject": konu, "text": govde}
+    if html_metni:
+        yuk["html"] = html_metni
+    istek = urllib.request.Request(
+        RESEND_ADRESI,
+        data=json.dumps(yuk, ensure_ascii=False).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": "Bearer " + ayar.resend_anahtari,
+            "Content-Type": "application/json",
+            "User-Agent": "nextgen-detector-pano/1",
+        },
+    )
+    for deneme in range(2):
+        try:
+            with urllib.request.urlopen(istek, timeout=BEKCI_GONDERIM_ZAMAN_ASIMI_SN) as cevap:
+                cevap.read(4096)
+            return
+        except urllib.error.HTTPError as hata:
+            kod = hata.code
+            try:
+                ad = _sozluk(json.loads(hata.read(4096) or b"{}")).get("name")
+            except (ValueError, OSError):
+                ad = None
+            hata.close()
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError):
+            raise BildirimHatasi("Resend'e ulaşılamadı (ağ ya da zaman aşımı)") from None
+        ad = ad if isinstance(ad, str) and re.fullmatch(r"[a-z_]{1,40}", ad) else ""
+        if kod == 429 and ad == "rate_limit_exceeded" and deneme == 0:
+            time.sleep(RESEND_BEKLE_SN)
+            continue
+        raise BildirimHatasi(_resend_hata_metni(kod, ad))
+
+
 def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str, html_metni: str = "") -> None:
-    """Tek alıcıya tek e-posta. bekci_uyari_gonder açık bir oturum bıraktıysa
-    onu kullanır; yoksa kendi oturumunu açıp kapatır."""
+    """Tek alıcıya tek e-posta; sitenin bütün e-postaları buradan gider.
+    RESEND_API_KEY yazılıysa Resend; yoksa SMTP bugünkü gibi: bekci_uyari_gonder
+    açık bir oturum bıraktıysa onu kullanır, yoksa kendi oturumunu açıp kapatır."""
+    if ayar.resend_anahtari:
+        _resend_gonder(ayar, alici, konu, govde, html_metni)
+        return
     ortak = getattr(_SMTP_OTURUMU, "acik", None)
     if ortak is not None:
         ortak.gonder(ayar, alici, konu, govde, html_metni)
@@ -2364,11 +2472,12 @@ def bekci_uyari_gonder(
     500 yapmaz; günlüğe sırsız yazılır. `basarida` ilk başarılı gönderimden
     hemen sonra bir kez çağrılır (bekçi işareti uzatır). Gönderen enjekte
     edilebilir (testte sahte gönderici verilir). Haftalık özet de buradan
-    gider: `html_metni` düz metnin yanına HTML eki, `ne` günlükteki adı."""
+    gider: `html_metni` düz metnin yanındaki tasarımlı HTML, `ne` günlükteki adı."""
     if eposta_gonder is not None:
         return _alicilara_gonder(ayar, alicilar, konu, metin, eposta_gonder, basarida, ne)
     # Gerçek gönderim: bütün alıcılar tek SMTP oturumunda. _eposta_gonder adı çağrı
     # anında çözülür (testler onu değiştirir); oturum ilk gerçek gönderimde açılır.
+    # Resend yolunda oturum hiç açılmaz (her alıcıya ayrı HTTPS isteği).
     ek = {"html_metni": html_metni} if html_metni else {}
     oturum = _SMTP_OTURUMU.acik = _SmtpOturumu()
     try:
@@ -2418,28 +2527,195 @@ def _turkiye_saati(iso: object) -> str:
     return an.astimezone(TURKIYE_SAATI).strftime("%d.%m.%Y %H:%M") + " (Türkiye saati)"
 
 
-def _bekci_metni(ad: str, hedef: dict) -> tuple[str, str]:
-    """Hedef başına kısa Türkçe uyarı: tesisin adı, son rapordan beri geçen
-    dakika, neye bakılacağı. Sır yok, görüntü yok."""
+# ------------------------------------------------- e-posta tasarımı (ortak)
+
+EPOSTA_MARKA = "NextGen Detector · DALSAN"
+# Durum şeridi ve rozet (panonun renkleri): şerit, rozet zemini, rozet yazısı
+EPOSTA_DURUMLARI = {
+    "alarm": ("#dc2626", "#feebed", "#b42318"),
+    "basari": ("#15803d", "#e1faed", "#15803d"),
+    "uyari": ("#d97706", "#fff2e6", "#b45309"),
+    "notr": ("#616367", "#f3f5f7", "#3d4048"),
+}
+_EY = "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;"
+
+
+def eposta_tasarla(
+    durum: str,
+    etiket: str,
+    baslik: str,
+    giris: str,
+    bilgiler: list[tuple[str, str]],
+    neden: str,
+    adres: str = "",
+    bolumler: list[tuple[str, list[tuple[str, str]], bool]] | None = None,
+    notlar: list[str] | None = None,
+) -> tuple[str, str]:
+    """Sitenin bütün e-postalarının ortak tasarımı: (düz metin, HTML).
+
+    Tablo düzeni ve satır içi stil (Gmail, Outlook, iPhone Mail), en çok 560 px,
+    açık zemin, görsel yerine yazıyla marka, üstte durum şeridi (alarm kırmızı,
+    basari yeşil, uyari turuncu, notr gri), başlık, 2-4 temel bilgi, isteğe
+    bağlı bölümler (ad / sayı satırları; `True` ise sayıya göre çubuk) ve notlar,
+    pano adresi biliniyorsa tek düğme, altta neden geldiği. Bütün değerler
+    kaçışlıdır (tesis ve kamera adları programdan gelir). Düz metin aynı
+    içeriği taşır; bölümler "Başlık:\\n  ad: değer" biçimindedir."""
+    serit, rozet_zemin, rozet_yazi = EPOSTA_DURUMLARI[durum]
+    bolumler, notlar = bolumler or [], notlar or []
+    metin = [f"{EPOSTA_MARKA} | {etiket}", "", baslik, "", giris, ""]
+    metin += [f"{ad}: {deger}" for ad, deger in bilgiler]
+    for bolum, satirlar, _ in bolumler:
+        metin += ["", bolum + ":"]
+        metin += [f"  {ad}: {deger}" for ad, deger in satirlar] or ["  -"]
+    if notlar:
+        metin += ["", *notlar]
+    if adres:
+        metin += ["", f"Panoyu açın: {adres}"]
+    metin += ["", "--", neden]
+
+    e = html.escape
+    cizgi = "border-top:1px solid #e8e8e8;"
+    parca = [
+        '<!doctype html><html lang="tr"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width,initial-scale=1">',
+        '<meta name="x-apple-disable-message-reformatting">',
+        '<meta name="color-scheme" content="light"><meta name="supported-color-schemes" '
+        'content="light">',
+        f"<title>{e(baslik)}</title></head>",
+        '<body style="margin:0;padding:0;background-color:#edeff1;">',
+        # Gelen kutusundaki önizleme satırı (görünmez)
+        '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;'
+        f'line-height:1px;color:#edeff1;opacity:0;">{e(giris)}</div>',
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'bgcolor="#edeff1" style="background-color:#edeff1;"><tr>'
+        '<td align="center" style="padding:24px 12px;">',
+        '<!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" '
+        'border="0"><tr><td><![endif]-->',
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="max-width:560px;width:100%;">',
+        f'<tr><td style="{_EY}padding:0 4px 12px;font-size:14px;line-height:20px;'
+        f'font-weight:bold;color:#0c0e1b;">{e(EPOSTA_MARKA)}</td></tr>',
+        '<tr><td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e3e3e3;'
+        'border-radius:8px;">',
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">',
+        f'<tr><td height="6" bgcolor="{serit}" style="height:6px;font-size:0;line-height:0;'
+        f'background-color:{serit};border-radius:8px 8px 0 0;">&nbsp;</td></tr>',
+        f'<tr><td style="{_EY}padding:20px 24px 0;">'
+        f'<span style="display:inline-block;padding:3px 10px;border-radius:999px;'
+        f"background-color:{rozet_zemin};color:{rozet_yazi};font-size:12px;line-height:18px;"
+        f'font-weight:bold;">{e(etiket)}</span>'
+        f'<h1 style="margin:12px 0 0;font-size:21px;line-height:28px;font-weight:bold;'
+        f'color:#0c0e1b;">{e(baslik)}</h1>'
+        f'<p style="margin:8px 0 0;font-size:15px;line-height:22px;color:#3d4048;">'
+        f"{e(giris)}</p></td></tr>",
+    ]
+    if bilgiler:
+        parca.append(
+            '<tr><td style="padding:16px 24px 0;"><table role="presentation" width="100%" '
+            'cellpadding="0" cellspacing="0" border="0">'
+        )
+        parca += [
+            f'<tr><td valign="top" style="{_EY}{cizgi}padding:10px 12px 10px 0;font-size:14px;'
+            f'line-height:20px;color:#616367;white-space:nowrap;">{e(ad)}</td>'
+            f'<td valign="top" align="right" style="{_EY}{cizgi}padding:10px 0;font-size:14px;'
+            f'line-height:20px;font-weight:bold;color:#0c0e1b;text-align:right;">{e(deger)}</td>'
+            "</tr>"
+            for ad, deger in bilgiler
+        ]
+        parca.append("</table></td></tr>")
+    for bolum, satirlar, cubuklu in bolumler:
+        parca.append(
+            f'<tr><td style="{_EY}padding:20px 24px 0;"><p style="margin:0 0 4px;font-size:14px;'
+            f'line-height:20px;font-weight:bold;color:#0c0e1b;">{e(bolum)}</p>'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+        )
+        if not satirlar:
+            parca.append(
+                f'<tr><td style="{_EY}{cizgi}padding:8px 0;font-size:14px;color:#616367;">-</td>'
+                "</tr>"
+            )
+        en_cok = max((int(d) for _, d in satirlar if d.isdigit()), default=0) if cubuklu else 0
+        for ad, deger in satirlar:
+            cubuk = ""
+            if en_cok:
+                yuzde = max(2, round(int(deger) * 100 / en_cok)) if deger != "0" else 0
+                cubuk = (
+                    f'<td width="45%" style="{cizgi}padding:8px 0;">'
+                    + (
+                        f'<table role="presentation" width="{yuzde}%" cellpadding="0" '
+                        'cellspacing="0" border="0"><tr><td height="8" bgcolor="#2f58f7" '
+                        'style="height:8px;font-size:0;line-height:0;background-color:#2f58f7;'
+                        'border-radius:4px;">&nbsp;</td></tr></table>'
+                        if yuzde
+                        else ""
+                    )
+                    + "</td>"
+                )
+            parca.append(
+                f'<tr><td style="{_EY}{cizgi}padding:8px 12px 8px 0;font-size:14px;'
+                f'line-height:20px;color:#3d4048;">{e(ad)}</td>{cubuk}'
+                f'<td align="right" style="{_EY}{cizgi}padding:8px 0 8px 12px;font-size:14px;'
+                f"line-height:20px;font-weight:bold;color:#0c0e1b;text-align:right;"
+                f'white-space:nowrap;">{e(deger)}</td></tr>'
+            )
+        parca.append("</table></td></tr>")
+    parca += [
+        f'<tr><td style="{_EY}padding:16px 24px 0;"><p style="margin:0;font-size:14px;'
+        f'line-height:21px;color:#3d4048;">{e(satir)}</p></td></tr>'
+        for satir in notlar
+    ]
+    if adres:
+        parca.append(
+            '<tr><td style="padding:24px 24px 0;"><table role="presentation" cellpadding="0" '
+            'cellspacing="0" border="0"><tr><td bgcolor="#2f58f7" style="background-color:#2f58f7;'
+            f'border-radius:8px;"><a href="{e(adres)}" target="_blank" style="{_EY}'
+            "display:inline-block;padding:12px 24px;font-size:15px;line-height:20px;"
+            'font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;">'
+            "Panoyu aç</a></td></tr></table></td></tr>"
+        )
+    parca += [
+        '<tr><td height="24" style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>',
+        "</table></td></tr>",
+        f'<tr><td style="{_EY}padding:16px 4px 0;font-size:12px;line-height:18px;'
+        f'color:#616367;">{e(neden)}</td></tr>',
+        "</table>",
+        "<!--[if mso]></td></tr></table><![endif]-->",
+        "</td></tr></table></body></html>",
+    ]
+    return "\n".join(metin) + "\n", "\n".join(parca) + "\n"
+
+
+def _bekci_metni(ad: str, hedef: dict, adres: str = "") -> tuple[str, str, str]:
+    """Hedef başına kısa Türkçe uyarı (konu, düz metin, HTML): tesisin adı,
+    son rapordan beri geçen dakika, neye bakılacağı. Sır yok, görüntü yok."""
     gecikme = hedef.get("gecikme_sn")
-    sure = (
-        f"yaklaşık {round(gecikme / 60)} dakikadır"
-        if isinstance(gecikme, int | float)
-        else "uzun süredir"
-    )
+    dakika = round(gecikme / 60) if isinstance(gecikme, int | float) else None
+    sure = f"yaklaşık {dakika} dakikadır" if dakika is not None else "uzun süredir"
     if hedef.get("baglanti") == "kapandi":
         olan = f"{ad}: fabrika programı kapatıldı ve {sure} açılmadı."
+        konu, baslik = f"Alarm: {ad} - program kapalı", "Fabrika programı kapalı"
     else:
         olan = f"{ad}: uzak izleme panosu {sure} bu tesisten rapor almıyor."
-    konu = f"Uzak izleme uyarısı: {ad} - sistemden haber yok"
-    govde = (
-        f"{olan} Bu sürede kameralar izlenmiyor ve uyarı verilmiyor olabilir.\n\n"
-        f"Son rapor: {_turkiye_saati(hedef.get('son_rapor'))}\n\n"
-        "Kontrol edin: fabrika bilgisayarı açık mı, NextGen Detector programı çalışıyor "
-        "mu, internet bağlantısı var mı.\n\n"
-        "Bu bildirim kesinti başına bir kez gelir; bağlantı gelince kendiliğinden sıfırlanır."
+        konu, baslik = f"Alarm: {ad} - sistemden haber yok", "Sistemden haber yok"
+    bilgiler = [("Tesis", ad), ("Son rapor", _turkiye_saati(hedef.get("son_rapor")))]
+    if dakika is not None:
+        bilgiler.append(("Haber yok", f"yaklaşık {dakika} dakika"))
+    metin, html_metni = eposta_tasarla(
+        "alarm",
+        "Alarm",
+        baslik,
+        f"{olan} Bu sürede kameralar izlenmiyor ve uyarı verilmiyor olabilir.",
+        bilgiler,
+        "Bu adres Vercel'deki BEKCI_ALICILAR listesinde olduğu için bu uyarıyı aldınız. "
+        "Bildirim kesinti başına bir kez gelir (kesinti uzarsa günde bir hatırlatılır); "
+        "bağlantı gelince kendiliğinden sıfırlanır.",
+        adres,
+        notlar=[
+            "Kontrol edin: fabrika bilgisayarı açık mı, NextGen Detector programı çalışıyor "
+            "mu, internet bağlantısı var mı."
+        ],
     )
-    return konu, govde
+    return konu, metin, html_metni
 
 
 def _bekci_hedefleri(
@@ -2506,9 +2782,9 @@ def bekci_isle(
         kilit = depo.komut("SET", isaret, str(int(simdi)), "EX", str(BEKCI_KILIT_SN), "NX")
         if kilit != "OK":
             continue  # bu kesinti için zaten uyarıldı (ya da şu an uyarılıyor)
-        konu, metin = _bekci_metni(ad, hedef)
+        konu, metin, html_metni = _bekci_metni(ad, hedef, ayar.pano_adresi)
         uzat = partial(depo.komut, "EXPIRE", isaret, str(BEKCI_UYARI_TTL_SN))
-        sayi = gonder(ayar, alicilar, konu, metin, basarida=uzat)
+        sayi = gonder(ayar, alicilar, konu, metin, basarida=uzat, html_metni=html_metni)
         if sayi:
             uzat()
             uyarildi = True
@@ -2612,12 +2888,11 @@ def haftalik_ozet_icerigi(olaylar: list[dict], veri: dict, gece: int) -> dict:
     }
 
 
-def haftalik_ozet_metni(ozet: dict) -> tuple[str, str, str]:
-    """(konu, düz metin, HTML). HTML yalnız basit tablo ve liste; bütün değerler
-    kaçışlıdır (kamera ve tesis adları programdan gelir)."""
+def haftalik_ozet_metni(ozet: dict, adres: str = "") -> tuple[str, str, str]:
+    """(konu, düz metin, HTML): ortak e-posta tasarımıyla (eposta_tasarla);
+    bütün değerler kaçışlıdır (kamera ve tesis adları programdan gelir)."""
     ilk = datetime.fromtimestamp(ozet["bas"], TURKIYE_SAATI)
     son = ilk + timedelta(days=6)
-    donem = f"{ilk:%d.%m.%Y} - {son:%d.%m.%Y}"
     konu = f"Haftalık özet: {ozet['tesis']}, {ilk:%d.%m} - {son:%d.%m.%Y}: {ozet['toplam']} ihlal"
     fark = ozet["toplam"] - ozet["onceki"]
     karsilastirma = (
@@ -2629,54 +2904,42 @@ def haftalik_ozet_metni(ozet: dict) -> tuple[str, str, str]:
         (f"{GUN_KISA_ADLARI[i]} {datetime.fromisoformat(gun):%d.%m}", str(sayi))
         for i, (gun, sayi) in enumerate(ozet["gunler"])
     ]
-    bolumler = [
-        ("Gün gün ihlal", gunler),
-        ("En sık türler", [(ad, str(sayi)) for ad, sayi in ozet["tipler"]]),
-        ("En çok ihlal olan kameralar", [(ad, str(sayi)) for ad, sayi in ozet["yerler"]]),
-        (
-            "İnceleme",
-            [
-                ("Bekliyor", str(ozet["bekleyen"])),
-                ("İncelendi", str(ozet["incelenen"])),
-                ("Yanlış alarm", str(ozet["yanlis_alarm"])),
-            ],
-        ),
-    ]
-    ust = f"{ozet['toplam']} ihlal ({karsilastirma}); {ozet['sistem']} sistem olayı."
-    alt = [ozet["calisma"], ozet["baglanti"]]
-    dip = (
+    metin, html_metni = eposta_tasarla(
+        "notr",
+        "Haftalık özet",
+        f"{ozet['tesis']} - haftalık özet",
+        f"{ozet['toplam']} ihlal ({karsilastirma}); {ozet['sistem']} sistem olayı.",
+        [
+            ("Dönem", f"{ilk:%d.%m.%Y} - {son:%d.%m.%Y} (Türkiye saati)"),
+            ("İhlal", str(ozet["toplam"])),
+            ("Önceki hafta", str(ozet["onceki"])),
+            ("Sistem olayı", str(ozet["sistem"])),
+        ],
         "Sayılar sitenin olay arşivinden. Bu e-posta haftada bir, pazartesi sabahı gelir; "
-        "kapatmak için Vercel'deki HAFTALIK_OZET ayarını silin."
+        "bu adres Vercel'deki HAFTALIK_OZET_ALICILAR (boşsa BEKCI_ALICILAR) listesinde. "
+        "Kapatmak için Vercel'deki HAFTALIK_OZET ayarını silin.",
+        adres,
+        bolumler=[
+            ("Gün gün ihlal", gunler, True),
+            ("En sık türler", [(ad, str(sayi)) for ad, sayi in ozet["tipler"]], False),
+            (
+                "En çok ihlal olan kameralar",
+                [(ad, str(sayi)) for ad, sayi in ozet["yerler"]],
+                False,
+            ),
+            (
+                "İnceleme",
+                [
+                    ("Bekliyor", str(ozet["bekleyen"])),
+                    ("İncelendi", str(ozet["incelenen"])),
+                    ("Yanlış alarm", str(ozet["yanlis_alarm"])),
+                ],
+                False,
+            ),
+        ],
+        notlar=[ozet["calisma"], ozet["baglanti"]],
     )
-    metin = [f"{ozet['tesis']} - haftalık özet", donem + " (Türkiye saati)", "", ust]
-    for baslik, satirlar in bolumler:
-        metin += ["", baslik + ":"]
-        metin += [f"  {ad}: {deger}" for ad, deger in satirlar] or ["  -"]
-    metin += ["", *alt, "", dip]
-    e = html.escape
-    parca = [
-        '<!doctype html><html lang="tr"><body style="font-family:Arial,sans-serif;'
-        'color:#1f2328;line-height:1.5">',
-        f'<h2 style="margin:0">{e(ozet["tesis"])} - haftalık özet</h2>',
-        f'<p style="margin:0 0 12px;color:#57606a">{e(donem)} (Türkiye saati)</p>',
-        f"<p><b>{e(ust)}</b></p>",
-    ]
-    for baslik, satirlar in bolumler:
-        parca.append(f'<h3 style="margin:16px 0 4px;font-size:15px">{e(baslik)}</h3>')
-        if not satirlar:
-            parca.append('<p style="margin:0">-</p>')
-            continue
-        parca.append('<table style="border-collapse:collapse">')
-        parca += [
-            f'<tr><td style="padding:2px 16px 2px 0">{e(ad)}</td>'
-            f'<td style="padding:2px 0;text-align:right"><b>{e(deger)}</b></td></tr>'
-            for ad, deger in satirlar
-        ]
-        parca.append("</table>")
-    parca += [f'<p style="margin:16px 0 0">{e(satir)}</p>' for satir in alt]
-    parca.append(f'<p style="margin:16px 0 0;color:#57606a;font-size:12px">{e(dip)}</p>')
-    parca.append("</body></html>")
-    return konu, "\n".join(metin) + "\n", "\n".join(parca) + "\n"
+    return konu, metin, html_metni
 
 
 def haftalik_ozet_isle(
@@ -2712,7 +2975,7 @@ def haftalik_ozet_isle(
     okunan = _mget_listesi(okunan, len(PANO_ANAHTARLARI)) or [None] * len(PANO_ANAHTARLARI)
     veri = pano_verisi(depo, ayar, simdi, okunan)
     ozet = haftalik_ozet_icerigi(arsiv_coz(ham_olaylar), veri, gece)
-    konu, metin, html_metni = haftalik_ozet_metni(ozet)
+    konu, metin, html_metni = haftalik_ozet_metni(ozet, ayar.pano_adresi)
     uzat = partial(
         depo.boru_hatti,
         [
@@ -2735,6 +2998,27 @@ def haftalik_ozet_isle(
         return {"gonderildi": False, "sebep": "gidemedi"}
     print(f"Haftalık özet {sayi} alıcıya gönderildi.", file=sys.stderr)
     return {"gonderildi": True, "gonderilen": sayi, "hafta": hafta}
+
+
+def deneme_epostasi_metni(ad: str, saglayici: str, simdi: float, adres: str = "") -> tuple:
+    """Kurulum denetimi kartındaki "Deneme e-postası gönder"in iletisi (konu,
+    düz metin, HTML). Yalnız gönderim yolunun adı girer; ayar değeri girmez."""
+    metin, html_metni = eposta_tasarla(
+        "basari",
+        "Deneme",
+        "E-posta gönderimi çalışıyor",
+        "Bu iletiyi görüyorsanız sitenin e-posta ayarı doğru: bekçi uyarıları ve haftalık "
+        "özet bu yoldan gelir.",
+        [
+            ("Gönderim yolu", {"resend": "Resend", "smtp": "SMTP"}.get(saglayici, "-")),
+            ("İsteyen hesap", ad),
+            ("Zaman", _turkiye_saati(_iso(simdi))),
+        ],
+        f"Bu deneme e-postasını panoda {ad} hesabı Sistem > Kurulum denetimi kartından "
+        "istedi. Siz istemediyseniz yok sayabilirsiniz.",
+        adres,
+    )
+    return "Deneme: e-posta gönderimi çalışıyor", metin, html_metni
 
 
 # --------------------------------------------------------- uzaktan müdahale
@@ -4930,7 +5214,11 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         "bekci_gecersiz": ayar.bekci == "gecersiz",
         "bekci_anahtari": max(len(ayar.bekci_anahtari), len(ayar.cron_sirri))
         >= BEKCI_ANAHTAR_EN_AZ,
-        "eposta": bool(ayar.smtp_sunucu),
+        # E-posta yolu: "resend", "smtp" ya da "" (değerler değil, yalnız hangisi);
+        # Resend'de gönderen adres (EPOSTA_KIMDEN ya da SMTP_KIMDEN) yazılı mı
+        "eposta": bool(eposta_saglayicisi(ayar)),
+        "eposta_saglayici": eposta_saglayicisi(ayar),
+        "eposta_kimden": bool(ayar.eposta_kimden),
         "alici": len(ayar.bekci_alicilar),
         "alici_tg": ayar.bekci_tg_yok_sayildi,  # Tesisler ekranının uyarısıyla aynı
         "ana_tesis": bool(ayar.ana_tesis),
@@ -5114,6 +5402,49 @@ def _diger_cihazlardan_cik(
             ayar, oturum.ad, oturum.hesap_kimligi, hesap["oturum_surumu"], simdi
         )
         return 200, {"tamam": True}, cerez_basligi(yeni_cerez, OTURUM_SURESI_SN)
+
+
+def _deneme_epostasi(
+    depo: UpstashDepo | BellekDepo, ayar: Ayar, oturum: Oturum, govde: dict, simdi: float
+) -> tuple[int, dict, str | None]:
+    """POST /api/hesap {"eylem": "deneme_epostasi", "alici"}: Kurulum denetimi
+    kartından tasarımlı bir deneme e-postası (yalnız yönetici; kapı hesap_islem'de).
+    Hesap değiştirmediği için onay şifresi istemez. Hesap başına saatte
+    DENEME_EPOSTA_SINIRI deneme; her deneme işlem kaydına girer (alıcı kısmen
+    gizli, sonuç tamam / hata). Hata iletisi sabittir: anahtar ya da şifre taşımaz."""
+    saglayici = eposta_saglayicisi(ayar)
+    if not saglayici:
+        raise PanoHatasi(
+            409,
+            "eposta_yok",
+            "E-posta ayarı yok: Vercel'de RESEND_API_KEY ve EPOSTA_KIMDEN ekleyin, sonra "
+            "Redeploy (README, E-posta).",
+        )
+    alici = govde.get("alici")
+    alici = alici.strip() if isinstance(alici, str) else ""
+    if len(alici) > 200 or not EPOSTA_DESENI.fullmatch(alici):
+        raise PanoHatasi(400, "alici", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).")
+    sayac = DENEME_EPOSTA_SAYAC_ONEKI + oturum.ad
+    if depo.say(sayac, DENEME_EPOSTA_PENCERESI_SN) > DENEME_EPOSTA_SINIRI:
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            f"Bir saatte en çok {DENEME_EPOSTA_SINIRI} deneme e-postası gönderilir; "
+            "biraz sonra yeniden deneyin.",
+        )
+    konu, metin, html_metni = deneme_epostasi_metni(oturum.ad, saglayici, simdi, ayar.pano_adresi)
+    ozet = f"{_alici_gizle(alici)} · {'Resend' if saglayici == 'resend' else 'SMTP'}"
+    try:
+        _eposta_gonder(ayar, alici, konu, metin, html_metni)
+    except Exception as hata:  # noqa: BLE001 - neden kayda ve cevaba sırsız yazılır
+        neden = _hata_ozeti(hata)
+        print(f"Deneme e-postası gidemedi ({_alici_gizle(alici)}): {neden}", file=sys.stderr)
+        satir = _islem_satiri(simdi, oturum.ad, oturum.rol, "deneme_epostasi", ozet, "hata")
+        kayit_yaz(depo, KAYIT_ANAHTARI, satir, KAYIT_EN_COK)
+        raise PanoHatasi(502, "eposta_gitmedi", f"E-posta gönderilemedi: {neden}.") from None
+    satir = _islem_satiri(simdi, oturum.ad, oturum.rol, "deneme_epostasi", ozet, "tamam")
+    kayit_yaz(depo, KAYIT_ANAHTARI, satir, KAYIT_EN_COK)
+    return 200, {"tamam": True, "saglayici": saglayici}, None
 
 
 def _hesap_ekle(
@@ -5476,7 +5807,7 @@ def _rol_yetkileri_yaz(
 def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
     """POST /api/hesap - {"eylem", ...}; sifre_degistir, diger_cihazlardan_cik ve
     kendi iki adımı (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) herkese, ötekiler
-    yönetici (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON ->
+    (deneme_epostasi dahil) yönetici (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON ->
     sifre_degismeli -> önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
     ayar, simdi, oturum, govde = _durum_degistiren(istek, None, "hesap")
     eylem = govde.get("eylem")
@@ -5496,6 +5827,8 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")
     if eylem == "rol_yetkileri":
         return _rol_yetkileri_yaz(depo, ayar, oturum, govde, simdi, istek)
+    if eylem == "deneme_epostasi":
+        return _deneme_epostasi(depo, ayar, oturum, govde, simdi)
     if eylem not in ("ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"):
         raise PanoHatasi(400, "eylem", "Bilinmeyen işlem.")
     return _hesap_yonet(depo, ayar, oturum, eylem, govde, simdi, istek)

@@ -328,7 +328,7 @@ class Postaci:
     def __init__(self) -> None:
         self.giden: list[tuple[str, str, str]] = []  # (kanal, alıcı, metin)
 
-    def eposta(self, _ayar, alici, konu, govde):
+    def eposta(self, _ayar, alici, konu, govde, html_metni=""):
         self.giden.append(("eposta", alici, f"{konu}\n{govde}"))
 
 

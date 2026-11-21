@@ -152,6 +152,7 @@ function panoyuBaslat() {
     iki_adim_kapat: "İki adımlı doğrulama kapatıldı",
     iki_adim_sifirla: "İki adımlı doğrulama sıfırlandı",
     diger_cihazlardan_cik: "Diğer cihazlardan çıkıldı",
+    deneme_epostasi: "Deneme e-postası",
     komut: "Komut gönderildi",
     komut_sonuc: "Komut sonucu",
     komut_dustu: "Komut düştü",
@@ -553,6 +554,8 @@ function panoyuBaslat() {
     oturum = null;
     hesapVerisi = null;
     kurulumVerisi = null;
+    denemeEpostaFormunuKapat();
+    $("deneme-eposta-sonuc").hidden = true;
     tekEkranGoster("giris");
     girisAdiminaDon();
     $("oturum-bandi").hidden = !oturumDustu;
@@ -4026,6 +4029,7 @@ function panoyuBaslat() {
   }
 
   const VERCEL_AYARI = "Vercel > Settings > Environment Variables";
+  const EPOSTA_AYARI = "RESEND_API_KEY ve EPOSTA_KIMDEN (README, E-posta)";
 
   /* [ad, tamam mı, ne yapılacağı] satırları */
   function kurulumSatirlari(k, baglanti) {
@@ -4066,12 +4070,7 @@ function panoyuBaslat() {
     if (k.bekci || k.bekci_gecersiz) {
       let eposta;
       if (!k.eposta) {
-        eposta = [
-          false,
-          "Uyarı e-postası için " +
-            VERCEL_AYARI +
-            ": SMTP_SUNUCU, SMTP_KULLANICI, SMTP_SIFRESI ve SMTP_KIMDEN ekleyin, sonra Redeploy.",
-        ];
+        eposta = [false, "Uyarı e-postası için " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin, sonra Redeploy."];
       } else if (!k.alici) {
         eposta = [false, VERCEL_AYARI + ": BEKCI_ALICILAR'a virgülle ayrılmış e-posta adreslerini yazın, sonra Redeploy."];
       } else if (k.alici_tg) {
@@ -4091,7 +4090,7 @@ function panoyuBaslat() {
         "Kapalı (isteğe bağlı). Her pazartesi geçen haftanın özeti için " + VERCEL_AYARI + ": HAFTALIK_OZET=acik yazın, sonra Redeploy.",
       ];
     } else if (!k.eposta) {
-      ozet = [false, "Açık ama e-posta ayarı yok. " + VERCEL_AYARI + ": SMTP_SUNUCU, SMTP_KULLANICI, SMTP_SIFRESI ve SMTP_KIMDEN ekleyin."];
+      ozet = [false, "Açık ama e-posta ayarı yok. " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin, sonra Redeploy."];
     } else if (!k.haftalik_alici) {
       ozet = [false, "Açık ama alıcı yok. " + VERCEL_AYARI + ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın."];
     } else if (!k.bekci_anahtari) {
@@ -4106,6 +4105,31 @@ function panoyuBaslat() {
       ];
     }
     satirlar.push(["Haftalık özet e-postası", ...ozet]);
+    // Hangi yoldan gittiği (Resend / SMTP / yok); değerler gösterilmez
+    let yol;
+    if (k.eposta_saglayici === "resend") {
+      yol = k.eposta_kimden
+        ? [true, "Resend. Aşağıdaki düğmeyle kendinize bir deneme e-postası gönderebilirsiniz."]
+        : [
+            false,
+            "Resend, ama gönderen adres yok. " +
+              VERCEL_AYARI +
+              ": EPOSTA_KIMDEN'e Resend'de doğruladığınız alan adından bir adres yazın (ör. NextGen Detector <alarm@firma.com>), sonra Redeploy.",
+          ];
+    } else if (k.eposta_saglayici === "smtp") {
+      yol = [true, "SMTP (SMTP_SUNUCU). Resend'e geçmek için " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin."];
+    } else {
+      const gerekli = k.bekci || k.bekci_gecersiz || k.haftalik_ozet;
+      yol = [
+        !gerekli,
+        (gerekli ? "Yok: bekçi ve haftalık özet e-posta gönderemez. " : "Yok (isteğe bağlı). ") +
+          VERCEL_AYARI +
+          ": " +
+          EPOSTA_AYARI +
+          " ekleyin, sonra Redeploy.",
+      ];
+    }
+    satirlar.push(["E-posta gönderimi", ...yol]);
     let ana;
     if (k.ana_tesis_gecersiz) {
       ana = [false, "ANA_TESIS bir tesis kimliği olmadığı için yok sayılıyor. Programdaki UZAK_PANO_TESIS_ID'yi yazın, sonra Redeploy."];
@@ -4152,6 +4176,8 @@ function panoyuBaslat() {
   function kurulumuCiz() {
     const kart = $("denetim-karti");
     kart.hidden = !yetkili("ekran.kullanicilar");
+    // Deneme e-postası yalnız bir e-posta yolu varken (sunucu da yalnız yöneticiye gönderir)
+    $("deneme-eposta").hidden = kart.hidden || !kurulumVerisi || !kurulumVerisi.eposta;
     if (kart.hidden || !kurulumVerisi) return;
     const satirlar = kurulumSatirlari(kurulumVerisi, sonVeri ? baglantiDurumu(sonVeri) : "");
     // Yalnız bir şey değişince yeniden kurulur (her tazelemede çağrılır)
@@ -4206,6 +4232,64 @@ function panoyuBaslat() {
   }
 
   $("denetim-yenile").addEventListener("click", kurulumuYukle);
+
+  // ---------------------------------------------------- deneme e-postası
+
+  /* Kurulum denetimi kartından tasarımlı bir deneme e-postası: yazılan adrese
+     gider, işlem kaydına girer; sunucu hesap başına saatte 5 ile sınırlar. */
+  function denemeEpostaFormunuKapat() {
+    $("deneme-eposta-formu").hidden = true;
+    $("deneme-eposta-adres").value = "";
+    $("deneme-eposta-adres").removeAttribute("aria-invalid");
+    $("deneme-eposta-hatasi").textContent = "";
+    $("deneme-eposta-ac").hidden = false;
+  }
+
+  $("deneme-eposta-ac").addEventListener("click", function () {
+    $("deneme-eposta-sonuc").hidden = true;
+    $("deneme-eposta-hatasi").textContent = "";
+    $("deneme-eposta-formu").hidden = false;
+    this.hidden = true;
+    $("deneme-eposta-adres").focus();
+  });
+
+  $("deneme-eposta-vazgec").addEventListener("click", function () {
+    denemeEpostaFormunuKapat();
+    $("deneme-eposta-ac").focus();
+  });
+
+  $("deneme-eposta-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    $("deneme-eposta-hatasi").textContent = "";
+    const alici = $("deneme-eposta-adres").value.trim();
+    const gecerli = alici.length <= 200 && /^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/.test(alici);
+    $("deneme-eposta-adres").toggleAttribute("aria-invalid", !gecerli);
+    if (!gecerli) {
+      $("deneme-eposta-hatasi").textContent = "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).";
+      $("deneme-eposta-adres").focus();
+      return;
+    }
+    const dugme = $("deneme-eposta-dugmesi");
+    dugme.disabled = true;
+    try {
+      const veri = await hesapIslem({ eylem: "deneme_epostasi", alici: alici });
+      const metin =
+        "Deneme e-postası " +
+        (veri.saglayici === "smtp" ? "SMTP" : "Resend") +
+        " ile " +
+        alici +
+        " adresine gönderildi. Gelmezse istenmeyen e-posta klasörüne bakın.";
+      denemeEpostaFormunuKapat();
+      $("deneme-eposta-sonuc").textContent = metin;
+      $("deneme-eposta-sonuc").hidden = false;
+      duyur(metin);
+      $("deneme-eposta-ac").focus();
+    } catch (hata) {
+      $("deneme-eposta-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
 
   // ------------------------------------------------------------ hepsi
 

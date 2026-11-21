@@ -461,6 +461,9 @@ eksik ayar listesine girmez.
 | `SMTP_KULLANICI`, `SMTP_SIFRESI` | SMTP girişi |
 | `SMTP_KIMDEN` | Gönderen adresi (boşsa `SMTP_KULLANICI`) |
 
+E-posta için SMTP yerine **Resend** önerilir (aşağıda E-posta (Resend));
+`RESEND_API_KEY` yazılıysa SMTP ayarları kullanılmaz.
+
 Hepsini **yalnız Production**'a ekleyin ve yeniden yayınlayın.
 
 Telegram bildirimi sahibin isteğiyle 01.11.2026'da kaldırıldı: `BEKCI_ALICILAR`'da
@@ -494,10 +497,12 @@ başına sayılır: 15 dakikada 10 yanlıştan sonra o adres, doğru anahtarla d
 `bekci_kilitli` alır (öbür adresler etkilenmez). Cevapta sır, alıcı
 adresi ya da görüntü yoktur.
 
-Bildirim kısa bir metindir: tesisin adı, son rapordan bu yana geçen dakika, son
+Bildirim kısadır (konu `Alarm: <tesis> - sistemden haber yok`, program kapatıldıysa
+`... - program kapalı`): tesisin adı, son rapordan bu yana geçen dakika, son
 raporun saati (Türkiye) ve neye bakılacağı (bilgisayar açık mı, program çalışıyor
-mu, internet var mı). Bütün alıcılara tek SMTP oturumunda (bir bağlanma ve giriş) ayrı
-ileti gider. Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
+mu, internet var mı). SMTP'de bütün alıcılara tek oturumda (bir bağlanma ve giriş),
+Resend'de her alıcıya ayrı istekle ayrı ileti gider. Düzelme e-postası yoktur:
+işareti fabrikanın raporu siler, bekçi düzelmeyi görmez. Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
 gidemezse işaret bırakılır ve sonraki çağrı yeniden dener. Hata Vercel
 günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre yazılmaz.
 Program kapatılıp açılmadıysa (Kapandı) da eşik dolunca uyarır; hiç rapor
@@ -518,8 +523,8 @@ gidemezse işaret silinir ve sonraki çağrı yeniden dener. `BEKCI` kapalı ols
 | `HAFTALIK_OZET` | `acik` yazılmadıkça özet gitmez. Tanınmayan değer açmaz; Kurulum denetimi kartı söyler |
 | `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Boşsa `BEKCI_ALICILAR` |
 
-SMTP ayarları ve gönderim bekçiyle ortaktır (tek oturum, alıcılar birbirini
-görmez). İleti düz metin ve basit HTML'dir: gün gün ihlal sayısı, önceki
+E-posta ayarları ve gönderim bekçiyle ortaktır (alıcılar birbirini
+görmez). İleti düz metin ve ortak tasarımlı HTML'dir: gün gün ihlal sayısı, önceki
 haftayla fark, en sık 5 tür (ölçümsüz başlık) ve 5 kamera, inceleme durumu
 (bekliyor / incelendi / yanlış alarm), sistem olayı sayısı, programın
 gönderdiği bu ayın çalışma oranı ve bağlantının şu anki durumu. Sayılar olay
@@ -528,6 +533,41 @@ da sır girmez. Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
 `zamani_degil`, `bu_hafta_gitti`, `alici_yok`, `gidemedi`). Kurulum denetimi
 kartı özetin açık olup olmadığını, alıcı sayısını ve son gönderim anını
 gösterir.
+
+### E-posta (Resend) ve tasarım (20.11.2026)
+
+Sitenin bütün e-postaları (bekçi uyarısı, haftalık özet, deneme) tek yoldan gider:
+`RESEND_API_KEY` yazılıysa [Resend](https://resend.com)'in HTTPS API'siyle, yoksa
+yukarıdaki SMTP ayarlarıyla bugünkü gibi. Kurmak için:
+
+1. resend.com'da hesap açın. **Domains → Add Domain** ile kendi alan adınızı
+   ekleyin ve verdiği DNS kayıtlarını alan adınızın paneline yazın; durum
+   **Verified** olana kadar bekleyin (doğrulanmadan yalnız Resend hesabının kendi
+   adresine gönderebilirsiniz).
+2. **API Keys → Create API Key** (izin: Sending access). Anahtar `re_` ile başlar,
+   bir kez gösterilir.
+3. Vercel'de **Settings → Environment Variables**, **yalnız Production**:
+   `RESEND_API_KEY` (anahtar) ve `EPOSTA_KIMDEN` (doğrulanan alan adından bir
+   gönderen, ör. `NextGen Detector <alarm@firma.com>`; boşsa `SMTP_KIMDEN`).
+4. **Deployments → Redeploy**.
+5. Panoda **Sistem → Kurulum denetimi**: "E-posta gönderimi" satırı **Resend**
+   der. **Deneme e-postası gönder**'e basın, kendi adresinizi yazın: birkaç
+   saniyede gelmeli (gelmezse istenmeyen e-posta klasörüne bakın). Hata olursa
+   kartta nedeni yazar (anahtar geçersiz, alan adı doğrulanmamış, sınır doldu).
+
+Deneme e-postası yalnız yöneticidir (`POST /api/hesap {"eylem": "deneme_epostasi",
+"alici"}`), hesap başına saatte 5 ile sınırlıdır ve işlem kaydına alıcısı kısmen
+gizli girer. Anahtar hiçbir cevaba, günlüğe ya da hata metnine yazılmaz; kart
+yalnız hangi yolun açık olduğunu (Resend / SMTP / yok) gösterir.
+
+**Tasarım:** her e-posta düz metin ve HTML'dir; HTML tablo düzeninde, satır içi
+stilli (Gmail, Outlook, iPhone Mail), en çok 560 px, açık zeminli: üstte yazıyla
+"NextGen Detector · DALSAN", renkli durum şeridi (alarm kırmızı, deneme yeşil,
+özet gri), başlık, birkaç temel bilgi, site kendi adresini biliyorsa
+(Vercel'in `VERCEL_PROJECT_PRODUCTION_URL`'i) **Panoyu aç** düğmesi ve altta
+neden geldiği. Programdan gelen adlar kaçışlıdır. Yerel önizleme:
+`python3 tests/eposta_onizleme.py <klasör>` her şablonu örnek veriyle HTML ve
+düz metin olarak yazar.
 
 ## Raporun biçimi (fabrika programı ile bağlarken)
 
@@ -635,8 +675,9 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
    şifresi `PANO_SIFRESI`'dir; sonra yukarıdaki **Geçiş sırası**'nı uygulayın.
    İsteğe bağlı ayarları **Sistem → Kurulum denetimi** kartı (yalnız yönetici)
    tek tek sayar: `OTURUM_ANAHTARI` (yazılı mı, 32 karakter var mı), bekçi
-   (`BEKCI`, `BEKCI_ANAHTARI` / `CRON_SECRET`, `SMTP_*`, `BEKCI_ALICILAR`),
-   haftalık özet (`HAFTALIK_OZET`, alıcı sayısı, son gönderim), `ANA_TESIS`, iki adımı kapalı yönetici sayısı (kurucu dahil) ve fabrika
+   (`BEKCI`, `BEKCI_ANAHTARI` / `CRON_SECRET`, `BEKCI_ALICILAR`),
+   haftalık özet (`HAFTALIK_OZET`, alıcı sayısı, son gönderim), e-posta yolu
+   (Resend / SMTP / yok; Deneme e-postası gönder düğmesiyle), `ANA_TESIS`, iki adımı kapalı yönetici sayısı (kurucu dahil) ve fabrika
    raporunun canlı olup olmadığı. Her satır yeşil (tamam) ya da turuncu
    (bakılmalı) ve ne yapılacağını söyleyen bir cümle. Sunucu
    (`GET /api/hesap?islem=kurulum`) yalnız evet/hayır ve sayı döner, hiçbir

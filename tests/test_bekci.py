@@ -41,8 +41,9 @@ class SahteGonderici:
         self.sonuc = sonuc
         self.cagrilar = []
 
-    def __call__(self, ayar, alicilar, konu, metin, basarida=None):
+    def __call__(self, ayar, alicilar, konu, metin, basarida=None, html_metni=""):
         self.cagrilar.append((alicilar, konu, metin))
+        self.html = html_metni
         if self.sonuc and basarida:
             basarida()
         return self.sonuc
@@ -211,7 +212,7 @@ def test_gonderim_yarida_kalirsa_kilit_kisa_surer_ilk_basari_isareti_uzatir():
     depo2 = _pano.BellekDepo(saat)
     _kaydet(depo2, _rapor(), saat.simdi - 21 * DK, ayar)
 
-    def bir_gidip_oldur(ayar, alicilar, konu, metin, basarida=None):
+    def bir_gidip_oldur(ayar, alicilar, konu, metin, basarida=None, html_metni=""):
         basarida()
         raise Oldurulen
 
@@ -595,7 +596,7 @@ def test_sirlar_cevapta_ve_gunlukte_yok(site, monkeypatch, capsys):  # noqa: F81
     monkeypatch.setenv("SMTP_SUNUCU", "smtp.ornek.com")
     monkeypatch.setenv("SMTP_KULLANICI", "pano@ornek.com")
 
-    def eposta(ayar, alici, konu, metin):
+    def eposta(ayar, alici, konu, metin, html_metni=""):
         raise smtplib.SMTPAuthenticationError(535, f"{ayar.smtp_sifresi} {alici}".encode())
 
     monkeypatch.setattr(_pano, "_eposta_gonder", eposta)
@@ -703,7 +704,9 @@ def test_yalniz_eski_tg_alicisi_kaldiysa_alici_hic_yokmus_gibi(site, monkeypatch
     bırakılmaz (sonraki çağrı yeniden dener). Cevaba yalnız yok sayma notu eklenir."""
     istekler = _dis_istekler(monkeypatch)
     epostalar = []
-    monkeypatch.setattr(_pano, "_eposta_gonder", lambda _ayar, alici, *_: epostalar.append(alici))
+    monkeypatch.setattr(
+        _pano, "_eposta_gonder", lambda _ayar, alici, *_, **__: epostalar.append(alici)
+    )
     monkeypatch.setenv("BEKCI", "acik")
     monkeypatch.setenv("BEKCI_ANAHTARI", GIZLI["BEKCI_ANAHTARI"])
     monkeypatch.setenv("SMTP_SUNUCU", "smtp.firma.example")
@@ -733,7 +736,7 @@ def test_yok_sayma_notu_ayar_uyarilarinin_yerinde_sirsiz(site, monkeypatch, caps
     (`filo.uyarilar`, ANA_TESIS uyarısının yanı). Not sabit bir metindir: girdiyi,
     jetonu, adresi ya da başka bir sırrı yazmaz. tg: girdisi yoksa not da yoktur."""
     istekler = _dis_istekler(monkeypatch)
-    monkeypatch.setattr(_pano, "_eposta_gonder", lambda *_: None)
+    monkeypatch.setattr(_pano, "_eposta_gonder", lambda *_, **__: None)
     for ad, deger in {**GIZLI, **ESKI_TG_ORTAMI, "BEKCI": "acik"}.items():
         monkeypatch.setenv(ad, deger)
     monkeypatch.setenv("BEKCI_ALICILAR", "amir@firma.example")

@@ -986,6 +986,8 @@ def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # n
         "SMTP_SIFRESI": "smtp-sifresi-555",
         "BEKCI_ALICILAR": "bir@ornek.example, iki@ornek.example",
         "ANA_TESIS": "gebze",
+        "RESEND_API_KEY": "re_gizli_resend_anahtari_42",
+        "EPOSTA_KIMDEN": "Pano <alarm@gizli-alan.example>",
     }
     for ad, deger in sirlar.items():
         monkeypatch.setenv(ad, deger)
@@ -1002,6 +1004,8 @@ def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # n
             "bekci_gecersiz": False,
             "bekci_anahtari": True,
             "eposta": True,
+            "eposta_saglayici": "resend",  # RESEND_API_KEY SMTP'den önce gelir
+            "eposta_kimden": True,
             "alici": 2,
             "alici_tg": False,
             "ana_tesis": True,
@@ -1055,5 +1059,6 @@ def test_kurulum_denetimi_yonetici_ve_ayar_sayimi():
     assert (k["oturum_anahtari"], k["oturum_anahtari_kisa"]) == (True, False)
     assert (k["bekci"], k["bekci_gecersiz"], k["bekci_anahtari"]) == (False, True, False)
     assert (k["eposta"], k["alici"], k["alici_tg"]) == (False, 0, True)
+    assert (k["eposta_saglayici"], k["eposta_kimden"]) == ("", False)
     assert (k["ana_tesis"], k["ana_tesis_gecersiz"]) == (False, True)
     assert (k["yonetici"], k["iki_adim_kapali"], k["kurucu_iki_adim"]) == (3, 1, True)

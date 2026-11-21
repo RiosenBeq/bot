@@ -9,13 +9,13 @@ deposunda: `docs/SONRA-YAPILACAKLAR.md`.
 ## Sahibin yapacakları (kod gerekmez)
 
 Panoda görünür (20.11.2026): Sistem ekranındaki **Kurulum denetimi** kartı (yalnız yönetici)
-aşağıdaki 1, 2, 4 ve 5'in durumunu ve fabrika raporunun canlı olup olmadığını yeşil /
+aşağıdaki 1, 2, 4, 5 ve 6'nın durumunu ve fabrika raporunun canlı olup olmadığını yeşil /
 turuncu satırla ve ne yapılacağını söyleyen bir cümleyle gösterir; ayarların değerini
 göstermez.
 
 1. **Bekçiyi açmak (isteğe bağlı, önerilir).** Vercel, Settings, Environment Variables
    (Production): `BEKCI=acik`, `BEKCI_ESIK_DK`, `BEKCI_ALICILAR` (yalnız e-posta
-   adresleri), `BEKCI_ANAHTARI`, e-posta için `SMTP_*`, Vercel Cron için `CRON_SECRET`;
+   adresleri), `BEKCI_ANAHTARI`, e-posta için 6'daki Resend (ya da `SMTP_*`), Vercel Cron için `CRON_SECRET`;
    sonra Redeploy. Hobby'de cron günde bir çalışır: cron-job.org'da her 5 dakikada
    `/api/bekci` adresine `Authorization: Bearer <BEKCI_ANAHTARI>` başlığıyla istek kurun
    (UptimeRobot ücretsiz planı başlık ekleyemez, `?anahtar=` kullanın). Ayrıntı: README,
@@ -34,6 +34,11 @@ göstermez.
    Authenticator, "anahtarı elle gir"). Telefonu kaybedenin iki adımını yönetici
    Kullanıcılar ekranından sıfırlar; kurucuda Vercel'de PANO_SIFRESI değiştirilir. Ayrıntı:
    README, "İki adımlı doğrulama".
+6. **E-posta için Resend (isteğe bağlı, önerilir; 20.11.2026).** resend.com'da hesap açın,
+   alan adınızı doğrulayın, Vercel'e (Production) `RESEND_API_KEY` ve `EPOSTA_KIMDEN`
+   (ör. `NextGen Detector <alarm@firma.com>`) yazıp Redeploy edin; sonra Sistem, Kurulum
+   denetimi, **Deneme e-postası gönder**. Kod hazır; yazılana kadar e-posta SMTP ile
+   (ya da hiç) bugünkü gibi gider. Ayrıntı: README, "E-posta (Resend)".
 
 ## Teknik işler
 
@@ -185,4 +190,12 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
     hane üzerine yazma, "Kaydedilmemiş değişiklik: N kutu"; telefon geçişinde üç küçük
     hedef ve harf ortasından bölünen adlar düzeldi. Kalan: ekran okuyucuyla gerçek
     kullanıcı denemesi (bir insan yapmalı).
+11. ~~**E-posta Resend ve tasarım:** bekçi ve özet yalnız SMTP ile, düz biçimde gidiyor.~~
+    Yapıldı (20.11.2026): `RESEND_API_KEY` yazılıysa Resend (stdlib, sabit ve anahtarsız hata
+    metni), yoksa SMTP bugünkü gibi; bütün e-postalar ortak tasarımda (düz metin + HTML,
+    "Panoyu aç" düğmesi); Kurulum denetimi kartında yol (Resend / SMTP / yok) ve "Deneme
+    e-postası gönder" (yönetici, saatte 5, işlem kaydında); önizleme `tests/eposta_onizleme.py`.
+    Kalan: "sistem yeniden haber veriyor" e-postası yok (işareti fabrikanın raporu siler,
+    bekçi düzelmeyi görmez; eklemek 30 sn'lik rapor yoluna yazma ister); bekçi ayar hatası
+    e-postası da yok (yanlış `BEKCI` zaten 503 `bekci_ayari` ile bildirilir).
 

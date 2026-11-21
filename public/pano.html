@@ -427,6 +427,23 @@
                   <button id="denetim-yenile" class="dugme gri kucuk" type="button"><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg><span>Yenile</span></button>
                 </div>
                 <ul id="denetim-listesi" class="denetim-listesi"></ul>
+                <!-- Deneme e-postası: yalnız e-posta yolu (Resend ya da SMTP) tanımlıysa görünür -->
+                <div id="deneme-eposta" class="deneme-eposta" hidden>
+                  <button id="deneme-eposta-ac" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-posta"/></svg>Deneme e-postası gönder</button>
+                  <p id="deneme-eposta-sonuc" class="sonuc-satiri" role="status" hidden></p>
+                  <form id="deneme-eposta-formu" class="ic-form" novalidate hidden>
+                    <p class="ikincil-metin">Bekçi uyarısıyla aynı tasarımda kısa bir deneme e-postası gider; ayarın çalıştığını gösterir. Saatte en çok 5 deneme.</p>
+                    <div class="alan">
+                      <label for="deneme-eposta-adres">Alıcının e-posta adresi</label>
+                      <input id="deneme-eposta-adres" name="deneme-eposta-adres" type="email" inputmode="email" autocomplete="email" maxlength="200" placeholder="ad@firma.com" aria-describedby="deneme-eposta-hatasi">
+                    </div>
+                    <p id="deneme-eposta-hatasi" class="hata" role="alert"></p>
+                    <div class="dugmeler">
+                      <button id="deneme-eposta-vazgec" class="dugme ikincil" type="button">Vazgeç</button>
+                      <button id="deneme-eposta-dugmesi" class="dugme birincil" type="submit">Gönder</button>
+                    </div>
+                  </form>
+                </div>
                 <p id="denetim-hatasi" class="hata" role="alert"></p>
               </section>
             </div>

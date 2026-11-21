@@ -662,6 +662,8 @@
       bekci_gecersiz: false,
       bekci_anahtari: true,
       eposta: true,
+      eposta_saglayici: "resend",
+      eposta_kimden: true,
       alici: 2,
       alici_tg: false,
       ana_tesis: false,
@@ -1390,6 +1392,8 @@
     return { tamam: true };
   }
 
+  let denemeEpostalari = []; // demoda gönderilen deneme e-postalarının anları (ms)
+
   function hesapIstegi(govde, simdi) {
     const eylem = govde.eylem;
     if (["iki_adim_baslat", "iki_adim_onayla", "iki_adim_kapat"].includes(eylem)) {
@@ -1434,6 +1438,21 @@
     if (!yetkiliMi("hesap.yonet")) {
       kayitYaz(simdi, durum.ad, durum.rol, "komut_red", "Yetki yetmedi: " + eylem, "red");
       throw new DemoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.");
+    }
+    // Deneme e-postası: demoda gerçekten gitmez, başarı taklit edilir (sınır sunucudaki gibi)
+    if (eylem === "deneme_epostasi") {
+      const alici = String(govde.alici || "").trim();
+      if (alici.length > 200 || !/^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/.test(alici)) {
+        throw new DemoHatasi(400, "alici", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).");
+      }
+      denemeEpostalari = denemeEpostalari.filter((an) => simdi - an < SA);
+      if (denemeEpostalari.length >= 5) {
+        throw new DemoHatasi(429, "cok_sik", "Bir saatte en çok 5 deneme e-postası gönderilir; biraz sonra yeniden deneyin.");
+      }
+      denemeEpostalari.push(simdi);
+      const [ad, alan] = alici.split("@");
+      kayitYaz(simdi, durum.ad, durum.rol, "deneme_epostasi", ad.slice(0, 2) + "***@" + alan + " · Resend", "tamam");
+      return { tamam: true, saglayici: "resend" };
     }
     if (!["ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"].includes(eylem)) {
       throw new DemoHatasi(400, "eylem", "Bilinmeyen işlem.");

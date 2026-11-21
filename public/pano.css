@@ -3294,6 +3294,20 @@ a:hover {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+/* Deneme e-postası: listenin altında düğme, sonuç satırı ve küçük form */
+.deneme-eposta {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ayrac);
+}
+.deneme-eposta > .dugme {
+  justify-self: start;
+}
+.deneme-eposta .sonuc-satiri {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
 .gezinme-karti {
   padding: 4px 16px;
 }

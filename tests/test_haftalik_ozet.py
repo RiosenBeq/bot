@@ -159,7 +159,7 @@ def test_icerik_gecen_haftanin_sayilari_foto_ve_ayrinti_yok():
     assert "Bağlantı şu an canlı" in metin
     # HTML: aynı sayılar, değerler kaçışlı; fotoğraf, ayrıntı ve sır yok
     assert "&lt;b&gt;Kapı&lt;/b&gt;" in html_metni and "<b>Kapı</b>" not in html_metni
-    assert "<b>4 ihlal (önceki hafta 1, +3); 1 sistem olayı.</b>" in html_metni
+    assert ">4 ihlal (önceki hafta 1, +3); 1 sistem olayı.</p>" in html_metni
     for icerik in (metin, html_metni):
         for yasak in ("Gizli ayrıntı", "<img", "/api/foto", "base64", GIZLI["SMTP_SIFRESI"]):
             assert yasak not in icerik
