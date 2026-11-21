@@ -503,6 +503,32 @@ günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre yaz�
 Program kapatılıp açılmadıysa (Kapandı) da eşik dolunca uyarır; hiç rapor
 gelmemiş kurulumda uyarmaz.
 
+### Haftalık özet e-postası (isteğe bağlı, 20.11.2026)
+
+`HAFTALIK_OZET=acik` (ya da `açık`) yazılırsa her pazartesi geçen haftanın
+(pazartesi-pazar, Türkiye saati) özeti e-postayla gider. Yeni cron ya da işlev
+yoktur: özet bekçinin çağrısına biner (Vercel Cron 08:00 Türkiye; dış izleme
+servisi de çağırıyorsa pazartesi 08:00'den sonraki ilk çağrı). Hafta başına bir
+işaret tutulur (`SET NX`): aynı hafta ikinci kez gitmez; hiçbir alıcıya
+gidemezse işaret silinir ve sonraki çağrı yeniden dener. `BEKCI` kapalı olsa da
+çalışır; çağıracak anahtar (`CRON_SECRET` ya da `BEKCI_ANAHTARI`) gerekir.
+
+| Ad | Not |
+|---|---|
+| `HAFTALIK_OZET` | `acik` yazılmadıkça özet gitmez. Tanınmayan değer açmaz; Kurulum denetimi kartı söyler |
+| `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Boşsa `BEKCI_ALICILAR` |
+
+SMTP ayarları ve gönderim bekçiyle ortaktır (tek oturum, alıcılar birbirini
+görmez). İleti düz metin ve basit HTML'dir: gün gün ihlal sayısı, önceki
+haftayla fark, en sık 5 tür (ölçümsüz başlık) ve 5 kamera, inceleme durumu
+(bekliyor / incelendi / yanlış alarm), sistem olayı sayısı, programın
+gönderdiği bu ayın çalışma oranı ve bağlantının şu anki durumu. Sayılar olay
+arşivinden gelir (aşağıda Plan ve maliyet). Fotoğraf, olay ayrıntısı, adres ya
+da sır girmez. Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
+`zamani_degil`, `bu_hafta_gitti`, `alici_yok`, `gidemedi`). Kurulum denetimi
+kartı özetin açık olup olmadığını, alıcı sayısını ve son gönderim anını
+gösterir.
+
 ## Raporun biçimi (fabrika programı ile bağlarken)
 
 Fabrika programı `/api/rapor`'a JSON gönderir. Site yalnız aşağıdaki alanları
@@ -610,7 +636,7 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
    İsteğe bağlı ayarları **Sistem → Kurulum denetimi** kartı (yalnız yönetici)
    tek tek sayar: `OTURUM_ANAHTARI` (yazılı mı, 32 karakter var mı), bekçi
    (`BEKCI`, `BEKCI_ANAHTARI` / `CRON_SECRET`, `SMTP_*`, `BEKCI_ALICILAR`),
-   `ANA_TESIS`, iki adımı kapalı yönetici sayısı (kurucu dahil) ve fabrika
+   haftalık özet (`HAFTALIK_OZET`, alıcı sayısı, son gönderim), `ANA_TESIS`, iki adımı kapalı yönetici sayısı (kurucu dahil) ve fabrika
    raporunun canlı olup olmadığı. Her satır yeşil (tamam) ya da turuncu
    (bakılmalı) ve ne yapılacağını söyleyen bir cümle. Sunucu
    (`GET /api/hesap?islem=kurulum`) yalnız evet/hayır ve sayı döner, hiçbir
@@ -678,7 +704,10 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   35 bin. `BEKCI=acik` rapor başına komut eklemez: "haber yok" işareti raporun
   zaten yaptığı okumayla (aynı `MGET`) okunur; yalnız bir kesintiden sonraki ilk
   raporda bir `DEL` gider. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder;
-  site 10 kullanır.
+  site 10 kullanır. **Haftalık özet** pazartesi dışında komut harcamaz;
+  pazartesi 08:00'den sonraki her bekçi çağrısı 1 komut (hafta işareti),
+  gönderim 3 istekte 5 komut (işaret, arşivin son 14 günü ve son rapor tek boru
+  hattında, işaretin uzaması ve son gönderim anı).
 - **Birden çok tesis:** tesis kimliği taşıyan rapor 3 yerine 10 komuttur (2
   istek); ana olmayan tesiste 5-6 komut (1 istek). Kimlik çakışması denetimi
   komut eklemez (önceki özet kütük yazımıyla aynı `SET ... GET` komutunda okunur);
@@ -757,6 +786,20 @@ solgun çizilir. Çıkışta ya da oturum düşünce sayfa yeniden yüklenir: ö
 kullanıcının verisi gizli sayfada kalmaz. Pano isteği 12 saniyede bitmezse
 bırakılır; panonun olmayan bir cevap (ör. otel ağının giriş sayfası) boş veri
 sayılmaz.
+
+**Erişilebilirlik (20.11.2026).** Tek seçimli dilimler (dönem, süzgeç, kanal,
+görünüm) radyo grubudur, Kullanıcılar'ın üç bölümü sekme listesidir: grupta
+yalnız seçili olan Tab ile odaklanır, oklar, Home ve End seçimi kaydırır
+(`aria-pressed` yalnız aç/kapa düğmelerinde kalır). Özetteki iki "Tümü"
+bağlantısı ekran okuyucuda "Olayların tümü" ve "Kameraların tümü" diye okunur.
+Doğrulama kodunda oklar, Home ve End kutular arasında gezer, dolu kutuda yazılan
+rakam o haneyi değiştirir, bir kutuya dokunmak imleci oraya götürür. Roller ve
+yetkiler'de kutular kaydedilmiş hâlden farklıyken Kaydet'in yanında
+"Kaydedilmemiş değişiklik: N kutu" yazar (durum bölgesi). Demoda kurucu hesabı
+olmadığından yetki tablosunu yönetici değiştirebilir. Telefon geçişi (320 px ve
+iPhone 13, bütün ekranlar ve roller, giriş ve kod adımı): 44 px'ten küçük kalan
+üç hedef (kod adımındaki geri, "Teşhis metnini göster", iki adımı "Aç") büyüdü;
+yetki adları ve hesap adı harf ortasından bölünmüyor.
 
 **Yazı tipi.** Inter iki dosyadır: latin altkümesi (48 KB, sayfadan önce
 yüklenir) ve yalnız Türkçenin ondan eksik harflerini (Ğ ğ İ Ş ş, ₺) taşıyan

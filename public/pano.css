@@ -533,6 +533,10 @@ a:hover {
   padding: 0 12px;
   font-size: 13px;
 }
+/* İki harflik "Aç" telefonda 44 px'ten dar kalıyordu */
+#iki-adim-baslat {
+  min-width: var(--dugme-boyu);
+}
 .dugme.kucuk .simge {
   width: 16px;
   height: 16px;
@@ -894,7 +898,8 @@ a:hover {
   min-height: var(--dugme-boyu);
   padding: 0 14px;
 }
-.segment button[aria-pressed="true"] {
+.segment button[aria-checked="true"],
+.segment button[aria-selected="true"] {
   background: var(--segment-secili);
   color: var(--metin);
   font-weight: 650;
@@ -930,7 +935,8 @@ a:hover {
 .cip:active:not([disabled]) {
   transform: scale(0.97);
 }
-.cip[aria-pressed="true"] {
+.cip[aria-pressed="true"],
+.cip[aria-checked="true"] {
   border-color: var(--metin);
   background: var(--metin);
   color: var(--ters-metin);
@@ -942,7 +948,8 @@ a:hover {
   color: var(--metin-3);
   font-variant-numeric: tabular-nums;
 }
-.cip[aria-pressed="true"] .cip-sayi {
+.cip[aria-pressed="true"] .cip-sayi,
+.cip[aria-checked="true"] .cip-sayi {
   color: var(--ters-metin-2);
 }
 .bekleyen-cipi[aria-pressed="true"] {
@@ -1339,8 +1346,8 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 40px;
-  margin: -8px 0 -12px -10px;
+  min-height: 44px;
+  margin: -10px 0 -14px -10px;
   padding: 0 12px 0 6px;
   border: 0;
   border-radius: 10px;
@@ -2918,7 +2925,7 @@ a:hover {
 .teshis-ek summary {
   display: flex;
   align-items: center;
-  min-height: 32px;
+  min-height: var(--dokunma);
   color: var(--birincil-metin);
   font-size: 13px;
   font-weight: 500;
@@ -2975,6 +2982,25 @@ a:hover {
 }
 .form-alti .not {
   font-size: 12px;
+}
+/* Roller ve yetkiler: kutular kaydedilmiş hâlden farklıyken Kaydet'in yanında */
+.kaydedilmedi {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--uyari);
+  font-size: 13px;
+  font-weight: 600;
+}
+.kaydedilmedi::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.kaydedilmedi:empty {
+  display: none;
 }
 .hesap-rozetleri {
   justify-content: flex-end;
@@ -3880,11 +3906,12 @@ a:hover {
   opacity: 0.7;
 }
 /* Dar telefonda rol başlıkları 44 px sütuna sığmıyor, üst üste biniyordu
-   ("OperatörYönetici"): sütun 56 px, başlık 12 px. */
+   ("OperatörYönetici"): sütun 56 px, başlık 12 px. Aralık 2 px: 320 px'te
+   "güncelleme", "Bilgisayarın" yetki adı sütununa bölünmeden sığsın. */
 @media (max-width: 30rem) {
   .yetki-satiri {
     grid-template-columns: minmax(0, 1fr) repeat(3, 3.5rem);
-    gap: 0.25rem;
+    gap: 0.125rem;
   }
   .yetki-basligi .yetki-rol {
     font-size: 0.75rem;
@@ -3921,8 +3948,10 @@ a:hover {
 /* Windows yüksek karşıtlık modu: seçili dilim, çip ve menü öğesi çerçeveyle;
    çubuklar ve şeritler sistem renkleriyle silinmesin diye kendi renkleriyle */
 @media (forced-colors: active) {
-  .segment button[aria-pressed="true"],
+  .segment button[aria-checked="true"],
+  .segment button[aria-selected="true"],
   .cip[aria-pressed="true"],
+  .cip[aria-checked="true"],
   .bekleyen-cipi[aria-pressed="true"],
   .menu-ogesi[aria-current="page"],
   .sekme[aria-current="page"] {

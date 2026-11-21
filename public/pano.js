@@ -275,6 +275,31 @@ function panoyuBaslat() {
     while (oge.firstChild) oge.removeChild(oge.firstChild);
   }
 
+  /* Tek seçimli dilimler (WAI-ARIA): süzgeç ve dönem seçimleri radyo grubu
+     (role="radio", aria-checked), Kullanıcılar bölümleri sekme listesi
+     (role="tab", aria-selected). Grupta yalnız seçili olan Tab ile odaklanır;
+     oklar, Home ve End seçimi kaydırır (tıklamayla aynı yol). */
+  function secimiIsaretle(dugme, secili) {
+    dugme.setAttribute(dugme.getAttribute("role") === "tab" ? "aria-selected" : "aria-checked", String(secili));
+    dugme.tabIndex = secili ? 0 : -1;
+  }
+
+  function secimOklari(olay) {
+    const sekme = this.getAttribute("role") === "tablist";
+    const adim = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: sekme ? 0 : 1, ArrowUp: sekme ? 0 : -1, Home: "ilk", End: "son" }[olay.key];
+    if (!adim || olay.altKey || olay.ctrlKey || olay.metaKey) return;
+    const dugmeler = [...this.querySelectorAll('[role="radio"], [role="tab"]')].filter((d) => !d.hidden && !d.disabled);
+    const sira = dugmeler.indexOf(document.activeElement);
+    if (sira < 0) return;
+    olay.preventDefault();
+    const yeni = adim === "ilk" ? 0 : adim === "son" ? dugmeler.length - 1 : (sira + adim + dugmeler.length) % dugmeler.length;
+    dugmeler[yeni].focus();
+    if (yeni !== sira) dugmeler[yeni].click();
+  }
+  for (const grup of document.querySelectorAll('[role="radiogroup"], [role="tablist"]')) {
+    grup.addEventListener("keydown", secimOklari);
+  }
+
   function darEkran() {
     return window.matchMedia(DAR_EKRAN).matches;
   }
@@ -602,10 +627,21 @@ function panoyuBaslat() {
 
   // -------------------------------------------------------------- hesabım
 
+  /* Kullanıcı adı dar ekranda harf ortasından değil noktadan bölünsün
+     ("fabrika." / "muduru"): ayraçtan sonra <wbr> (metin yine textContent). */
+  function adYaz(oge, ad) {
+    if (oge.textContent === ad) return;
+    temizle(oge);
+    ad.split(/(?<=[._-])/).forEach(function (parca, i) {
+      if (i) oge.appendChild(document.createElement("wbr"));
+      oge.appendChild(document.createTextNode(parca));
+    });
+  }
+
   function hesabimCiz() {
     if (!oturum) return;
     const rolAdi = oturum.rol_adi || ROL_ADLARI[oturum.rol] || "";
-    $("hesabim-ad").textContent = oturum.ad;
+    adYaz($("hesabim-ad"), oturum.ad);
     $("hesabim-rol").textContent = rolAdi;
     $("hesabim-bas").textContent = basHarfler(oturum.ad);
     $("kenar-ad").textContent = oturum.ad;
@@ -1297,7 +1333,7 @@ function panoyuBaslat() {
   function grafikDonemiSec(donem) {
     grafikDonemi = donem;
     for (const d of document.querySelectorAll("#grafik-segmenti button")) {
-      d.setAttribute("aria-pressed", String(d.dataset.grafik === donem));
+      secimiIsaretle(d, d.dataset.grafik === donem);
     }
     if (sonVeri && sonVeri.rapor) grafigiCiz(sonVeri.rapor);
   }
@@ -1488,9 +1524,7 @@ function panoyuBaslat() {
   for (const dugme of document.querySelectorAll("#encok-segmenti button")) {
     dugme.addEventListener("click", function () {
       encokGrubu = this.dataset.encok;
-      for (const d of document.querySelectorAll("#encok-segmenti button")) {
-        d.setAttribute("aria-pressed", String(d === this));
-      }
+      for (const d of document.querySelectorAll("#encok-segmenti button")) secimiIsaretle(d, d === this);
       if (sonVeri && sonVeri.rapor) encokCiz(sonVeri.rapor);
     });
   }
@@ -1709,7 +1743,7 @@ function panoyuBaslat() {
   function kameraSuzgeciSec(suzgec) {
     kameraSuzgeci = suzgec;
     for (const cip of document.querySelectorAll("#kamera-cipleri .cip")) {
-      cip.setAttribute("aria-pressed", String(cip.dataset.suzgec === suzgec));
+      secimiIsaretle(cip, cip.dataset.suzgec === suzgec);
     }
     if (sonVeri) kareleriCiz(sonVeri);
   }
@@ -1851,7 +1885,7 @@ function panoyuBaslat() {
     olayTuru = tur;
     yalnizBekleyen = bekleyen;
     for (const d of document.querySelectorAll("#olay-segmenti button")) {
-      d.setAttribute("aria-pressed", String(d.dataset.tur === tur));
+      secimiIsaretle(d, d.dataset.tur === tur);
     }
     $("bekleyen-cipi").setAttribute("aria-pressed", String(bekleyen));
     if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
@@ -2158,9 +2192,7 @@ function panoyuBaslat() {
 
   for (const dugme of document.querySelectorAll("#arsiv-donemi button")) {
     dugme.addEventListener("click", function () {
-      for (const d of document.querySelectorAll("#arsiv-donemi button")) {
-        d.setAttribute("aria-pressed", String(d === this));
-      }
+      for (const d of document.querySelectorAll("#arsiv-donemi button")) secimiIsaretle(d, d === this);
       arsivSuzgeciniDegistir({ donem: this.dataset.donem });
     });
   }
@@ -2583,7 +2615,7 @@ function panoyuBaslat() {
   function kanalCipiniSec(deger) {
     seciliKanal = deger;
     for (const cip of document.querySelectorAll("#kanal-cipleri .cip")) {
-      cip.setAttribute("aria-pressed", String(cip.dataset.kanal === deger));
+      secimiIsaretle(cip, cip.dataset.kanal === deger);
     }
     anonsOnayiniKapat();
   }
@@ -2627,7 +2659,8 @@ function panoyuBaslat() {
       const cip = el("button", "cip", c.ad);
       cip.type = "button";
       cip.dataset.kanal = c.deger;
-      cip.setAttribute("aria-pressed", String(c.deger === seciliKanal));
+      cip.setAttribute("role", "radio");
+      secimiIsaretle(cip, c.deger === seciliKanal);
       if (c.kanal) cip.title = c.kanal.ad;
       cip.addEventListener("click", function () {
         kanalCipiniSec(c.deger);
@@ -3644,7 +3677,8 @@ function panoyuBaslat() {
     if (!tanim || !Array.isArray(tanim.roller)) return;
     yetkiTanimi = tanim;
     if (!yetkiTaslagi) yetkiTaslagi = taslaktanKur(tanim);
-    const kurucu = !!(oturum && oturum.kurucu);
+    // Demoda kurucu hesabı yok: demo.js'in kabul ettiği gibi yönetici değiştirir
+    const kurucu = !!(oturum && oturum.kurucu) || (!!DEMO && yetkili("hesap.yonet"));
     $("yetkiler-notu").textContent = kurucu
       ? "Kilitli satırlar değişmez: hesap yönetimi ve Kullanıcılar ekranı yalnız yöneticide kalır. " +
         "Bilgisayarı yeniden başlatma yalnız yöneticiye verilebilir."
@@ -3678,6 +3712,7 @@ function panoyuBaslat() {
             if (this.checked) yetkiTaslagi[r.id].add(y.id);
             else yetkiTaslagi[r.id].delete(y.id);
             $("yetki-hatasi").textContent = "";
+            yetkiFarkiniCiz();
           });
           hucre.appendChild(kutu);
           satir.appendChild(hucre);
@@ -3685,6 +3720,21 @@ function panoyuBaslat() {
         izgara.appendChild(satir);
       }
     }
+    yetkiFarkiniCiz();
+  }
+
+  /* Kutular kaydedilmiş hâlden farklıysa Kaydet'in yanında "Kaydedilmemiş
+     değişiklik" yazar (role="status": ekran okuyucu da duyar). */
+  function yetkiFarkiniCiz() {
+    let fark = 0;
+    for (const r of yetkiTanimi.roller) {
+      const kayitli = new Set(r.yetkiler);
+      const taslak = yetkiTaslagi[r.id];
+      for (const y of taslak) if (!kayitli.has(y)) fark++;
+      for (const y of kayitli) if (!taslak.has(y)) fark++;
+    }
+    const metin = fark ? "Kaydedilmemiş değişiklik: " + sayiMetni(fark) + " kutu" : "";
+    if ($("yetki-kaydedilmedi").textContent !== metin) $("yetki-kaydedilmedi").textContent = metin;
   }
 
   function taslaktanKur(tanim) {
@@ -3739,9 +3789,7 @@ function panoyuBaslat() {
   for (const dugme of document.querySelectorAll("#kullanici-segmenti button")) {
     dugme.addEventListener("click", function () {
       kullaniciBolumu = this.dataset.bolum;
-      for (const d of document.querySelectorAll("#kullanici-segmenti button")) {
-        d.setAttribute("aria-pressed", String(d === this));
-      }
+      for (const d of document.querySelectorAll("#kullanici-segmenti button")) secimiIsaretle(d, d === this);
       $("hesaplar-bolumu").hidden = kullaniciBolumu !== "hesaplar";
       $("kayit-bolumu").hidden = kullaniciBolumu !== "kayit";
       $("yetkiler-bolumu").hidden = kullaniciBolumu !== "yetkiler";
@@ -4033,6 +4081,31 @@ function panoyuBaslat() {
       }
       satirlar.push(["Bekçi e-postası", ...eposta]);
     }
+    // Haftalık özet isteğe bağlıdır: kapalıyken satır yeşil kalır, nasıl açılacağını söyler
+    let ozet;
+    if (k.haftalik_ozet_gecersiz) {
+      ozet = [false, "HAFTALIK_OZET değeri tanınmıyor. " + VERCEL_AYARI + ": HAFTALIK_OZET=acik yazın, sonra Redeploy."];
+    } else if (!k.haftalik_ozet) {
+      ozet = [
+        true,
+        "Kapalı (isteğe bağlı). Her pazartesi geçen haftanın özeti için " + VERCEL_AYARI + ": HAFTALIK_OZET=acik yazın, sonra Redeploy.",
+      ];
+    } else if (!k.eposta) {
+      ozet = [false, "Açık ama e-posta ayarı yok. " + VERCEL_AYARI + ": SMTP_SUNUCU, SMTP_KULLANICI, SMTP_SIFRESI ve SMTP_KIMDEN ekleyin."];
+    } else if (!k.haftalik_alici) {
+      ozet = [false, "Açık ama alıcı yok. " + VERCEL_AYARI + ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın."];
+    } else if (!k.bekci_anahtari) {
+      ozet = [false, "Özet bekçinin günlük çağrısıyla gider. " + VERCEL_AYARI + ": en az 16 karakterlik CRON_SECRET ekleyin, sonra Redeploy."];
+    } else {
+      ozet = [
+        true,
+        "Her pazartesi 08:00'den sonra " +
+          sayiMetni(k.haftalik_alici) +
+          " alıcıya gider. " +
+          (k.haftalik_son ? "Son gönderim: " + tarihSaatMetni(k.haftalik_son) + "." : "Henüz gönderilmedi."),
+      ];
+    }
+    satirlar.push(["Haftalık özet e-postası", ...ozet]);
     let ana;
     if (k.ana_tesis_gecersiz) {
       ana = [false, "ANA_TESIS bir tesis kimliği olmadığı için yok sayılıyor. Programdaki UZAK_PANO_TESIS_ID'yi yazın, sonra Redeploy."];
@@ -4330,17 +4403,47 @@ function panoyuBaslat() {
     const girdi = $("giris-kod");
     const haneler = girdi.value.split("");
     const odakta = document.activeElement === girdi;
+    // Etkin kutu imlecin yeridir: ok tuşlarıyla geri gidilip bir hane düzeltilebilir
+    const imlec = Math.min(girdi.selectionStart === null ? haneler.length : girdi.selectionStart, 5);
     const kutular = $("kod-haneleri").children;
     for (let i = 0; i < kutular.length; i++) {
       kutular[i].textContent = haneler[i] || "";
       kutular[i].classList.toggle("dolu", !!haneler[i]);
-      kutular[i].classList.toggle("etkin", odakta && i === Math.min(haneler.length, 5));
+      kutular[i].classList.toggle("etkin", odakta && i === imlec);
     }
+  }
+  function kodImleci(girdi, yer) {
+    girdi.setSelectionRange(yer, yer);
+    kodKutulariniCiz();
   }
   $("giris-kod").addEventListener("input", function () {
     const temiz = this.value.replace(/\D/g, "").slice(0, 6);
-    if (temiz !== this.value) this.value = temiz;
+    if (temiz !== this.value) {
+      const yer = Math.min(this.selectionStart === null ? temiz.length : this.selectionStart, temiz.length);
+      this.value = temiz;
+      this.setSelectionRange(yer, yer);
+    }
     kodKutulariniCiz();
+  });
+  /* Ok tuşları, Home ve End kutular arasında gezer; dolu bir kutudayken yazılan
+     rakam o haneyi değiştirir (araya eklenmez, sonrakiler kaymaz). */
+  $("giris-kod").addEventListener("keydown", function (olay) {
+    if (olay.altKey || olay.ctrlKey || olay.metaKey || olay.shiftKey) return;
+    const uzunluk = this.value.length;
+    const yer = this.selectionStart === null ? uzunluk : this.selectionStart;
+    const yeni = { ArrowLeft: Math.max(0, yer - 1), ArrowRight: Math.min(uzunluk, yer + 1), Home: 0, End: uzunluk }[olay.key];
+    if (yeni !== undefined) {
+      olay.preventDefault();
+      kodImleci(this, yeni);
+    } else if (/^[0-9]$/.test(olay.key) && yer < uzunluk && this.selectionEnd === yer) {
+      this.setSelectionRange(yer, yer + 1);
+    }
+  });
+  // Bir kutuya dokunmak imleci oraya götürür (girdi kutuların üstünde görünmez durur)
+  $("giris-kod").addEventListener("click", function (olay) {
+    const kutu = this.getBoundingClientRect();
+    const sira = Math.floor(((olay.clientX - kutu.left) / kutu.width) * 6);
+    kodImleci(this, Math.max(0, Math.min(sira, this.value.length)));
   });
   $("giris-kod").addEventListener("focus", kodKutulariniCiz);
   $("giris-kod").addEventListener("blur", kodKutulariniCiz);
@@ -4471,7 +4574,7 @@ function panoyuBaslat() {
     if (!tema) return;
     const secili = tema.secim();
     for (const d of document.querySelectorAll("#tema-secimi button")) {
-      d.setAttribute("aria-pressed", String(d.dataset.secim === secili));
+      secimiIsaretle(d, d.dataset.secim === secili);
     }
   }
   for (const d of document.querySelectorAll("#tema-secimi button")) {

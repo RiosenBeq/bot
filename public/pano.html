@@ -213,9 +213,9 @@
               <section id="grafik-karti" class="kart" aria-labelledby="grafik-baslik">
                 <div class="kart-basligi">
                   <div><h2 id="grafik-baslik">İhlaller</h2><p id="grafik-ozet"></p></div>
-                  <div id="grafik-segmenti" class="segment" role="group" aria-label="Dönem">
-                    <button type="button" data-grafik="bugun" aria-pressed="true">Bugün</button>
-                    <button type="button" data-grafik="gun14" aria-pressed="false">14 gün</button>
+                  <div id="grafik-segmenti" class="segment" role="radiogroup" aria-label="Dönem">
+                    <button type="button" data-grafik="bugun" role="radio" aria-checked="true" tabindex="0">Bugün</button>
+                    <button type="button" data-grafik="gun14" role="radio" aria-checked="false" tabindex="-1">14 gün</button>
                   </div>
                 </div>
                 <div id="grafik" class="grafik saatlik" role="img"></div>
@@ -225,7 +225,7 @@
               <section class="kart" aria-labelledby="genel-olay-baslik">
                 <div class="kart-basligi tek-satir">
                   <h2 id="genel-olay-baslik">Son olaylar</h2>
-                  <a class="bag" href="#olaylar">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+                  <a class="bag" href="#olaylar" aria-label="Olayların tümü">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
                 </div>
                 <ul id="genel-olaylar" class="liste"></ul>
               </section>
@@ -234,7 +234,7 @@
               <section class="kart" aria-labelledby="genel-kamera-baslik">
                 <div class="kart-basligi tek-satir">
                   <h2 id="genel-kamera-baslik">Kameralar</h2>
-                  <a class="bag" href="#kameralar">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
+                  <a class="bag" href="#kameralar" aria-label="Kameraların tümü">Tümü<svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></a>
                 </div>
                 <div id="kamera-seridi" class="kamera-seridi" role="img"></div>
                 <p id="kamera-ozeti" class="kamera-ozeti"></p>
@@ -243,9 +243,9 @@
               <section class="kart" aria-labelledby="encok-baslik">
                 <div class="kart-basligi">
                   <div><h2 id="encok-baslik">En çok ihlal</h2><p>Son 7 gün</p></div>
-                  <div id="encok-segmenti" class="segment" role="group" aria-label="Gruplama">
-                    <button type="button" data-encok="yer" aria-pressed="true">Yer</button>
-                    <button type="button" data-encok="tur" aria-pressed="false">Tür</button>
+                  <div id="encok-segmenti" class="segment" role="radiogroup" aria-label="Gruplama">
+                    <button type="button" data-encok="yer" role="radio" aria-checked="true" tabindex="0">Yer</button>
+                    <button type="button" data-encok="tur" role="radio" aria-checked="false" tabindex="-1">Tür</button>
                   </div>
                 </div>
                 <ul id="encok" class="cubuk-listesi"></ul>
@@ -257,10 +257,10 @@
         <!-- KAMERALAR -->
         <div class="gorunum" data-gorunum="kameralar" hidden>
           <div class="arac-satiri">
-            <div id="kamera-cipleri" class="cipler" role="group" aria-label="Kamera süzgeci">
-              <button class="cip" type="button" data-suzgec="hepsi" aria-pressed="true">Tümü<span class="cip-sayi" data-cip="hepsi">0</span></button>
-              <button class="cip" type="button" data-suzgec="sorunlu" aria-pressed="false">Sorunlu<span class="cip-sayi" data-cip="sorunlu">0</span></button>
-              <button class="cip" type="button" data-suzgec="canli" aria-pressed="false">Canlı<span class="cip-sayi" data-cip="canli">0</span></button>
+            <div id="kamera-cipleri" class="cipler" role="radiogroup" aria-label="Kamera süzgeci">
+              <button class="cip" type="button" data-suzgec="hepsi" role="radio" aria-checked="true" tabindex="0">Tümü<span class="cip-sayi" data-cip="hepsi">0</span></button>
+              <button class="cip" type="button" data-suzgec="sorunlu" role="radio" aria-checked="false" tabindex="-1">Sorunlu<span class="cip-sayi" data-cip="sorunlu">0</span></button>
+              <button class="cip" type="button" data-suzgec="canli" role="radio" aria-checked="false" tabindex="-1">Canlı<span class="cip-sayi" data-cip="canli">0</span></button>
             </div>
             <button id="kare-surdur" class="dugme ikincil" type="button" hidden><svg class="simge" aria-hidden="true"><use href="#i-yenile"/></svg>Görüntüyü sürdür</button>
           </div>
@@ -275,10 +275,10 @@
         <!-- OLAYLAR -->
         <div class="gorunum" data-gorunum="olaylar" hidden>
           <div class="arac-satiri">
-            <div id="olay-segmenti" class="segment iri" role="group" aria-label="Olay türü">
-              <button type="button" data-tur="hepsi" aria-pressed="true">Tümü</button>
-              <button type="button" data-tur="ihlal" aria-pressed="false">İhlal</button>
-              <button type="button" data-tur="sistem" aria-pressed="false">Sistem</button>
+            <div id="olay-segmenti" class="segment iri" role="radiogroup" aria-label="Olay türü">
+              <button type="button" data-tur="hepsi" role="radio" aria-checked="true" tabindex="0">Tümü</button>
+              <button type="button" data-tur="ihlal" role="radio" aria-checked="false" tabindex="-1">İhlal</button>
+              <button type="button" data-tur="sistem" role="radio" aria-checked="false" tabindex="-1">Sistem</button>
             </div>
             <div class="cipler">
               <button id="bekleyen-cipi" class="cip bekleyen-cipi" type="button" aria-pressed="false">Bekleyenler<span id="bekleyen-sayisi" class="sayac uyari">0</span></button>
@@ -298,11 +298,11 @@
           </div>
           <section id="arsiv-paneli" class="arsiv-paneli" aria-label="Olay arşivi" hidden>
             <form id="arsiv-formu" class="arsiv-formu" role="search" aria-label="Arşivde süz ve ara">
-              <div id="arsiv-donemi" class="segment iri" role="group" aria-label="Dönem">
-                <button type="button" data-donem="bugun" aria-pressed="false">Bugün</button>
-                <button type="button" data-donem="7" aria-pressed="true">7 gün</button>
-                <button type="button" data-donem="30" aria-pressed="false">30 gün</button>
-                <button type="button" data-donem="90" aria-pressed="false">90 gün</button>
+              <div id="arsiv-donemi" class="segment iri" role="radiogroup" aria-label="Dönem">
+                <button type="button" data-donem="bugun" role="radio" aria-checked="false" tabindex="-1">Bugün</button>
+                <button type="button" data-donem="7" role="radio" aria-checked="true" tabindex="0">7 gün</button>
+                <button type="button" data-donem="30" role="radio" aria-checked="false" tabindex="-1">30 gün</button>
+                <button type="button" data-donem="90" role="radio" aria-checked="false" tabindex="-1">90 gün</button>
               </div>
               <div class="arsiv-suzgec">
                 <div class="alan">
@@ -372,7 +372,7 @@
                 </fieldset>
                 <fieldset>
                   <legend><span class="adim-no">2</span>Nerede çalsın</legend>
-                  <div id="kanal-cipleri" class="cipler" role="group" aria-label="Kanal"></div>
+                  <div id="kanal-cipleri" class="cipler" role="radiogroup" aria-label="Kanal"></div>
                 </fieldset>
                 <div id="anons-onayi" class="onay-kutusu" hidden>
                   <p id="anons-onay-metni"></p>
@@ -539,10 +539,10 @@
                 <div id="gorunum-satiri" class="ayar-satiri gorunum-satiri">
                   <svg class="simge" aria-hidden="true"><use href="#i-ay"/></svg>
                   <span id="gorunum-etiketi" class="ayar-adi">Görünüm</span>
-                  <div id="tema-secimi" class="segment" role="group" aria-labelledby="gorunum-etiketi">
-                    <button type="button" data-secim="sistem" aria-pressed="true">Sistem</button>
-                    <button type="button" data-secim="acik" aria-pressed="false">Açık</button>
-                    <button type="button" data-secim="koyu" aria-pressed="false">Koyu</button>
+                  <div id="tema-secimi" class="segment" role="radiogroup" aria-labelledby="gorunum-etiketi">
+                    <button type="button" data-secim="sistem" role="radio" aria-checked="true" tabindex="0">Sistem</button>
+                    <button type="button" data-secim="acik" role="radio" aria-checked="false" tabindex="-1">Açık</button>
+                    <button type="button" data-secim="koyu" role="radio" aria-checked="false" tabindex="-1">Koyu</button>
                   </div>
                 </div>
               </div>
@@ -632,10 +632,10 @@
         <!-- KULLANICILAR (yalnız yönetici) -->
         <div class="gorunum" data-gorunum="kullanicilar" hidden>
           <div class="arac-satiri">
-            <div id="kullanici-segmenti" class="segment iri" role="group" aria-label="Bölüm">
-              <button type="button" data-bolum="hesaplar" aria-pressed="true">Hesaplar</button>
-              <button type="button" data-bolum="kayit" aria-pressed="false">İşlem kaydı</button>
-              <button type="button" data-bolum="yetkiler" aria-pressed="false">Roller ve yetkiler</button>
+            <div id="kullanici-segmenti" class="segment iri" role="tablist" aria-label="Bölüm">
+              <button id="bolum-hesaplar" type="button" data-bolum="hesaplar" role="tab" aria-selected="true" aria-controls="hesaplar-bolumu" tabindex="0">Hesaplar</button>
+              <button id="bolum-kayit" type="button" data-bolum="kayit" role="tab" aria-selected="false" aria-controls="kayit-bolumu" tabindex="-1">İşlem kaydı</button>
+              <button id="bolum-yetkiler" type="button" data-bolum="yetkiler" role="tab" aria-selected="false" aria-controls="yetkiler-bolumu" tabindex="-1">Roller ve yetkiler</button>
             </div>
             <button id="ekle-ac" class="dugme birincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-arti"/></svg>Kullanıcı ekle</button>
           </div>
@@ -681,13 +681,13 @@
               </div>
             </form>
           </section>
-          <section id="hesaplar-bolumu" class="kart liste-karti" aria-label="Hesaplar">
+          <section id="hesaplar-bolumu" class="kart liste-karti" role="tabpanel" aria-label="Hesaplar">
             <ul id="kullanici-listesi" class="liste"></ul>
           </section>
-          <section id="kayit-bolumu" class="kart liste-karti" aria-label="İşlem kaydı" hidden>
+          <section id="kayit-bolumu" class="kart liste-karti" role="tabpanel" aria-labelledby="bolum-kayit" hidden>
             <ul id="kayit-tablosu" class="liste"></ul>
           </section>
-          <section id="yetkiler-bolumu" class="kart" aria-labelledby="yetkiler-baslik" hidden>
+          <section id="yetkiler-bolumu" class="kart" role="tabpanel" aria-labelledby="yetkiler-baslik" hidden>
             <div class="kart-basligi">
               <h2 id="yetkiler-baslik">Roller ve yetkiler</h2>
               <p class="kart-notu">Hangi rolün neyi yapabileceğini buradan değiştirirsiniz. Değişiklik hemen geçerli olur; kimsenin oturumu kapanmaz.</p>
@@ -703,6 +703,7 @@
               <div class="form-alti tam-satir">
                 <button id="yetki-kaydet" class="dugme birincil" type="submit"><svg class="simge donus bekleme" aria-hidden="true"><use href="#i-yukleniyor"/></svg><span>Kaydet</span></button>
                 <button id="yetki-geri-al" class="dugme" type="button">Varsayılana dön</button>
+                <span id="yetki-kaydedilmedi" class="kaydedilmedi" role="status"></span>
               </div>
             </form>
           </section>

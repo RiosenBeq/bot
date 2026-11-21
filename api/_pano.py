@@ -31,6 +31,7 @@ import binascii
 import contextlib
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import math
@@ -516,6 +517,33 @@ BEKCI_ANAHTAR_EN_AZ = 16
 TURKIYE_SAATI = timezone(timedelta(hours=3))
 EPOSTA_DESENI = re.compile(r"[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[^@\s,;<>\"']+")
 
+# ---- Haftalık özet e-postası (Kod maddesi 4) - opt-in: HAFTALIK_OZET=acik
+# Yeni cron ya da işlev yok: bekçinin çağrısına (Vercel Cron günde bir, 08:00
+# Türkiye) biner. Pazartesi HAFTALIK_OZET_SAAT'ten sonraki ilk çağrı geçen
+# haftanın (pazartesi-pazar) özetini gönderir; işaret hafta başına SET NX EX'tir,
+# aynı hafta ikinci kez gitmez. SMTP ayarları ve gönderim bekçiyle ortaktır.
+HAFTALIK_OZET_DEGERLERI = ("acik", "kapali")
+HAFTALIK_OZET_ONEKI = "dalsan:haftalik_ozet:"  # + haftanın pazartesisi (YYYY-AA-GG)
+HAFTALIK_OZET_SON_ANAHTARI = "dalsan:haftalik_ozet:son"  # son gönderimin anı
+HAFTALIK_OZET_SAAT = 8
+HAFTALIK_OZET_ISARET_SN = 8 * 86400
+HAFTALIK_OZET_SATIR = 5  # en sık tür / kamera satırı
+GUN_KISA_ADLARI = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+AY_ADLARI = (
+    "Ocak",
+    "Şubat",
+    "Mart",
+    "Nisan",
+    "Mayıs",
+    "Haziran",
+    "Temmuz",
+    "Ağustos",
+    "Eylül",
+    "Ekim",
+    "Kasım",
+    "Aralık",
+)
+
 # ---- Çoklu fabrika / filo görünümü (öneri 10, docs/20 §4) - geri uyumlu
 # Rapor isteğe bağlı bir "tesis" alanı taşırsa site kütüğe (registry) küçük bir
 # özet yazar. Tesis kullanılınca TEK bir ana tesis vardır: yalnız o panonun
@@ -633,6 +661,9 @@ class Ayar:
     # OTURUM_ANAHTARI yazılmış ama 32 karakterden kısa: yok sayılır, Kurulum
     # denetimi kartı söyler (değerin kendisi hiçbir yere çıkmaz).
     oturum_anahtari_kisa: bool = False
+    # Haftalık özet (Kod maddesi 4): opt-in; alıcı listesi boşsa bekçinin alıcıları.
+    haftalik_ozet: str = "kapali"
+    haftalik_alicilar: tuple[str, ...] = ()
 
 
 def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> int:
@@ -684,6 +715,8 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     ana_tesis = _katla(ortam.get("ANA_TESIS"))
     ana_gecerli = TESIS_ID_DESENI.fullmatch(ana_tesis) is not None
     alicilar, tg_vardi = _alicilar(ortam.get("BEKCI_ALICILAR"))
+    ozet = _katla(ortam.get("HAFTALIK_OZET"))
+    ozet_alicilari, _ = _alicilar(ortam.get("HAFTALIK_OZET_ALICILAR"))
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
         rapor_anahtari=ortam.get("RAPOR_ANAHTARI", "").strip(),
@@ -709,6 +742,10 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         ana_tesis_gecersiz=bool(ana_tesis) and not ana_gecerli,
         oturum_anahtari=_oturum_anahtari_ortam(ortam.get("OTURUM_ANAHTARI")),
         oturum_anahtari_kisa=0 < len((ortam.get("OTURUM_ANAHTARI") or "").strip()) < 32,
+        haftalik_ozet=(
+            (ozet if ozet in HAFTALIK_OZET_DEGERLERI else "gecersiz") if ozet else "kapali"
+        ),
+        haftalik_alicilar=ozet_alicilari or alicilar,
     )
 
 
@@ -2247,7 +2284,7 @@ class _SmtpOturumu:
         self._yigin, self._sunucu = yigin, sunucu
         return sunucu
 
-    def gonder(self, ayar: Ayar, alici: str, konu: str, govde: str) -> None:
+    def gonder(self, ayar: Ayar, alici: str, konu: str, govde: str, html_metni: str = "") -> None:
         if not ayar.smtp_sunucu:
             raise BildirimHatasi("SMTP sunucusu tanımlı değil (SMTP_SUNUCU)")
         if not EPOSTA_DESENI.fullmatch(alici):
@@ -2257,6 +2294,8 @@ class _SmtpOturumu:
         mesaj["To"] = alici
         mesaj["Subject"] = konu
         mesaj.set_content(govde)
+        if html_metni:  # haftalık özet: düz metnin yanında basit HTML (multipart/alternative)
+            mesaj.add_alternative(html_metni, subtype="html")
         sunucu = self._sunucu or self._ac(ayar)
         try:
             sunucu.send_message(mesaj)
@@ -2280,16 +2319,16 @@ class _SmtpOturumu:
 _SMTP_OTURUMU = threading.local()
 
 
-def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str) -> None:
+def _eposta_gonder(ayar: Ayar, alici: str, konu: str, govde: str, html_metni: str = "") -> None:
     """Tek alıcıya tek e-posta. bekci_uyari_gonder açık bir oturum bıraktıysa
     onu kullanır; yoksa kendi oturumunu açıp kapatır."""
     ortak = getattr(_SMTP_OTURUMU, "acik", None)
     if ortak is not None:
-        ortak.gonder(ayar, alici, konu, govde)
+        ortak.gonder(ayar, alici, konu, govde, html_metni)
         return
     oturum = _SmtpOturumu()
     try:
-        oturum.gonder(ayar, alici, konu, govde)
+        oturum.gonder(ayar, alici, konu, govde, html_metni)
     finally:
         oturum.kapat()
 
@@ -2317,20 +2356,24 @@ def bekci_uyari_gonder(
     metin: str,
     eposta_gonder: Callable[[Ayar, str, str, str], None] | None = None,
     basarida: Callable[[], object] | None = None,
+    html_metni: str = "",
+    ne: str = "Bekçi bildirimi",
 ) -> int:
     """Her alıcıya e-posta gönderir; giden bildirim sayısını döner. Her alıcı
     ayrı denenir: herhangi bir hata (bozuk adres dahil) ötekileri durdurmaz ve
     500 yapmaz; günlüğe sırsız yazılır. `basarida` ilk başarılı gönderimden
     hemen sonra bir kez çağrılır (bekçi işareti uzatır). Gönderen enjekte
-    edilebilir (testte sahte gönderici verilir)."""
+    edilebilir (testte sahte gönderici verilir). Haftalık özet de buradan
+    gider: `html_metni` düz metnin yanına HTML eki, `ne` günlükteki adı."""
     if eposta_gonder is not None:
-        return _alicilara_gonder(ayar, alicilar, konu, metin, eposta_gonder, basarida)
+        return _alicilara_gonder(ayar, alicilar, konu, metin, eposta_gonder, basarida, ne)
     # Gerçek gönderim: bütün alıcılar tek SMTP oturumunda. _eposta_gonder adı çağrı
     # anında çözülür (testler onu değiştirir); oturum ilk gerçek gönderimde açılır.
+    ek = {"html_metni": html_metni} if html_metni else {}
     oturum = _SMTP_OTURUMU.acik = _SmtpOturumu()
     try:
         return _alicilara_gonder(
-            ayar, alicilar, konu, metin, lambda *arg: _eposta_gonder(*arg), basarida
+            ayar, alicilar, konu, metin, lambda *arg: _eposta_gonder(*arg, **ek), basarida, ne
         )
     finally:
         _SMTP_OTURUMU.acik = None
@@ -2344,6 +2387,7 @@ def _alicilara_gonder(
     metin: str,
     eposta_gonder: Callable[[Ayar, str, str, str], None],
     basarida: Callable[[], object] | None,
+    ne: str = "Bekçi bildirimi",
 ) -> int:
     gonderilen = 0
     for alici in alicilar:
@@ -2351,7 +2395,7 @@ def _alicilara_gonder(
             eposta_gonder(ayar, alici, konu, metin)
         except Exception as hata:  # noqa: BLE001 - bir alıcının hatası ötekini durdurmaz
             print(
-                f"Bekçi bildirimi gidemedi ({_alici_gizle(alici)}): {_hata_ozeti(hata)}",
+                f"{ne} gidemedi ({_alici_gizle(alici)}): {_hata_ozeti(hata)}",
                 file=sys.stderr,
             )
             continue
@@ -2476,6 +2520,221 @@ def bekci_isle(
     if ayar.bekci_tg_yok_sayildi:
         sonuc["uyarilar"] = [BEKCI_TG_METNI]
     return sonuc
+
+
+# ------------------------------------------- haftalık özet e-postası (Kod 4)
+
+
+def haftalik_ozet_haftasi(simdi: float) -> str | None:
+    """Gönderim zamanıysa bu haftanın pazartesisi ("YYYY-AA-GG"), değilse None:
+    Türkiye saatiyle pazartesi, HAFTALIK_OZET_SAAT ve sonrası. Vercel Cron
+    05:00 UTC'de (08:00 Türkiye) çağırır; 5 dakikada bir çağıran dış izleme
+    servisi varsa özet gece yarısı değil sabah gider."""
+    an = datetime.fromtimestamp(simdi, TURKIYE_SAATI)
+    if an.weekday() != 0 or an.hour < HAFTALIK_OZET_SAAT:
+        return None
+    return an.strftime("%Y-%m-%d")
+
+
+def _pazartesi_gecesi(simdi: float) -> int:
+    """Bu haftanın pazartesi gece yarısı (Türkiye saati)."""
+    an = datetime.fromtimestamp(simdi, TURKIYE_SAATI)
+    gece = (an - timedelta(days=an.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(gece.timestamp())
+
+
+def _en_coklar(sayac: dict[str, int]) -> list[tuple[str, int]]:
+    return sorted(sayac.items(), key=lambda s: (-s[1], _ara_katla(s[0])))[:HAFTALIK_OZET_SATIR]
+
+
+def _ondalik(deger: float) -> str:
+    return f"{deger:.1f}".replace(".", ",")
+
+
+def haftalik_ozet_icerigi(olaylar: list[dict], veri: dict, gece: int) -> dict:
+    """Geçen haftanın (`gece`den önceki 7 Türkiye günü, pazartesi-pazar) özeti.
+    SAF. `olaylar`: arşivin son 14 günü (arsiv_coz; önceki hafta karşılaştırma
+    için), `veri`: pano_verisi. Yalnız sayılar, olay türü (ölçümsüz başlık) ve
+    kamera adı girer: fotoğraf, olay ayrıntısı, adres ya da sır girmez."""
+    bas = gece - 7 * 86400
+    gunler = {_turkiye_gunu(bas + i * 86400): 0 for i in range(7)}
+    tipler: dict[str, int] = {}
+    yerler: dict[str, int] = {}
+    durumlar = dict.fromkeys(OLAY_DURUMLARI, 0)
+    onceki = sistem = 0
+    for olay in olaylar:
+        try:
+            an = datetime.fromisoformat(olay["zaman"]).timestamp()
+        except ValueError:
+            continue
+        if not bas - 7 * 86400 <= an < gece:
+            continue
+        if an < bas:
+            onceki += olay["tur"] == "ihlal"
+        elif olay["tur"] != "ihlal":
+            sistem += 1
+        else:
+            gunler[_turkiye_gunu(an)] += 1
+            tip = olay_tipi(olay["baslik"])
+            tipler[tip] = tipler.get(tip, 0) + 1
+            if olay["yer"]:
+                yerler[olay["yer"]] = yerler.get(olay["yer"], 0) + 1
+            if olay["durum"] in durumlar:
+                durumlar[olay["durum"]] += 1
+    rapor = _sozluk(veri.get("rapor"))
+    calisma = rapor.get("calisma")
+    son = _turkiye_saati(veri.get("son_rapor"))
+    baglanti = {
+        "canli": f"Bağlantı şu an canlı; son rapor {son}.",
+        "yok": f"Fabrikadan şu an rapor gelmiyor; son rapor {son}.",
+        "kapandi": f"Fabrika programı kapalı; son rapor {son}.",
+    }.get(veri.get("baglanti"), "Fabrikadan henüz rapor gelmedi.")
+    return {
+        "tesis": _panonun_adi(veri),
+        "bas": bas,
+        "gunler": list(gunler.items()),
+        "toplam": sum(gunler.values()),
+        "onceki": onceki,
+        "tipler": _en_coklar(tipler),
+        "yerler": _en_coklar(yerler),
+        "bekleyen": durumlar["new"],
+        "incelenen": durumlar["reviewed"],
+        "yanlis_alarm": durumlar["false_alarm"],
+        "sistem": sistem,
+        "calisma": (
+            f"{AY_ADLARI[int(calisma['ay'][5:]) - 1]} {calisma['ay'][:4]} çalışma oranı: "
+            f"%{_ondalik(calisma['sistem_yuzde'])} (kameralar "
+            f"%{_ondalik(calisma['kamera_yuzde'])}; {calisma['olculen_saat']} saat ölçüldü)."
+            if isinstance(calisma, dict)
+            else "Çalışma oranı: fabrika programı göndermiyor."
+        ),
+        "baglanti": baglanti,
+    }
+
+
+def haftalik_ozet_metni(ozet: dict) -> tuple[str, str, str]:
+    """(konu, düz metin, HTML). HTML yalnız basit tablo ve liste; bütün değerler
+    kaçışlıdır (kamera ve tesis adları programdan gelir)."""
+    ilk = datetime.fromtimestamp(ozet["bas"], TURKIYE_SAATI)
+    son = ilk + timedelta(days=6)
+    donem = f"{ilk:%d.%m.%Y} - {son:%d.%m.%Y}"
+    konu = f"Haftalık özet: {ozet['tesis']}, {ilk:%d.%m} - {son:%d.%m.%Y}: {ozet['toplam']} ihlal"
+    fark = ozet["toplam"] - ozet["onceki"]
+    karsilastirma = (
+        f"önceki hafta {ozet['onceki']}, {'+' if fark > 0 else ''}{fark}"
+        if fark
+        else f"önceki hafta da {ozet['onceki']}"
+    )
+    gunler = [
+        (f"{GUN_KISA_ADLARI[i]} {datetime.fromisoformat(gun):%d.%m}", str(sayi))
+        for i, (gun, sayi) in enumerate(ozet["gunler"])
+    ]
+    bolumler = [
+        ("Gün gün ihlal", gunler),
+        ("En sık türler", [(ad, str(sayi)) for ad, sayi in ozet["tipler"]]),
+        ("En çok ihlal olan kameralar", [(ad, str(sayi)) for ad, sayi in ozet["yerler"]]),
+        (
+            "İnceleme",
+            [
+                ("Bekliyor", str(ozet["bekleyen"])),
+                ("İncelendi", str(ozet["incelenen"])),
+                ("Yanlış alarm", str(ozet["yanlis_alarm"])),
+            ],
+        ),
+    ]
+    ust = f"{ozet['toplam']} ihlal ({karsilastirma}); {ozet['sistem']} sistem olayı."
+    alt = [ozet["calisma"], ozet["baglanti"]]
+    dip = (
+        "Sayılar sitenin olay arşivinden. Bu e-posta haftada bir, pazartesi sabahı gelir; "
+        "kapatmak için Vercel'deki HAFTALIK_OZET ayarını silin."
+    )
+    metin = [f"{ozet['tesis']} - haftalık özet", donem + " (Türkiye saati)", "", ust]
+    for baslik, satirlar in bolumler:
+        metin += ["", baslik + ":"]
+        metin += [f"  {ad}: {deger}" for ad, deger in satirlar] or ["  -"]
+    metin += ["", *alt, "", dip]
+    e = html.escape
+    parca = [
+        '<!doctype html><html lang="tr"><body style="font-family:Arial,sans-serif;'
+        'color:#1f2328;line-height:1.5">',
+        f'<h2 style="margin:0">{e(ozet["tesis"])} - haftalık özet</h2>',
+        f'<p style="margin:0 0 12px;color:#57606a">{e(donem)} (Türkiye saati)</p>',
+        f"<p><b>{e(ust)}</b></p>",
+    ]
+    for baslik, satirlar in bolumler:
+        parca.append(f'<h3 style="margin:16px 0 4px;font-size:15px">{e(baslik)}</h3>')
+        if not satirlar:
+            parca.append('<p style="margin:0">-</p>')
+            continue
+        parca.append('<table style="border-collapse:collapse">')
+        parca += [
+            f'<tr><td style="padding:2px 16px 2px 0">{e(ad)}</td>'
+            f'<td style="padding:2px 0;text-align:right"><b>{e(deger)}</b></td></tr>'
+            for ad, deger in satirlar
+        ]
+        parca.append("</table>")
+    parca += [f'<p style="margin:16px 0 0">{e(satir)}</p>' for satir in alt]
+    parca.append(f'<p style="margin:16px 0 0;color:#57606a;font-size:12px">{e(dip)}</p>')
+    parca.append("</body></html>")
+    return konu, "\n".join(metin) + "\n", "\n".join(parca) + "\n"
+
+
+def haftalik_ozet_isle(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    simdi: float,
+    gonder: Callable[..., int] | None = None,
+) -> dict:
+    """Haftalık özetin çekirdeği (HTTP'siz, test edilebilir); bekçinin çağrısı
+    çalıştırır. Kapalıysa ya da gönderim zamanı değilse komut harcamaz. Pazartesi
+    08:00'den sonra işaret bekçideki gibi önce kısa bir kilittir (SET NX EX):
+    eşzamanlı ikinci çağrı göndermez; ilk e-posta gidince işaret bir haftayı aşar
+    ve son gönderim anı yazılır (Kurulum denetimi kartı okur), hiçbiri gidemezse
+    silinir (sonraki çağrı yeniden dener). Veri tek boru hattında okunur: arşivin
+    son 14 günü ve panonun son raporu."""
+    if ayar.haftalik_ozet != "acik":
+        return {"atlandi": True}
+    hafta = haftalik_ozet_haftasi(simdi)
+    if hafta is None:
+        return {"gonderildi": False, "sebep": "zamani_degil"}
+    if not ayar.haftalik_alicilar:
+        return {"gonderildi": False, "sebep": "alici_yok"}
+    isaret = HAFTALIK_OZET_ONEKI + hafta
+    if depo.komut("SET", isaret, str(int(simdi)), "EX", str(BEKCI_KILIT_SN), "NX") != "OK":
+        return {"gonderildi": False, "sebep": "bu_hafta_gitti"}
+    gece = _pazartesi_gecesi(simdi)
+    ham_olaylar, okunan = depo.boru_hatti(
+        [
+            ["ZREVRANGEBYSCORE", ARSIV_ANAHTARI, f"({gece}", str(gece - 14 * 86400)],
+            ["MGET", *PANO_ANAHTARLARI],
+        ]
+    )
+    okunan = _mget_listesi(okunan, len(PANO_ANAHTARLARI)) or [None] * len(PANO_ANAHTARLARI)
+    veri = pano_verisi(depo, ayar, simdi, okunan)
+    ozet = haftalik_ozet_icerigi(arsiv_coz(ham_olaylar), veri, gece)
+    konu, metin, html_metni = haftalik_ozet_metni(ozet)
+    uzat = partial(
+        depo.boru_hatti,
+        [
+            ["EXPIRE", isaret, str(HAFTALIK_OZET_ISARET_SN)],
+            _set_komutu(HAFTALIK_OZET_SON_ANAHTARI, str(int(simdi)), None),
+        ],
+    )
+    gonder = gonder or bekci_uyari_gonder
+    sayi = gonder(
+        ayar,
+        ayar.haftalik_alicilar,
+        konu,
+        metin,
+        basarida=uzat,
+        html_metni=html_metni,
+        ne="Haftalık özet",
+    )
+    if not sayi:
+        depo.sil(isaret)  # hiçbiri gidemedi: sonraki çağrı yeniden denesin
+        return {"gonderildi": False, "sebep": "gidemedi"}
+    print(f"Haftalık özet {sayi} alıcıya gönderildi.", file=sys.stderr)
+    return {"gonderildi": True, "gonderilen": sayi, "hafta": hafta}
 
 
 # --------------------------------------------------------- uzaktan müdahale
@@ -4435,18 +4694,28 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     BEKCI tanınmayan bir değerse (anahtar doğrulandıktan sonra) 503 bekci_ayari
     döner: yanlış yazılmış ayar sessizce kapalı kalmaz. Cevapta sır, alıcı ya da
     görüntü yoktur; yok sayılan eski tg: girdisi varsa `uyarilar` notu gelir.
-    HEAD de aynı yoldan geçer (api/bekci.py)."""
+    HEAD de aynı yoldan geçer (api/bekci.py).
+    HAFTALIK_OZET=acik ise bekçiden SONRA haftalık özet de denenir (yalnız
+    pazartesi sabahı bir şey yapar; bekçi kapalı olsa da): cevaba `haftalik`
+    eklenir. Özet bekçiden sonradır: yavaş bir SMTP alarmı geciktirmesin."""
     ayar = ayar_oku()
     _bekci_yetkisi(istek, ayar)
     if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın
         raise PanoHatasi(503, "bekci_ayari", BEKCI_AYAR_HATASI_METNI)
-    if ayar.bekci != "acik":
-        return 200, {"atlandi": True}, None
-    if DEPO is None and not (ayar.redis_adresi and ayar.redis_jetonu):
-        raise PanoHatasi(503, "kurulum_eksik", "Sitede Upstash Redis bağlı değil.")
-    sonuc = bekci_isle(depo_al(ayar), ayar, time.time())
-    bayat = any(hedef["bayat"] for hedef in sonuc["durum"])
-    return (503 if bayat else 200), sonuc, None
+    depo_var = DEPO is not None or bool(ayar.redis_adresi and ayar.redis_jetonu)
+    kod, sonuc = 200, {"atlandi": True}
+    if ayar.bekci == "acik":
+        if not depo_var:
+            raise PanoHatasi(503, "kurulum_eksik", "Sitede Upstash Redis bağlı değil.")
+        sonuc = bekci_isle(depo_al(ayar), ayar, time.time())
+        kod = 503 if any(hedef["bayat"] for hedef in sonuc["durum"]) else 200
+    if ayar.haftalik_ozet == "acik" and depo_var:
+        try:
+            sonuc["haftalik"] = haftalik_ozet_isle(depo_al(ayar), ayar, time.time())
+        except Exception as hata:  # noqa: BLE001 - özet hatası bekçinin cevabını bozmasın
+            print(f"Haftalık özet hazırlanamadı: {_hata_ozeti(hata)}", file=sys.stderr)
+            sonuc["haftalik"] = {"gonderildi": False, "sebep": "hata"}
+    return kod, sonuc, None
 
 
 def _durum_degistiren(
@@ -4635,13 +4904,14 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
     evet/hayır ve sayı döner: hiçbir ayarın değeri, adresi ya da sırrı cevaba
     girmez (tests/test_hesap.py denetler). Cümleleri pano kurar; fabrika
     raporunun canlı olup olmadığını pano zaten /api/durum'dan bilir.
-    İki okuma: hesap dizini, tesis sayısı ve kurucunun iki adım kaydı tek boru
-    hattında; hesap kayıtları tek MGET'te."""
-    ham_adlar, tesis_sayisi, kurucu_kaydi = depo.boru_hatti(
+    İki okuma: hesap dizini, tesis sayısı, kurucunun iki adım kaydı ve son
+    haftalık özetin anı tek boru hattında; hesap kayıtları tek MGET'te."""
+    ham_adlar, tesis_sayisi, kurucu_kaydi, ozet_son = depo.boru_hatti(
         [
             ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
             ["LLEN", TESISLER_ANAHTARI],
             ["GET", IKI_ADIM_KURUCU_ANAHTARI],
+            ["GET", HAFTALIK_OZET_SON_ANAHTARI],
         ]
     )
     # Kullanıcılar listesi ve oturum özetiyle aynı ölçü (GET bir şey silmez)
@@ -4670,6 +4940,13 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         "iki_adim_kapali": int(not kurucu_iki_adim)
         + sum(1 for kayit in yoneticiler if _iki_adim_siri(kayit) is None),
         "kurucu_iki_adim": kurucu_iki_adim,
+        # Haftalık özet: açık mı, kaç alıcı, son gönderim anı (yoksa None)
+        "haftalik_ozet": ayar.haftalik_ozet == "acik",
+        "haftalik_ozet_gecersiz": ayar.haftalik_ozet == "gecersiz",
+        "haftalik_alici": len(ayar.haftalik_alicilar),
+        "haftalik_son": (
+            _iso(int(ozet_son)) if isinstance(ozet_son, str) and _rakam_mi(ozet_son) else None
+        ),
     }
 
 

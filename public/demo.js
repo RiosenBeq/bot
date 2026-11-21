@@ -661,7 +661,7 @@
       bekci: true,
       bekci_gecersiz: false,
       bekci_anahtari: true,
-      eposta: false,
+      eposta: true,
       alici: 2,
       alici_tg: false,
       ana_tesis: false,
@@ -670,7 +670,21 @@
       yonetici: 1 + yoneticiler.length,
       iki_adim_kapali: 1 + yoneticiler.filter((k) => !k.iki_adim).length,
       kurucu_iki_adim: false,
+      // Haftalık özet açık: son pazartesi 08:03'te (Türkiye) gitmiş
+      haftalik_ozet: true,
+      haftalik_ozet_gecersiz: false,
+      haftalik_alici: 2,
+      haftalik_son: sonOzetAni(),
     };
+  }
+
+  /* Son pazartesi 08:03 (Türkiye, UTC+3): haftalık özetin gittiği an */
+  function sonOzetAni() {
+    const tr = new Date(Date.now() + 3 * SA);
+    const geri = (tr.getUTCDay() + 6) % 7; // pazartesiden bu yana geçen gün
+    let an = Date.UTC(tr.getUTCFullYear(), tr.getUTCMonth(), tr.getUTCDate() - geri, 5, 3);
+    if (an > Date.now()) an -= 7 * 24 * SA;
+    return iso(an);
   }
 
   function hesapVerisi() {

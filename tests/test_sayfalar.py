@@ -177,3 +177,34 @@ def test_bildirim_karti_tazelemede_yeniden_kurulmaz():
     assert "temizle(liste)" not in ciz and "bildirimKartlari" in ciz
     guncelle = re.search(r"function bildirimKartiniGuncelle\(kart, k\) \{.*?\n  \}", PANO_JS, re.S)
     assert "kart.dataset.imza === imza" in guncelle.group(0)
+
+
+def test_tek_secimli_dilimler_radyo_ya_da_sekme():
+    """Erişilebilirlik (Kod maddesi 10): tek seçimli dilimler aria-pressed değil
+    radyo grubu ya da sekme listesidir; seçili olan Tab ile odaklanır, oklar
+    seçimi kaydırır. aria-pressed yalnız aç/kapa düğmelerinde kalır."""
+    html = (PUBLIC / "pano.html").read_text(encoding="utf-8")
+    radyolar = ("grafik-segmenti", "encok-segmenti", "olay-segmenti", "arsiv-donemi")
+    radyolar += ("tema-secimi", "kamera-cipleri", "kanal-cipleri")
+    for kimlik in radyolar:
+        assert re.search(rf'id="{kimlik}"[^>]*role="radiogroup"', html), kimlik
+    assert re.search(r'id="kullanici-segmenti"[^>]*role="tablist"', html)
+    for bolum in ("hesaplar", "kayit", "yetkiler"):
+        assert re.search(rf'role="tab"[^>]*aria-controls="{bolum}-bolumu"', html)
+        assert re.search(rf'id="{bolum}-bolumu"[^>]*role="tabpanel"', html)
+    basili = re.findall(r"<button[^>]*aria-pressed=[^>]*>", html)
+    assert all(re.search(r'id="(sifre-goster|bekleyen-cipi|arsiv-cipi)"', b) for b in basili)
+    assert "function secimOklari" in PANO_JS and '"ArrowRight"' in PANO_JS
+    # Özetteki iki "Tümü" bağlantısının ekran okuyucudaki adı ayrı
+    adlar = re.findall(r'<a class="bag" href="#[a-z]+" aria-label="([^"]+)">Tümü', html)
+    assert len(adlar) == 2 and len(set(adlar)) == 2 and all("tümü" in ad for ad in adlar)
+
+
+def test_kod_kutusunda_ok_tuslari_ve_kaydedilmemis_yetki_isareti():
+    html = (PUBLIC / "pano.html").read_text(encoding="utf-8")
+    # Kod kutusu: ok, Home, End imleci gezdirir; etkin kutu imlecin yeridir
+    assert re.search(r'\$\("giris-kod"\)\.addEventListener\("keydown"', PANO_JS)
+    assert "ArrowLeft:" in PANO_JS and "selectionStart" in PANO_JS
+    # Roller ve yetkiler: kaydedilmemiş değişiklik Kaydet'in yanında, durum bölgesinde
+    assert re.search(r'id="yetki-kaydedilmedi"[^>]*role="status"', html)
+    assert "Kaydedilmemiş değişiklik" in PANO_JS

@@ -151,7 +151,12 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
    yazılıyor (arada Upstash hatasında değişiklik kayıtsız kalır).~~ Yapıldı (20.11.2026):
    hesap ekleme / rol / şifre / kapatma / silme / iki adım / rol yetkileri, giriş ve
    çıkış değişikliği satırıyla tek boru hattında yazar.
-4. **Haftalık özet e-postası:** veriler son raporda, SMTP bekçiyle ortak.
+4. ~~**Haftalık özet e-postası:** veriler son raporda, SMTP bekçiyle ortak.~~ Yapıldı
+   (20.11.2026): `HAFTALIK_OZET=acik` (alıcılar `HAFTALIK_OZET_ALICILAR`, boşsa
+   `BEKCI_ALICILAR`); bekçinin günlük çağrısına biner, pazartesi 08:00'den sonra hafta
+   başına bir kez gider; düz metin + HTML, olay arşivinden sayılar, fotoğraf ve sır yok;
+   Kurulum denetimi kartında durumu ve son gönderimi. Kalan: sayılar arşivden geldiği
+   için arşivin boşlukları (madde 5) özete de yansır.
 5. ~~**Olay arşivi, süzgeç, arama ve CSV:** site gelen raporlardaki olayları biriktirebilir
    (sıralı küme), fabrika değişmeden.~~ Yapıldı (20.11.2026): Olaylar > Arşiv, son 90 gün
    (en çok 5.000), dönem / tür / kamera / durum süzgeci, arama, 25'lik sayfalar ve Excel'in
@@ -173,7 +178,11 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
    (20.11.2026): yol, sorgu alan adları, kod, ms, rol, hata kodu; sır ve ad yazılmaz).
    Kalan: 5xx uyarısı; hesaplar, yetki tablosu ve işlem kaydı için Upstash yedeği ya da
    düzenli dışa aktarma.
-10. **Erişilebilirlik:** tek seçimli dilimler `aria-pressed` yerine sekme / radyo; iki
+10. **Erişilebilirlik:** ~~tek seçimli dilimler `aria-pressed` yerine sekme / radyo; iki
     "Tümü" bağlantısının adı; OTP kutusunda ok tuşları; kaydedilmemiş yetki değişikliği
-    görünmüyor; ekran okuyucuyla gerçek kullanıcı denemesi.
+    görünmüyor~~ Yapıldı (20.11.2026): radyo grupları ve Kullanıcılar sekmeleri (oklar,
+    Home, End), "Olayların tümü" / "Kameraların tümü", kod kutularında ok tuşları ve
+    hane üzerine yazma, "Kaydedilmemiş değişiklik: N kutu"; telefon geçişinde üç küçük
+    hedef ve harf ortasından bölünen adlar düzeldi. Kalan: ekran okuyucuyla gerçek
+    kullanıcı denemesi (bir insan yapmalı).
 

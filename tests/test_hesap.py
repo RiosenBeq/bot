@@ -1010,6 +1010,10 @@ def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # n
             "yonetici": 2,  # kurucu + mudur
             "iki_adim_kapali": 2,
             "kurucu_iki_adim": False,
+            "haftalik_ozet": False,
+            "haftalik_ozet_gecersiz": False,
+            "haftalik_alici": 2,  # HAFTALIK_OZET_ALICILAR boş: bekçinin alıcıları
+            "haftalik_son": None,
         }
     }
     metin = govde.decode()
