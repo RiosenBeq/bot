@@ -544,10 +544,12 @@ GONDEREN_DESENI = re.compile(r"(?:[^<>\"\r\n]{1,80}<([^<>\s]+)>|([^<>\s]+))")
 # resmi adres. Alan adı olamayan değer yok sayılır, sıradakine geçilir.
 ALAN_ADI_DESENI = re.compile(r"(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 VARSAYILAN_SITE_ADRESI = "dalsansite.vercel.app"
-# E-posta bağlantısının panoda açtığı yer: /pano?arsiv=7&tip=...#olaylar. Ekran
-# adresin çapasıdır (#genel, #olaylar, #sistem); sorgu yalnız bu adları taşır ve
-# pano.js aynı beyaz listeyle okur (derinBagCoz): tanınmayan ad yok sayılır.
-DERIN_BAG_ADLARI = ("arsiv", "tip", "yer", "inceleme", "bolum")
+# E-posta bağlantısının panoda açtığı yer: /pano?hafta=2026-11-16&tip=...#olaylar.
+# Ekran adresin çapasıdır (#genel, #olaylar, #sistem); sorgu yalnız bu adları
+# taşır ve pano.js aynı beyaz listeyle okur (derinBagCoz): tanınmayan ad yok
+# sayılır. `hafta` Olaylar > Arşiv'i o günden başlayan 7 güne açar (haftalık
+# özetin haftası); tur / tip / yer / durum arşivin süzgeçleridir.
+DERIN_BAG_ADLARI = ("hafta", "tur", "tip", "yer", "durum", "bolum")
 # Kişinin kendi bildirimleri (Sistem > Bildirimler): hesap kaydında "bildirim"
 # {"eposta", "sistem", "haftalik"}; ikisi de varsayılan kapalı. Kurucunun kaydı
 # yoktur. Alıcılar gönderim anında birleşir (bildirim_alicilari).
@@ -707,7 +709,7 @@ class Ayar:
     # OTURUM_ANAHTARI yazılmış ama 32 karakterden kısa: yok sayılır, Kurulum
     # denetimi kartı söyler (değerin kendisi hiçbir yere çıkmaz).
     oturum_anahtari_kisa: bool = False
-    # Haftalık özet (Kod maddesi 4): opt-in; alıcı listesi boşsa bekçinin alıcıları.
+    # Haftalık özet (Kod maddesi 4): opt-in; özet listesinde hiç girdi yoksa bekçinin alıcıları.
     haftalik_ozet: str = "kapali"
     haftalik_alicilar: tuple[str, ...] = ()
     haftalik_tg_yok_sayildi: bool = False  # HAFTALIK_OZET_ALICILAR'daki tg: girdisi
@@ -774,7 +776,8 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     ana_gecerli = TESIS_ID_DESENI.fullmatch(ana_tesis) is not None
     alicilar, tg_vardi, gecersiz = _alicilar(ortam.get("BEKCI_ALICILAR"))
     ozet = _katla(ortam.get("HAFTALIK_OZET"))
-    ozet_alicilari, ozet_tg, ozet_gecersiz = _alicilar(ortam.get("HAFTALIK_OZET_ALICILAR"))
+    ham_ozet_alicilari = ortam.get("HAFTALIK_OZET_ALICILAR") or ""
+    ozet_alicilari, ozet_tg, ozet_gecersiz = _alicilar(ham_ozet_alicilari)
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
         rapor_anahtari=ortam.get("RAPOR_ANAHTARI", "").strip(),
@@ -804,7 +807,11 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         haftalik_ozet=(
             (ozet if ozet in HAFTALIK_OZET_DEGERLERI else "gecersiz") if ozet else "kapali"
         ),
-        haftalik_alicilar=ozet_alicilari or alicilar,
+        # Özet listesi yalnız BOŞSA bekçinin listesine düşer: yazılı ama hepsi
+        # geçersiz bir liste özeti başka kişilere göndermez (inceleme 21.11.2026)
+        haftalik_alicilar=(
+            ozet_alicilari if ham_ozet_alicilari.replace(",", "").strip() else alicilar
+        ),
         haftalik_tg_yok_sayildi=ozet_tg,
         haftalik_alici_gecersiz=ozet_gecersiz,
         resend_anahtari=ortam.get("RESEND_API_KEY", "").strip(),
@@ -830,7 +837,7 @@ def _pano_adresi(*adaylar: str | None) -> str:
 
 
 def pano_bagi(adres: str, ekran: str, **sorgu: str) -> str:
-    """E-postadaki derin bağlantı: https://alan/pano?arsiv=7&tip=Baret%20yok#olaylar.
+    """E-postadaki derin bağlantı: https://alan/pano?hafta=2026-11-16&tip=Baret%20yok#olaylar.
     Sorgu yalnız DERIN_BAG_ADLARI'ndan olur ve yüzde kodlanır (boşluk %20, Türkçe
     harf UTF-8, & = # / dahil); boş değer yazılmaz. `adres` boşsa boş döner."""
     if not adres:
@@ -1962,6 +1969,7 @@ def _ara_katla(metin: str) -> str:
 @dataclass(frozen=True)
 class ArsivSuzgeci:
     donem: str = "7"
+    hafta: str = ""  # "YYYY-AA-GG": o günden başlayan 7 gün, dönemin yerine
     tur: str = ""
     tip: str = ""
     yer: str = ""
@@ -1985,12 +1993,24 @@ class ArsivSuzgeci:
         return True
 
 
+def _gun_metni(ham: object) -> str:
+    """ "YYYY-AA-GG" biçiminde gerçek bir gün; değilse boş."""
+    if not isinstance(ham, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", ham):
+        return ""
+    try:
+        datetime.strptime(ham, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return ham
+
+
 def arsiv_suzgeci(istek: Isleyici) -> ArsivSuzgeci:
-    """Sorgudan süzgeç. Tanınmayan dönem 7 gün, tanınmayan tür / durum "hepsi"
-    sayılır; metinler kısaltılır."""
+    """Sorgudan süzgeç. Tanınmayan dönem 7 gün, tanınmayan tür / durum "hepsi",
+    gün olamayan hafta yok sayılır; metinler kısaltılır."""
     donem = istek.sorgu("donem")
     return ArsivSuzgeci(
         donem=donem if donem in ARSIV_DONEMLERI else "7",
+        hafta=_gun_metni(istek.sorgu("hafta")),
         tur=_secim(istek.sorgu("tur"), OLAY_TURLERI),
         tip=_metin(istek.sorgu("tip"), 160),
         yer=_metin(istek.sorgu("yer"), 160),
@@ -2006,6 +2026,17 @@ def arsiv_baslangici(donem: str, simdi: float) -> int:
         hour=0, minute=0, second=0, microsecond=0
     )
     return int((bugun - timedelta(days=gun - 1)).timestamp())
+
+
+def arsiv_araligi(suzgec: ArsivSuzgeci, simdi: float) -> tuple[int, int | None]:
+    """(ilk an, son an hariç ya da None = şimdiye kadar). `hafta` verildiyse o
+    günün Türkiye gece yarısından başlayan 7 gün: haftalık özetin bağlantıları
+    e-postadaki sayılarla aynı olayları açar (haftalik_ozet_icerigi aynı aralığı
+    sayar). Yoksa dönemin başından bugüne."""
+    if suzgec.hafta:
+        gun = datetime.strptime(suzgec.hafta, "%Y-%m-%d").replace(tzinfo=TURKIYE_SAATI)
+        return int(gun.timestamp()), int((gun + timedelta(days=7)).timestamp())
+    return arsiv_baslangici(suzgec.donem, simdi), None
 
 
 # CSV'de hücre başındaki bu işaretler Excel'de formül çalıştırır (CSV enjeksiyonu)
@@ -2801,8 +2832,9 @@ def eposta_tasarla(
 
 def _bildirim_nedeni(tur: str, kaynak: str) -> str:
     """E-postanın altındaki "neden aldınız" cümlesi (alıcının kaynağına göre):
-    hesabında anahtarı açan kişi ya da Vercel'deki alıcı listesindeki adres.
-    Altındaki "Bildirim ayarları" bağlantısı Sistem > Bildirimler'i açar."""
+    hesabında anahtarı açan kişi ya da Vercel'deki alıcı listesindeki adres
+    (listedeki adresi hesaptaki anahtar durdurmaz: alici_birlesimi). Altındaki
+    "Bildirim ayarları" bağlantısı Sistem > Bildirimler'i açar."""
     ad = BILDIRIM_ADLARI[tur]
     if kaynak == "hesap":
         return (
@@ -2812,8 +2844,7 @@ def _bildirim_nedeni(tur: str, kaynak: str) -> str:
     liste = "BEKCI_ALICILAR" if tur == "sistem" else "HAFTALIK_OZET_ALICILAR (boşsa BEKCI_ALICILAR)"
     return (
         f"Bu adres Vercel'deki {liste} listesinde olduğu için bu e-postayı aldınız; listeden "
-        "çıkmak için yöneticinize yazın. Panoda hesabınız varsa bu adresi Sistem > "
-        f'Bildirimler\'e yazıp "{ad}" anahtarını kapalı bırakmanız da yeter.'
+        "çıkmak için yöneticinize yazın."
     )
 
 
@@ -3008,47 +3039,45 @@ def _hesap_bildirimi(kayit: object) -> dict | None:
     return {"eposta": eposta, **{tur: ham.get(tur) is True for tur in BILDIRIM_TURLERI}}
 
 
+def alici_birlesimi(liste: tuple[str, ...], kayitlar: list, tur: str) -> list[tuple[str, str]]:
+    """SAF: bir bildirimin alıcıları, (adres, kaynak). Vercel listesinin bütün
+    adresleri (kaynak "liste") + listede olmayan, anahtarı açık ve girişi açık
+    hesapların adresleri (kaynak "hesap"). Hesaptaki anahtar yalnız o hesabın
+    kendi aboneliğidir: listedeki bir adresi düşürmez. Adresin sahibi olduğunu
+    kimse kanıtlamadığı için bir hesap başkasının liste adresini susturamaz
+    (inceleme 21.11.2026); listeden çıkmak Vercel'de olur. Aynı adres
+    (büyük-küçük harf farkıyla) bir kez. Kurulum denetimi kartı da aynı kuralla
+    sayar. `kayitlar`: hesap kayıtlarının ham MGET cevabı."""
+    sonuc, gorulen = [], set()
+    for adres in liste:
+        if adres.lower() not in gorulen:
+            gorulen.add(adres.lower())
+            sonuc.append((adres, "liste"))
+    for ham in kayitlar:
+        kayit = _json_sozluk(ham)
+        bildirim = _hesap_bildirimi(kayit)
+        if bildirim is None or not bildirim[tur] or _sozluk(kayit).get("acik") is not True:
+            continue
+        if bildirim["eposta"].lower() not in gorulen:
+            gorulen.add(bildirim["eposta"].lower())
+            sonuc.append((bildirim["eposta"], "hesap"))
+    return sonuc
+
+
 def bildirim_alicilari(
     depo: UpstashDepo | BellekDepo, ayar: Ayar, tur: str, adlar: object = None
 ) -> list[tuple[str, str]]:
-    """Bir bildirimin alıcıları, (adres, kaynak): kaynak "hesap" (Sistem >
-    Bildirimler'de anahtarı açık) ya da "liste" (yalnız Vercel'deki liste).
-    Kural: Vercel listesi (sistem: BEKCI_ALICILAR, haftalik: HAFTALIK_OZET_ALICILAR,
-    boşsa BEKCI_ALICILAR) + anahtarı açık ve adresi olan hesaplar - hesabında aynı
-    adresle o anahtarı kapalı kaydeden kişinin liste adresi. Girişi kapalı hesap
-    hiç almaz (açık anahtarı sayılmaz, kapalı sayılır); silinen hesabın kaydı yoktur.
-    Aynı adres (büyük-küçük harf farkıyla) bir kez. YALNIZ e-posta gönderilecekken
-    çağrılır: hesap dizini (LRANGE; `adlar` başka bir boru hattında okunduysa
-    verilir) ve kayıtlar (MGET, dizin boşsa yok) okunur."""
+    """Bir bildirimin alıcıları (alici_birlesimi): Vercel listesi (sistem:
+    BEKCI_ALICILAR, haftalik: HAFTALIK_OZET_ALICILAR, boşsa BEKCI_ALICILAR) +
+    anahtarı açık hesaplar; girişi kapalı ya da silinen hesap eklemez. YALNIZ
+    e-posta gönderilecekken çağrılır: hesap dizini (LRANGE; `adlar` başka bir
+    boru hattında okunduysa verilir) ve kayıtlar (MGET, dizin boşsa yok) okunur."""
     liste = ayar.bekci_alicilar if tur == "sistem" else ayar.haftalik_alicilar
     if adlar is None:
         adlar = depo.komut("LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2))
     adlar = [a for a in adlar if isinstance(a, str)] if isinstance(adlar, list) else []
     kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
-    acik: dict[str, str] = {}
-    kapali: set[str] = set()
-    for ham in kayitlar:
-        kayit = _json_sozluk(ham)
-        bildirim = _hesap_bildirimi(kayit)
-        if bildirim is None:
-            continue
-        anahtar = bildirim["eposta"].lower()
-        if bildirim[tur] and _sozluk(kayit).get("acik") is True:
-            acik.setdefault(anahtar, bildirim["eposta"])
-        else:
-            kapali.add(anahtar)
-    sonuc, gorulen = [], set()
-    for adres in liste:
-        anahtar = adres.lower()
-        if anahtar in gorulen or (anahtar in kapali and anahtar not in acik):
-            continue
-        gorulen.add(anahtar)
-        sonuc.append((adres, "hesap" if anahtar in acik else "liste"))
-    for anahtar, adres in acik.items():
-        if anahtar not in gorulen:
-            gorulen.add(anahtar)
-            sonuc.append((adres, "hesap"))
-    return sonuc
+    return alici_birlesimi(liste, kayitlar, tur)
 
 
 def _kaynaklara_gonder(
@@ -3350,11 +3379,13 @@ def haftalik_ozet_icerigi(olaylar: list[dict], veri: dict, gece: int) -> dict:
 def haftalik_ozet_metni(ozet: dict, adres: str = "", kaynak: str = "liste") -> tuple[str, str, str]:
     """(konu, düz metin, HTML): ortak e-posta tasarımıyla (eposta_tasarla);
     bütün değerler kaçışlıdır (kamera ve tesis adları programdan gelir).
-    Bağlantılar panoda doğru yeri açar: düğme Olaylar > Arşiv'i (son 7 gün), her
-    tür ve kamera satırı arşivi o türe / kameraya süzülmüş, "Bekliyor" satırı
-    İnceleme modunu (inceleyemeyen kişi Olaylar'a düşer)."""
+    Bağlantılar Olaylar > Arşiv'i özetin HAFTASINA açar (`hafta`, tıklandığı
+    günden bağımsız): düğme o haftanın bütün olaylarını, her tür ve kamera
+    satırı o türün / kameranın ihlallerini, "Bekliyor" satırı o haftanın
+    bekleyen ihlallerini; e-postadaki sayıyla aynı olaylar."""
     ilk = datetime.fromtimestamp(ozet["bas"], TURKIYE_SAATI)
     son = ilk + timedelta(days=6)
+    hafta = f"{ilk:%Y-%m-%d}"
     konu = f"Haftalık özet: {ozet['tesis']}, {ilk:%d.%m} - {son:%d.%m.%Y}: {ozet['toplam']} ihlal"
     fark = ozet["toplam"] - ozet["onceki"]
     karsilastirma = (
@@ -3379,13 +3410,13 @@ def haftalik_ozet_metni(ozet: dict, adres: str = "", kaynak: str = "liste") -> t
         ],
         "Sayılar sitenin olay arşivinden; bu e-posta haftada bir, pazartesi sabahı gelir. "
         + _bildirim_nedeni("haftalik", kaynak),
-        pano_bagi(adres, "olaylar", arsiv="7"),
+        pano_bagi(adres, "olaylar", hafta=hafta),
         bolumler=[
             ("Gün gün ihlal", gunler, True),
             (
                 "En sık türler",
                 [
-                    (ad, str(sayi), pano_bagi(adres, "olaylar", arsiv="7", tip=ad))
+                    (ad, str(sayi), pano_bagi(adres, "olaylar", hafta=hafta, tur="ihlal", tip=ad))
                     for ad, sayi in ozet["tipler"]
                 ],
                 False,
@@ -3393,7 +3424,7 @@ def haftalik_ozet_metni(ozet: dict, adres: str = "", kaynak: str = "liste") -> t
             (
                 "En çok ihlal olan kameralar",
                 [
-                    (ad, str(sayi), pano_bagi(adres, "olaylar", arsiv="7", yer=ad))
+                    (ad, str(sayi), pano_bagi(adres, "olaylar", hafta=hafta, tur="ihlal", yer=ad))
                     for ad, sayi in ozet["yerler"]
                 ],
                 False,
@@ -3401,7 +3432,11 @@ def haftalik_ozet_metni(ozet: dict, adres: str = "", kaynak: str = "liste") -> t
             (
                 "İnceleme",
                 [
-                    ("Bekliyor", str(ozet["bekleyen"]), pano_bagi(adres, "olaylar", inceleme="1")),
+                    (
+                        "Bekliyor",
+                        str(ozet["bekleyen"]),
+                        pano_bagi(adres, "olaylar", hafta=hafta, tur="ihlal", durum="new"),
+                    ),
                     ("İncelendi", str(ozet["incelenen"])),
                     ("Yanlış alarm", str(ozet["yanlis_alarm"])),
                 ],
@@ -3427,30 +3462,32 @@ def haftalik_ozet_isle(
     kilittir (SET NX EX): eşzamanlı ikinci çağrı göndermez; ilk e-posta gidince
     işaret bir haftayı aşar ve son gönderim anı yazılır (Kurulum denetimi kartı
     okur; uzatma düştüyse gönderimden sonra bir kez daha denenir), hiçbiri
-    gidemezse silinir (sonraki çağrı yeniden dener). Veri tek boru hattında
-    okunur: arşivin son 14 günü, panonun son raporu ve hesap dizini; alıcılar
-    (bildirim_alicilari: Vercel listesi ve "Haftalık özet" açık hesaplar) hesap
-    kayıtları okunarak (dizin boşsa okunmaz) kurulur. Alıcı yoksa işaret silinir."""
+    gidemezse silinir (sonraki çağrı yeniden dener). Alıcılar (bildirim_alicilari:
+    Vercel listesi ve "Haftalık özet" açık hesaplar): Vercel listesi doluysa
+    hesap dizini arşivin son 14 günü ve panonun son raporuyla aynı boru hattında
+    okunur. Liste boşsa alıcı yalnız hesaplardan gelir ve ÖNCE okunur: kimse
+    yoksa işaret ve arşiv hiç okunmaz (inceleme 21.11.2026)."""
     if ayar.haftalik_ozet != "acik":
         return {"atlandi": True}
     hafta = haftalik_ozet_haftasi(simdi)
     if hafta is None:
         return {"gonderildi": False, "sebep": "zamani_degil"}
+    alicilar = None if ayar.haftalik_alicilar else bildirim_alicilari(depo, ayar, "haftalik")
+    if alicilar == []:
+        return {"gonderildi": False, "sebep": "alici_yok"}
     isaret = HAFTALIK_OZET_ONEKI + hafta
     if depo.komut("SET", isaret, str(int(simdi)), "EX", str(BEKCI_KILIT_SN), "NX") != "OK":
         return {"gonderildi": False, "sebep": "bu_hafta_gitti"}
     gece = _pazartesi_gecesi(simdi)
-    ham_olaylar, okunan, adlar = depo.boru_hatti(
-        [
-            ["ZREVRANGEBYSCORE", ARSIV_ANAHTARI, f"({gece}", str(gece - 14 * 86400)],
-            ["MGET", *PANO_ANAHTARLARI],
-            ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
-        ]
-    )
-    alicilar = bildirim_alicilari(depo, ayar, "haftalik", adlar)
-    if not alicilar:
-        depo.sil(isaret)  # alıcı gelince (hesap anahtarı ya da Vercel listesi) yeniden denensin
-        return {"gonderildi": False, "sebep": "alici_yok"}
+    komutlar = [
+        ["ZREVRANGEBYSCORE", ARSIV_ANAHTARI, f"({gece}", str(gece - 14 * 86400)],
+        ["MGET", *PANO_ANAHTARLARI],
+    ]
+    if alicilar is None:  # Vercel listesi dolu: hesap dizini arşivle aynı boru hattında
+        komutlar.append(["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)])
+    ham_olaylar, okunan, *adlar = depo.boru_hatti(komutlar)
+    if alicilar is None:
+        alicilar = bildirim_alicilari(depo, ayar, "haftalik", adlar[0])
     okunan = _mget_listesi(okunan, len(PANO_ANAHTARLARI)) or [None] * len(PANO_ANAHTARLARI)
     veri = pano_verisi(depo, ayar, simdi, okunan)
     ozet = haftalik_ozet_icerigi(arsiv_coz(ham_olaylar), veri, gece)
@@ -5395,8 +5432,9 @@ def _arsiv_gunu(olay: dict) -> str:
 
 def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     """GET /api/durum?arsiv=1 - olay arşivi (Olaylar > Arşiv); olayları gören
-    her rol (oturum yeter). Süzgeç: `donem` (bugun, 7, 30, 90), `tur`, `tip`,
-    `yer`, `durum`, `ara`; `sayfa` (ARSIV_SAYFA'lık). Dönemdeki türler ve
+    her rol (oturum yeter). Süzgeç: `donem` (bugun, 7, 30, 90) ya da `hafta`
+    (YYYY-AA-GG, o günden 7 gün; arsiv_araligi), `tur`, `tip`, `yer`, `durum`,
+    `ara`; `sayfa` (ARSIV_SAYFA'lık). Dönemdeki türler ve
     kameralar süzgeç seçenekleri olarak gelir; `gunler` sayfadaki her günün
     süzgeçteki toplamıdır (gün başlığı). `&bicim=csv`: süzgeçten geçen
     bütün olaylar CSV dosyası olarak iner (Content-Disposition: attachment;
@@ -5411,11 +5449,12 @@ def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     )
     istek.gunluk_rol = oturum.rol
     suzgec = arsiv_suzgeci(istek)
-    bas = arsiv_baslangici(suzgec.donem, simdi)
-    donemdeki = arsiv_coz(depo.komut("ZREVRANGEBYSCORE", ARSIV_ANAHTARI, "+inf", str(bas)))
+    bas, bit = arsiv_araligi(suzgec, simdi)
+    ust = f"({bit}" if bit else "+inf"
+    donemdeki = arsiv_coz(depo.komut("ZREVRANGEBYSCORE", ARSIV_ANAHTARI, ust, str(bas)))
     olaylar = [olay for olay in donemdeki if suzgec.uyar(olay)]
     if istek.sorgu("bicim") == "csv":
-        gun = _turkiye_gunu(bas) + "_" + _turkiye_gunu(simdi)
+        gun = _turkiye_gunu(bas) + "_" + _turkiye_gunu(bit - 1 if bit else simdi)
         return (
             200,
             Ikili(
@@ -5454,6 +5493,7 @@ def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
                 "sayfa_sayisi": sayfa_sayisi,
                 "boyut": ARSIV_SAYFA,
                 "donem": suzgec.donem,
+                "hafta": suzgec.hafta,
                 "bas": _iso(bas),
                 "tipler": sorted(tipler, key=_ara_katla),
                 "yerler": sorted({o["yer"] for o in donemdeki if o["yer"]}, key=_ara_katla),
@@ -5762,8 +5802,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
     raporunun canlı olup olmadığını pano zaten /api/durum'dan bilir.
     İki okuma: hesap dizini, tesis sayısı, kurucunun iki adım kaydı ve son
     haftalık özetin anı tek boru hattında; hesap kayıtları tek MGET'te. Alıcı
-    sayıları Vercel listesinden ve "bildirim" anahtarı açık hesaplardan ayrı ayrı
-    (girişi kapalı hesap sayılmaz); adresler dönmez."""
+    sayıları gönderimdeki kuralla (alici_birlesimi): Vercel listesinin adresleri
+    ve listede olmayan, anahtarı açık hesaplar (girişi kapalı hesap sayılmaz;
+    aynı adres bir kez); adresler dönmez."""
     ham_adlar, tesis_sayisi, kurucu_kaydi, ozet_son = depo.boru_hatti(
         [
             ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
@@ -5778,7 +5819,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
     kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
     acik_hesaplar = [k for k in map(_json_sozluk, kayitlar) if k and k.get("acik") is True]
     yoneticiler = [kayit for kayit in acik_hesaplar if kayit.get("rol") == "yonetici"]
-    bildirimler = [b for b in map(_hesap_bildirimi, acik_hesaplar) if b is not None]
+    # Gönderimdeki birleşim: (listeden, listede olmayan hesaplardan) alıcı sayısı
+    sistem = [k for _, k in alici_birlesimi(ayar.bekci_alicilar, kayitlar, "sistem")]
+    haftalik = [k for _, k in alici_birlesimi(ayar.haftalik_alicilar, kayitlar, "haftalik")]
     return {
         "oturum_anahtari": bool(ayar.oturum_anahtari),
         "oturum_anahtari_kisa": ayar.oturum_anahtari_kisa,
@@ -5791,8 +5834,8 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         "eposta": bool(eposta_saglayicisi(ayar)),
         "eposta_saglayici": eposta_saglayicisi(ayar),
         "eposta_kimden": bool(ayar.eposta_kimden),
-        "alici": len(ayar.bekci_alicilar),
-        "alici_hesap": sum(b["sistem"] for b in bildirimler),
+        "alici": sistem.count("liste"),
+        "alici_hesap": sistem.count("hesap"),
         "alici_tg": ayar.bekci_tg_yok_sayildi,  # Tesisler ekranının uyarısıyla aynı
         "alici_gecersiz": ayar.bekci_alici_gecersiz,
         "ana_tesis": bool(ayar.ana_tesis),
@@ -5805,8 +5848,8 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         # Haftalık özet: açık mı, kaç alıcı, son gönderim anı (yoksa None)
         "haftalik_ozet": ayar.haftalik_ozet == "acik",
         "haftalik_ozet_gecersiz": ayar.haftalik_ozet == "gecersiz",
-        "haftalik_alici": len(ayar.haftalik_alicilar),
-        "haftalik_alici_hesap": sum(b["haftalik"] for b in bildirimler),
+        "haftalik_alici": haftalik.count("liste"),
+        "haftalik_alici_hesap": haftalik.count("hesap"),
         "haftalik_alici_tg": ayar.haftalik_tg_yok_sayildi,
         "haftalik_alici_gecersiz": ayar.haftalik_alici_gecersiz,
         "haftalik_son": (

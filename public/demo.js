@@ -1004,10 +1004,14 @@
 
   function arsivSuz(simdi, sorgu) {
     const donem = ARSIV_DONEMLERI[sorgu.get("donem")] ? sorgu.get("donem") : "7";
-    const bas = arsivBaslangici(donem, simdi);
+    // hafta (e-postadaki bağlantı): o günün Türkiye gece yarısından 7 gün, dönemin yerine
+    const hafta = sorgu.get("hafta") || "";
+    const gunlu = /^\d{4}-\d{2}-\d{2}$/.test(hafta) && !isNaN(Date.parse(hafta));
+    const bas = gunlu ? Date.parse(hafta) - 3 * SA : arsivBaslangici(donem, simdi);
+    const bit = gunlu ? bas + 7 * 24 * SA : Infinity;
     const s = (ad) => (sorgu.get(ad) || "").trim();
     const ara = katla(s("ara").slice(0, 80));
-    const donemde = arsivTumu(simdi).filter((o) => o.zamanMs >= bas);
+    const donemde = arsivTumu(simdi).filter((o) => o.zamanMs >= bas && o.zamanMs < bit);
     const uyan = donemde.filter(function (o) {
       if (s("tur") && o.tur !== s("tur")) return false;
       if (s("tip") && olayTipi(o.baslik) !== s("tip")) return false;
@@ -1019,7 +1023,7 @@
       }
       return true;
     });
-    return { donem: donem, bas: bas, donemde: donemde, uyan: uyan };
+    return { donem: donem, hafta: gunlu ? hafta : "", bas: bas, donemde: donemde, uyan: uyan };
   }
 
   function arsivOlayi(o, simdi) {
@@ -1047,7 +1051,7 @@
   }
 
   function arsivVerisi(simdi, sorgu) {
-    const { donem, bas, donemde, uyan } = arsivSuz(simdi, sorgu);
+    const { donem, hafta, bas, donemde, uyan } = arsivSuz(simdi, sorgu);
     const sayfaSayisi = Math.max(1, Math.ceil(uyan.length / ARSIV_SAYFA));
     const sayfa = Math.min(sayfaSayisi, Math.max(1, parseInt(sorgu.get("sayfa"), 10) || 1));
     const gosterilen = uyan.slice((sayfa - 1) * ARSIV_SAYFA, sayfa * ARSIV_SAYFA);
@@ -1068,6 +1072,7 @@
       sayfa_sayisi: sayfaSayisi,
       boyut: ARSIV_SAYFA,
       donem: donem,
+      hafta: hafta,
       bas: iso(bas),
       tipler: sirala(donemde.filter((o) => o.tur === "ihlal").map((o) => olayTipi(o.baslik))),
       yerler: sirala(donemde.map((o) => o.yer).filter(Boolean)),
@@ -1085,7 +1090,7 @@
 
   function arsivCsv(sorgu) {
     const simdi = Date.now();
-    const { bas, uyan } = arsivSuz(simdi, sorgu);
+    const { hafta, bas, uyan } = arsivSuz(simdi, sorgu);
     const tarih = new Intl.DateTimeFormat("tr-TR", { timeZone: SAAT_DILIMI, day: "2-digit", month: "2-digit", year: "numeric" });
     const saat = new Intl.DateTimeFormat("tr-TR", {
       timeZone: SAAT_DILIMI,
@@ -1117,7 +1122,7 @@
     }
     const gun = (ms) => new Date(ms).toLocaleDateString("sv-SE", { timeZone: SAAT_DILIMI });
     return {
-      ad: "dalsan-olaylar-" + gun(bas) + "_" + gun(simdi) + ".csv",
+      ad: "dalsan-olaylar-" + gun(bas) + "_" + gun(hafta ? bas + 7 * 24 * SA - 1 : simdi) + ".csv",
       metin: "﻿" + satirlar.join("\r\n") + "\r\n",
     };
   }

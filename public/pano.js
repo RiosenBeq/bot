@@ -237,7 +237,8 @@ function panoyuBaslat() {
   let arsivVerisi = null; // GET /api/durum?arsiv=1 cevabının "arsiv" bloğu
   let arsivSirasi = 0; // eski cevap yenisinin üstüne yazılmasın
   let arsivZamanlayici = null; // aramada yazarken bekleme
-  const arsivSuzgeci = { donem: "7", tip: "", yer: "", durum: "", ara: "", sayfa: 1 };
+  // hafta: e-postadaki bağlantının haftası ("YYYY-AA-GG", o günden 7 gün); dönemin yerine
+  const arsivSuzgeci = { donem: "7", hafta: "", tip: "", yer: "", durum: "", ara: "", sayfa: 1 };
   let inceleme = null; // inceleme modu: {liste: [olay], sira, kararlar: Map(id -> karar)}
   let bildirimTaslak = false; // Sistem > Bildirimler'de kaydedilmemiş değişiklik var
   const bildirimler = []; // [{id, bitti: ms | 0, uzerinde}] - en yenisi sonda
@@ -1155,26 +1156,27 @@ function panoyuBaslat() {
 
   // ------------------------------------------------------- derin bağ
 
-  /* E-postadaki bağlantılar (api/_pano.py pano_bagi): /pano?arsiv=7&tip=...#olaylar.
+  /* E-postadaki bağlantılar (api/_pano.py pano_bagi): /pano?hafta=2026-11-16&tip=...#olaylar.
      Ekran adresin çapasıdır (gorunumAdi okur). Sorgu SIKI bir beyaz listeyle
-     okunur: bilinen arşiv dönemi, düz metin tür / kamera süzgeci (yalnız arşivle;
-     kontrol karakteri atılır, en çok 160), inceleme bayrağı, bilinen bölüm.
-     Başka her şey yok sayılır; değerler yalnız süzgece, sorguya ve textContent'e
-     gider, HTML'e yazılmaz. */
-  const ARSIV_DONEMLERI = ["bugun", "7", "30", "90"];
+     okunur: gün biçimindeki hafta (Olaylar > Arşiv'i o günden 7 güne açar), onunla
+     bilinen tür dilimi ve durum, düz metin olay türü / kamera süzgeci (kontrol
+     karakteri atılır, en çok 160), bilinen bölüm. Başka her şey yok sayılır;
+     değerler yalnız süzgece, sorguya ve textContent'e gider, HTML'e yazılmaz. */
   const DERIN_BOLUMLER = { bildirimler: "bildirim-ayari", kurulum: "denetim-karti" };
 
   function derinBagCoz(sorgu) {
     const p = new URLSearchParams(sorgu);
     const bag = {};
-    if (ARSIV_DONEMLERI.includes(p.get("arsiv"))) {
-      bag.arsiv = p.get("arsiv");
+    const hafta = p.get("hafta") || "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(hafta) && !isNaN(Date.parse(hafta))) {
+      bag.hafta = hafta;
+      if (["ihlal", "sistem"].includes(p.get("tur"))) bag.tur = p.get("tur");
+      if (["new", "reviewed", "false_alarm"].includes(p.get("durum"))) bag.durum = p.get("durum");
       for (const ad of ["tip", "yer"]) {
         const deger = (p.get(ad) || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 160);
         if (deger) bag[ad] = deger;
       }
     }
-    if (p.get("inceleme") === "1") bag.inceleme = true;
     const bolum = p.get("bolum");
     if (bolum && Object.prototype.hasOwnProperty.call(DERIN_BOLUMLER, bolum)) bag.bolum = bolum;
     return Object.keys(bag).length ? bag : null;
@@ -1186,8 +1188,8 @@ function panoyuBaslat() {
   /* Bağlantının istediği yer bir kez açılır: ilk başarılı yüklemede (giriş
      gerekiyorsa girişten sonra; /demo'da da). Adres çubuğundaki sorgu silinir
      (yenileyince süzgeç yeniden kurulmaz), çapa bağlantının ekranı olur (olay
-     tetiklenmeden: sayfa başa kaymaz). İnceleme modunu açamayan (izleyici,
-     bekleyen yok, bağlantı yok) Olaylar'da bekleyenleri görür. */
+     tetiklenmeden: sayfa başa kaymaz). Hafta bağlantısı arşivi e-postanın
+     haftasına ve süzgecine açar: listedeki olaylar e-postadaki sayıyla aynıdır. */
   async function derinBagiUygula() {
     const bag = derinBag;
     if (!bag || !oturum) return;
@@ -1198,16 +1200,13 @@ function panoyuBaslat() {
       /* adres değiştirilemedi: sorgu adreste kalır, yeniden uygulanmaz */
     }
     gorunumuUygula();
-    if (bag.arsiv) {
-      Object.assign(arsivSuzgeci, { donem: bag.arsiv, tip: bag.tip || "", yer: bag.yer || "", durum: "", ara: "", sayfa: 1 });
-      for (const d of document.querySelectorAll("#arsiv-donemi button")) secimiIsaretle(d, d.dataset.donem === bag.arsiv);
+    if (bag.hafta) {
+      Object.assign(arsivSuzgeci, { hafta: bag.hafta, tip: bag.tip || "", yer: bag.yer || "", durum: bag.durum || "", ara: "", sayfa: 1 });
+      arsivDoneminiIsaretle();
       $("arsiv-ara").value = "";
+      olaySuzgeciSec(bag.tur || "hepsi", false);
       if (arsivAcik) arsiviYukle();
       else arsivModu(true);
-    } else if (bag.inceleme) {
-      if (arsivAcik) arsivModu(false);
-      if (!$("inceleme-bandi").hidden) $("inceleme-ac").click();
-      else olaySuzgeciSec("hepsi", true);
     } else if (bag.bolum) {
       // Kurulum denetimi kartı yüklenince sayfa uzar: önce o, sonra kaydırma
       if (kurulumAcik() && !kurulumVerisi) await kurulumuYukle();
@@ -2396,6 +2395,7 @@ function panoyuBaslat() {
      dilimi de süzer. CSV aynı süzgeçle aynı adresten iner (bicim=csv). */
   function arsivSorgusu(csv) {
     const p = new URLSearchParams({ arsiv: "1", donem: arsivSuzgeci.donem });
+    if (arsivSuzgeci.hafta) p.set("hafta", arsivSuzgeci.hafta);
     if (olayTuru !== "hepsi") p.set("tur", olayTuru);
     for (const ad of ["tip", "yer", "durum", "ara"]) if (arsivSuzgeci[ad]) p.set(ad, arsivSuzgeci[ad]);
     if (csv) p.set("bicim", "csv");
@@ -2423,12 +2423,29 @@ function panoyuBaslat() {
     arsiviYukle();
   }
 
+  /* Dönem düğmeleri: e-postadaki hafta açıkken hiçbiri seçili değildir (sonuç
+     satırı haftayı yazar; ilki klavyeyle ulaşılır kalır), düğme haftadan çıkarır. */
+  function arsivDoneminiIsaretle() {
+    const dugmeler = document.querySelectorAll("#arsiv-donemi button");
+    for (const d of dugmeler) secimiIsaretle(d, !arsivSuzgeci.hafta && d.dataset.donem === arsivSuzgeci.donem);
+    if (arsivSuzgeci.hafta) dugmeler[0].tabIndex = 0;
+  }
+
   for (const dugme of document.querySelectorAll("#arsiv-donemi button")) {
     dugme.addEventListener("click", function () {
-      for (const d of document.querySelectorAll("#arsiv-donemi button")) secimiIsaretle(d, d === this);
-      arsivSuzgeciniDegistir({ donem: this.dataset.donem });
+      arsivSuzgeciniDegistir({ donem: this.dataset.donem, hafta: "" });
+      arsivDoneminiIsaretle();
     });
   }
+
+  // "16.11 - 22.11.2026": haftanın ilk ve son günü (takvim günü; saat dilimi girmez)
+  function haftaMetni(gun) {
+    const [y, a, g] = gun.split("-").map(Number);
+    const son = new Date(Date.UTC(y, a - 1, g + 6));
+    const iki = (n) => String(n).padStart(2, "0");
+    return iki(g) + "." + iki(a) + " - " + iki(son.getUTCDate()) + "." + iki(son.getUTCMonth() + 1) + "." + son.getUTCFullYear();
+  }
+
   for (const [kimlik, ad] of [
     ["arsiv-tip", "tip"],
     ["arsiv-yer", "yer"],
@@ -2538,7 +2555,7 @@ function panoyuBaslat() {
     $("arsiv-durum").value = arsivSuzgeci.durum;
     const ilk = (a.sayfa - 1) * a.boyut + 1;
     const son = ilk + a.olaylar.length - 1;
-    const donem = { bugun: "Bugün", 7: "Son 7 gün", 30: "Son 30 gün", 90: "Son 90 gün" }[a.donem] || "";
+    const donem = a.hafta ? haftaMetni(a.hafta) : { bugun: "Bugün", 7: "Son 7 gün", 30: "Son 30 gün", 90: "Son 90 gün" }[a.donem] || "";
     yaz(
       $("arsiv-sonuc"),
       a.toplam
@@ -4365,11 +4382,13 @@ function panoyuBaslat() {
     } else if (!k.eposta) {
       ozet = [false, "Açık ama e-posta ayarı yok. " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin, sonra Redeploy."];
     } else if (!k.haftalik_alici && !k.haftalik_alici_hesap) {
+      const yok = yokSayilan("HAFTALIK_OZET_ALICILAR", k.haftalik_alici_tg, k.haftalik_alici_gecersiz);
       ozet = [
         false,
         "Açık ama alıcı yok. " +
           VERCEL_AYARI +
-          ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın; ya da kişiler Sistem > Bildirimler'de Haftalık özet'i açsın.",
+          ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın; ya da kişiler Sistem > Bildirimler'de Haftalık özet'i açsın." +
+          (yok ? " " + yok : ""),
       ];
     } else if (!k.bekci_anahtari) {
       ozet = [false, "Özet bekçinin günlük çağrısıyla gider. " + VERCEL_AYARI + ": en az 16 karakterlik CRON_SECRET ekleyin, sonra Redeploy."];

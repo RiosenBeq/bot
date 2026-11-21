@@ -2,8 +2,9 @@
 
 Sistem > Bildirimler: her hesap (kurucu hariç) kendi adresini ve iki anahtarı
 ("Sistem uyarıları", "Haftalık özet"; varsayılan kapalı) kaydeder. Alıcılar
-gönderim anında birleşir: Vercel listesi + anahtarı açık hesaplar - aynı adresle
-anahtarı kapatan kişinin liste adresi; girişi kapalı ya da silinen hesap almaz.
+gönderim anında birleşir: Vercel listesinin bütün adresleri + anahtarı açık
+hesaplar (hesaptaki anahtar listedeki adresi düşürmez); girişi kapalı ya da
+silinen hesap eklemez.
 Hesaplar YALNIZ e-posta gidecekken okunur: sıradan bekçi çağrısı komut eklemez.
 "Sistem yeniden haber veriyor" kesinti başına bir kez (raporun isteği e-posta
 göndermez), "Ayar sorunu" günde en çok bir kez gider; ikisi de değer yazmaz.
@@ -12,13 +13,14 @@ Ağ yok: gönderenler sahtedir."""
 import html
 import json
 import re
+import urllib.parse
 from pathlib import Path
 
 import _pano
 import pytest
 from test_bekci import GIZLI, T0, SahteGonderici, _bearer, _bekci_iste, _kaydet
 from test_cekirdek import Saat, _ayar, _rapor
-from test_haftalik_ozet import PAZARTESI, SayanDepo, _arsivli_depo, _ozet_ayari
+from test_haftalik_ozet import OLAYLAR, PAZARTESI, SayanDepo, _arsivli_depo, _ozet_ayari
 from test_hesap import _hazir_hesap, _hesap, _kurucu, _post, _yaz_hesap
 from test_uctan_uca import SIFRE, _istek, site  # noqa: F401
 
@@ -49,26 +51,27 @@ def _hesapli(depo, ad, eposta=None, sistem=False, haftalik=False, acik=True):
 # ------------------------------------------------------------ alıcı kuralı
 
 
-def test_alicilar_liste_artı_acik_hesaplar_eksi_kapatanlar():
+def test_alicilar_liste_arti_acik_hesaplar_hesap_liste_adresini_dusurmez():
     depo = _pano.BellekDepo()
     ayar = _ayar(
         bekci_alicilar=("Sef@Ornek.com", "mudur@ornek.com", "bekci@ornek.com"),
         haftalik_alicilar=("mudur@ornek.com",),
     )
-    _hesapli(depo, "ali", "sef@ornek.com", sistem=True)  # listede de var: kaynak hesap
-    _hesapli(depo, "veli", "MUDUR@ornek.com", sistem=False, haftalik=True)  # sistem: kapattı
+    _hesapli(depo, "ali", "sef@ornek.com", sistem=True)  # listede de var: bir kez, liste
+    _hesapli(depo, "veli", "MUDUR@ornek.com", sistem=False, haftalik=True)  # kapalı: etkisiz
     _hesapli(depo, "can", "can@ornek.com", sistem=True, haftalik=True)  # yalnız hesaptan
-    _hesapli(depo, "eda", "eda@ornek.com", sistem=True, acik=False)  # girişi kapalı
-    _hesapli(depo, "bekir", "bekci@ornek.com", sistem=True, acik=False)  # kapalı: listeden de
+    _hesapli(depo, "eda", "eda@ornek.com", sistem=True, acik=False)  # girişi kapalı: eklemez
+    _hesapli(depo, "bekir", "bekci@ornek.com", sistem=True, acik=False)  # liste adresi kalır
     _hesapli(depo, "nur")  # ayarı yok: etkisi yok
     depo.boru_hatti([["RPUSH", _pano.KULLANICILAR_ANAHTARI, "silinen"]])  # kaydı yok
     assert _pano.bildirim_alicilari(depo, ayar, "sistem") == [
-        ("Sef@Ornek.com", "hesap"),
+        ("Sef@Ornek.com", "liste"),
+        ("mudur@ornek.com", "liste"),
+        ("bekci@ornek.com", "liste"),
         ("can@ornek.com", "hesap"),
     ]
-    # Haftalık: veli açtı (liste adresi hesaba geçer), can yalnız hesaptan
     assert _pano.bildirim_alicilari(depo, ayar, "haftalik") == [
-        ("mudur@ornek.com", "hesap"),
+        ("mudur@ornek.com", "liste"),
         ("can@ornek.com", "hesap"),
     ]
     # Aynı adresi iki hesap yazdıysa açan kazanır; adres bir kez
@@ -83,6 +86,28 @@ def test_alicilar_liste_artı_acik_hesaplar_eksi_kapatanlar():
     assert _pano.bildirim_alicilari(bos, ayar, "sistem") == beklenen
 
 
+def test_en_dusuk_rol_baskasinin_liste_adresini_susturamaz_kart_ayni_sayar(site, monkeypatch):  # noqa: F811
+    """İnceleme 21.11.2026: adresin sahibi olduğu kanıtlanmıyor. İzleyici,
+    Vercel listesindeki müdürün adresini büyük harfle yazıp iki anahtarı kapalı
+    kaydetse de uyarı ve özet müdüre gider; Kurulum denetimi kartı gönderimdeki
+    birleşimi sayar (aynı adresi açan hesap ikinci alıcı sayılmaz)."""
+    monkeypatch.setenv("BEKCI_ALICILAR", "mudur@firma.example")
+    kurucu = _kurucu(site)
+    ali = _hazir_hesap(site, kurucu, "ali", "izleyici", "ali-parola-123")
+    kod, _, _ = _bildirim(site, ali, eposta="MUDUR@firma.example", sistem=False, haftalik=False)
+    assert kod == 200
+    ayar = _pano.ayar_oku()
+    for tur in ("sistem", "haftalik"):
+        beklenen = [("mudur@firma.example", "liste")]
+        assert _pano.bildirim_alicilari(_pano.DEPO, ayar, tur) == beklenen
+    kod, _, _ = _bildirim(site, ali, eposta="MUDUR@firma.example", sistem=True, haftalik=True)
+    assert kod == 200
+    _, _, govde = _istek(f"{site}/api/hesap?islem=kurulum", basliklar={"Cookie": kurucu})
+    kart = json.loads(govde)["kurulum"]
+    sayilar = ("alici", "alici_hesap", "haftalik_alici", "haftalik_alici_hesap")
+    assert tuple(kart[ad] for ad in sayilar) == (1, 0, 1, 0)
+
+
 def test_ayar_bozuk_ve_eski_alicilari_sayar_degerleri_tutmaz():
     ayar = _pano.ayar_oku(
         {
@@ -93,7 +118,14 @@ def test_ayar_bozuk_ve_eski_alicilari_sayar_degerleri_tutmaz():
     assert ayar.bekci_alicilar == ("a@b.co",) and ayar.bekci_alici_gecersiz == 2
     assert ayar.bekci_tg_yok_sayildi and ayar.haftalik_tg_yok_sayildi
     assert ayar.haftalik_alici_gecersiz == 1
-    assert ayar.haftalik_alicilar == ("a@b.co",)  # özet listesi boş kaldı: bekçinin listesi
+    # Özet listesi yazılı ama hepsi geçersiz: özet bekçinin listesine düşmez (inceleme
+    # 21.11.2026); yalnız hiç girdi yoksa düşer
+    assert ayar.haftalik_alicilar == ()
+    for bos in ("", " , ", None):
+        ortam = {"BEKCI_ALICILAR": "a@b.co"} | (
+            {} if bos is None else {"HAFTALIK_OZET_ALICILAR": bos}
+        )
+        assert _pano.ayar_oku(ortam).haftalik_alicilar == ("a@b.co",)
     for deger in ("adres-degil", "bozuk", "x@y"):
         assert deger not in repr(ayar)
 
@@ -328,41 +360,110 @@ def test_taninmayan_bekci_once_ayar_sorunu_gonderir_sonra_503(site, monkeypatch)
 # ------------------------------------------------ haftalık özet ve hesaplar
 
 
-def test_haftalik_ozet_hesaptan_alici_liste_bosken_de_gider_kapatan_almaz():
+def test_haftalik_ozet_hesaptan_alici_liste_bosken_de_gider_liste_adresi_kalir():
     depo = _arsivli_depo()
     _hesapli(depo, "ali", "ali@ornek.com", haftalik=True)
-    _hesapli(depo, "veli", "sef@ornek.com", haftalik=False, sistem=True)  # özeti kapattı
+    _hesapli(depo, "veli", "sef@ornek.com", haftalik=False, sistem=True)  # liste adresini düşürmez
     gonder = Gonderici()
     ayar = _ozet_ayari(haftalik_alicilar=("sef@ornek.com", "mudur@ornek.com"))
     depo.istek, depo.komutlar = 0, []
-    assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, gonder)["gonderilen"] == 2
-    assert [c[0] for c in gonder.cagrilar] == [("mudur@ornek.com",), ("ali@ornek.com",)]
+    assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, gonder)["gonderildi"]
+    assert [c[0] for c in gonder.cagrilar] == [
+        ("sef@ornek.com", "mudur@ornek.com"),
+        ("ali@ornek.com",),
+    ]
     # Hesap kayıtları tek MGET'te (dizin okuma boru hattındaydı)
     assert depo.komutlar == ["SET", "ZREVRANGEBYSCORE", "MGET", "LRANGE", "MGET", "EXPIRE", "SET"]
-    # Liste boş, yalnız hesap
+    # Liste boş, yalnız hesap: alıcılar işaretten ve arşivden önce okunur
     depo = _arsivli_depo()
     _hesapli(depo, "ali", "ali@ornek.com", haftalik=True)
     gonder = Gonderici()
+    depo.istek, depo.komutlar = 0, []
     sonuc = _pano.haftalik_ozet_isle(depo, _ozet_ayari(haftalik_alicilar=()), PAZARTESI, gonder)
     assert sonuc["gonderildi"] and gonder.cagrilar[0][0] == ("ali@ornek.com",)
     assert 'hesabınızda Sistem > Bildirimler\'de "Haftalık özet" açık' in gonder.cagrilar[0][2]
+    assert depo.komutlar == ["LRANGE", "MGET", "SET", "ZREVRANGEBYSCORE", "MGET", "EXPIRE", "SET"]
 
 
-def test_haftalik_ozet_baglantilari_arsivi_ve_incelemeyi_acar():
+def test_haftalik_ozet_alici_yoksa_isaret_ve_arsiv_okunmaz():
+    """İnceleme 21.11.2026: alıcısı olmayan kurulumda gönderim penceresindeki her
+    bekçi çağrısı yalnız hesap dizinini (hesap varsa kayıtları da) okur; işaret
+    (SET NX / DEL) ve 14 günlük arşiv okunmaz."""
+    ayar = _ozet_ayari(haftalik_alicilar=())
+    depo = _arsivli_depo()
+    sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, Gonderici())
+    assert sonuc == {"gonderildi": False, "sebep": "alici_yok"}
+    assert depo.komutlar == ["LRANGE"]
+    _hesapli(depo, "ali", "ali@ornek.com", sistem=True)  # özeti açmadı
+    depo.komutlar = []
+    sonuc = _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, Gonderici())
+    assert sonuc["sebep"] == "alici_yok" and depo.komutlar == ["LRANGE", "MGET"]
+    # Kişi özeti açınca aynı hafta gider (işaret hiç alınmamıştı)
+    _hesapli(depo, "ali", "ali@ornek.com", haftalik=True)
+    assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, Gonderici())["gonderildi"]
+
+
+def test_haftalik_ozet_baglantilari_ozetin_haftasini_acar():
+    """İnceleme 21.11.2026: bağlantılar tıklandığı günden geriye 7 günü değil,
+    özetin haftasını (16-22.11.2026) açar; satırlar e-postadaki ihlal sayısıyla
+    aynı süzgeçtedir."""
     adres = "https://d.vercel.app/pano"
     gonder = Gonderici()
     _pano.haftalik_ozet_isle(_arsivli_depo(), _ozet_ayari(pano_adresi=adres), PAZARTESI, gonder)
     (_, _, metin), html_metni = gonder.cagrilar[0], gonder.htmller[0]
-    assert f'href="{adres}?arsiv=7#olaylar"' in html_metni
-    tip = f"{adres}?arsiv=7&tip=Ara%C3%A7-yaya%20yak%C4%B1nl%C4%B1%C4%9F%C4%B1#olaylar"
+    hafta = f"{adres}?hafta=2026-11-16"
+    assert f'href="{hafta}#olaylar"' in html_metni
+    tip = f"{hafta}&tur=ihlal&tip=Ara%C3%A7-yaya%20yak%C4%B1nl%C4%B1%C4%9F%C4%B1#olaylar"
     # HTML'de & kaçışlıdır (&amp;); düz metinde adres olduğu gibi
     assert f'href="{html.escape(tip)}"' in html_metni and f"    {tip}\n" in metin
     # Programdan gelen kamera adı: bağlantıda kodlu, yazıda kaçışlı
-    yer = f"{adres}?arsiv=7&yer=%3Cb%3EKap%C4%B1%3C%2Fb%3E#olaylar"
+    yer = f"{hafta}&tur=ihlal&yer=%3Cb%3EKap%C4%B1%3C%2Fb%3E#olaylar"
     assert f'href="{html.escape(yer)}"' in html_metni
     assert ">&lt;b&gt;Kapı&lt;/b&gt;</a>" in html_metni
-    assert f'href="{adres}?inceleme=1#olaylar"' in html_metni
-    assert "<b>Kapı</b>" not in html_metni
+    assert f'href="{html.escape(hafta + "&tur=ihlal&durum=new#olaylar")}"' in html_metni
+    assert "<b>Kapı</b>" not in html_metni and "inceleme=" not in html_metni
+
+
+def test_arsiv_haftasi_ozetin_saydigi_olaylari_verir(site):  # noqa: F811
+    """İnceleme 21.11.2026: `hafta` bağlantısı özetin haftasını (pazartesi
+    00:00 - pazartesi 00:00, Türkiye) açar: tür, kamera ve bekleyen sayıları
+    e-postadakiyle aynı; önceki haftanın ve bu sabahın olayları girmez."""
+    cerez = _kurucu(site)
+    rapor = _pano.rapor_temizle(_rapor(son_olaylar=OLAYLAR))
+    _pano.rapor_kaydet(_pano.DEPO, rapor, PAZARTESI - 60, _ozet_ayari())
+    hepsi = _pano.DEPO.komut("ZREVRANGEBYSCORE", _pano.ARSIV_ANAHTARI, "+inf", "-inf")
+    gece = _pano._pazartesi_gecesi(PAZARTESI)
+    ozet = _pano.haftalik_ozet_icerigi(_pano.arsiv_coz(hepsi), {}, gece)
+    hafta = _pano._turkiye_gunu(ozet["bas"])
+    assert hafta == "2026-11-16"
+
+    def arsiv(sorgu):
+        adres = f"{site}/api/durum?arsiv=1&hafta={hafta}{sorgu}"
+        kod, _, govde = _istek(adres, basliklar={"Cookie": cerez})
+        assert kod == 200, govde
+        return json.loads(govde)["arsiv"]
+
+    a = arsiv("")
+    assert sorted(o["id"] for o in a["olaylar"]) == [1, 2, 3, 4, 5] and a["hafta"] == hafta
+    assert arsiv("&tur=ihlal")["toplam"] == ozet["toplam"]
+    for ad, sayi in ozet["tipler"]:
+        assert arsiv("&tur=ihlal&tip=" + urllib.parse.quote(ad))["toplam"] == sayi
+    for ad, sayi in ozet["yerler"]:  # Rampa'daki sistem olayı tur=ihlal ile dışarıda
+        assert arsiv("&tur=ihlal&yer=" + urllib.parse.quote(ad))["toplam"] == sayi
+    assert arsiv("&tur=ihlal&durum=new")["toplam"] == ozet["bekleyen"] == 2
+    # CSV dosyasının adı haftanın ilk ve son günü
+    adres = f"{site}/api/durum?arsiv=1&hafta={hafta}&bicim=csv"
+    _, basliklar, _ = _istek(adres, basliklar={"Cookie": cerez})
+    assert "dalsan-olaylar-2026-11-16_2026-11-22.csv" in basliklar["Content-Disposition"]
+    # Gün olamayan hafta yok sayılır: dönem (7 gün) geçerli
+    for bozuk in ("2026-02-30", "16.11.2026", "2026-11-16x"):
+        kod, _, govde = _istek(
+            f"{site}/api/durum?arsiv=1&hafta={bozuk}", basliklar={"Cookie": cerez}
+        )
+        assert kod == 200 and json.loads(govde)["arsiv"]["hafta"] == ""
+    # Panoda ve demoda: istek haftayı taşır, demo da aynı aralığı süzer
+    assert 'p.set("hafta", arsivSuzgeci.hafta)' in PANO_JS
+    assert "hafta: hafta," in DEMO_JS
 
 
 # ------------------------------------------------------- Sistem > Bildirimler
@@ -499,9 +600,12 @@ def test_bildirim_ayari_oturum_okumasina_komut_eklemez():
 
 def test_pano_derin_bagi_beyaz_listeyle_okur_html_e_yazmaz():
     govde = PANO_JS.split("function derinBagCoz(", 1)[1].split("\n  }\n", 1)[0]
-    # Bilinen dönem, düz metin süzgeç, inceleme bayrağı, bilinen bölüm
-    for parca in ('"arsiv"', '"tip"', '"yer"', '"inceleme"', '"bolum"', "ARSIV_DONEMLERI"):
+    # Gün biçiminde hafta, bilinen tür dilimi ve durum, düz metin süzgeç, bilinen bölüm
+    for parca in ('"hafta"', '"tur"', '"durum"', '"tip"', '"yer"', '"bolum"', "DERIN_BOLUMLER"):
         assert parca in govde
+    # Sunucunun ürettiği bütün adlar panoda okunur
+    for ad in _pano.DERIN_BAG_ADLARI:
+        assert f'"{ad}"' in govde
     assert not re.search(r"\.innerHTML|\.outerHTML|insertAdjacentHTML", PANO_JS)
     # İlk yüklemede ve girişten sonra: yukle() başarılı çizimden sonra uygular
     yukle = PANO_JS.split("async function yukle()", 1)[1].split("\n  }\n", 1)[0]

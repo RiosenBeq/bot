@@ -166,15 +166,16 @@ def test_pano_adresi_her_zaman_bilinir_site_adresi_once():
 def test_derin_bag_kodlanir_yalniz_bilinen_adlar():
     kok = "https://dalsan.vercel.app/pano"
     assert _pano.pano_bagi(kok, "genel") == kok + "#genel"
-    assert _pano.pano_bagi(kok, "olaylar", arsiv="7", tip="Baret yok") == (
-        kok + "?arsiv=7&tip=Baret%20yok#olaylar"
+    assert _pano.pano_bagi(kok, "olaylar", hafta="2026-11-16", tip="Baret yok") == (
+        kok + "?hafta=2026-11-16&tip=Baret%20yok#olaylar"
     )
     # Türkçe harf UTF-8, ayraçlar (& = # / ? +) ve tırnak kodlanır: parametre bölünmez
-    bag = _pano.pano_bagi(kok, "olaylar", arsiv="7", yer='Kapı & "A"=#/?+')
-    assert bag == kok + "?arsiv=7&yer=Kap%C4%B1%20%26%20%22A%22%3D%23%2F%3F%2B#olaylar"
+    bag = _pano.pano_bagi(kok, "olaylar", hafta="2026-11-16", yer='Kapı & "A"=#/?+')
+    assert bag == kok + "?hafta=2026-11-16&yer=Kap%C4%B1%20%26%20%22A%22%3D%23%2F%3F%2B#olaylar"
     assert urllib.parse.parse_qs(urllib.parse.urlsplit(bag).query)["yer"] == ['Kapı & "A"=#/?+']
     # Bilinmeyen ad ve boş değer yazılmaz; adres yoksa bağlantı yok
-    assert _pano.pano_bagi(kok, "olaylar", arsiv="7", tip="", foo="x") == kok + "?arsiv=7#olaylar"
+    bag = _pano.pano_bagi(kok, "olaylar", hafta="2026-11-16", tip="", arsiv="7")
+    assert bag == kok + "?hafta=2026-11-16#olaylar"
     assert _pano.pano_bagi("", "genel") == ""
 
 
@@ -271,7 +272,7 @@ SABLONLAR = {
     "bekci-yeniden-haber": ("#15803d", "#genel", "Bağlantı durumunu gör"),
     "deneme": ("#15803d", "?bolum=bildirimler#sistem", "Bildirim ayarlarını aç"),
     "deneme-kendine": ("#15803d", "?bolum=bildirimler#sistem", "Bildirim ayarlarını aç"),
-    "haftalik-ozet": ("#616367", "?arsiv=7#olaylar", "Olay arşivini aç"),
+    "haftalik-ozet": ("#616367", "?hafta=2026-11-16#olaylar", "Olay arşivini aç"),
 }
 
 

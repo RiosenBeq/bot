@@ -543,18 +543,19 @@ program kapalı, yeniden bağlandı, ayar sorunu) ve **Haftalık özet**; ikisi 
 varsayılan kapalı. Kurucunun hesap kaydı yoktur: kendine ayrı bir hesap açar ya
 da adresini Vercel'deki listeye yazar. **Kendime deneme gönder** kayıtlı adrese
 tasarımlı deneme e-postası gönderir (hesap başına saatte 5, Kurulum denetimindeki
-denemeyle aynı sayaç). Gönderim anında alıcılar: Vercel listesi + anahtarı açık
-ve adresi olan hesaplar - aynı adresle o anahtarı kapalı kaydeden kişinin liste
-adresi; girişi kapalı ya da silinen hesap almaz; aynı adres (büyük-küçük harf
-farkıyla) bir kez. Hesaplar yalnız e-posta gidecekken okunur: sıradan bekçi
-çağrısına komut eklenmez. Her e-postanın altında neden geldiği (hesap anahtarı
+denemeyle aynı sayaç). Gönderim anında alıcılar: Vercel listesinin bütün
+adresleri + anahtarı açık ve adresi olan hesaplar; girişi kapalı ya da silinen
+hesap eklemez; aynı adres (büyük-küçük harf farkıyla) bir kez. Hesaptaki anahtar
+yalnız o hesabın kendi aboneliğidir: adresin sahibi olduğu kanıtlanmadığı için
+Vercel listesindeki bir adresi durdurmaz (listeden çıkmak Vercel'de olur). Hesaplar
+yalnız e-posta gidecekken okunur: sıradan bekçi çağrısına komut eklenmez. Her e-postanın altında neden geldiği (hesap anahtarı
 ya da Vercel listesi) ve Sistem > Bildirimler'in bağlantısı yazar. Ayar
 `POST /api/hesap {"eylem": "bildirim_ayarla", "eposta", "sistem", "haftalik"}`
 ile hesap kaydına kilit altında yazılır (işlem kaydına adres kısmen gizli);
 kişi kendi ayarını `/api/durum`'un `oturum.bildirim`'inde görür (ek okuma yok).
 Kullanıcılar listesinde bildirim alan hesapta **Bildirim açık** etiketi çıkar
-(adres gösterilmez); Kurulum denetimi alıcıları "Vercel listesinden 2,
-hesaplardan 3" diye sayar.
+(adres gösterilmez); Kurulum denetimi alıcıları gönderimdeki kuralla "Vercel
+listesinden 2, hesaplardan 3" diye sayar (hesaplar: listede olmayan adresler).
 
 ### Haftalık özet e-postası (isteğe bağlı, 20.11.2026)
 
@@ -570,7 +571,7 @@ salı-pazar her sabah 08:00-09:00 arası; o haftanın özeti yine geçen haftad�
 | Ad | Not |
 |---|---|
 | `HAFTALIK_OZET` | `acik` yazılmadıkça özet gitmez. Tanınmayan değer açmaz; Kurulum denetimi kartı söyler |
-| `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Boşsa `BEKCI_ALICILAR`. Sistem > Bildirimler'de "Haftalık özet"i açan hesaplar da alır |
+| `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Hiç girdi yoksa `BEKCI_ALICILAR`; yazılı ama geçersiz girdiler bekçinin listesine düşmez, yok sayılır (Kurulum denetimi ve "Ayar sorunu" söyler). Sistem > Bildirimler'de "Haftalık özet"i açan hesaplar da alır |
 
 E-posta ayarları ve gönderim bekçiyle ortaktır (alıcılar birbirini
 görmez). İleti düz metin ve ortak tasarımlı HTML'dir: gün gün ihlal sayısı, önceki
@@ -578,10 +579,12 @@ haftayla fark, en sık 5 tür (ölçümsüz başlık) ve 5 kamera, inceleme duru
 (bekliyor / incelendi / yanlış alarm), sistem olayı sayısı, programın
 gönderdiği bu ayın çalışma oranı ve bağlantının şu anki durumu. Sayılar olay
 arşivinden gelir (aşağıda Plan ve maliyet). Fotoğraf, olay ayrıntısı, adres ya
-da sır girmez. Bağlantılar panoda doğru yeri açar: düğme Olaylar > Arşiv'i
-(son 7 gün), her tür ve kamera satırı arşivi o türe / kameraya süzülmüş,
-"Bekliyor" satırı İnceleme modunu (inceleyemeyen kişi Olaylar'da bekleyenleri
-görür). Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
+da sır girmez. Bağlantılar Olaylar > Arşiv'i özetin haftasına açar
+(`?hafta=YYYY-AA-GG`, tıklandığı günden bağımsız): düğme o haftanın bütün
+olaylarını, her tür ve kamera satırı o türün / kameranın ihlallerini, "Bekliyor"
+satırı o haftanın bekleyen ihlallerini; listedeki olaylar e-postadaki sayıyla
+aynıdır. Vercel listesi boşsa alıcılar (hesaplar) önce okunur: kimse yoksa işaret
+ve arşiv okunmaz. Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
 `zamani_degil`, `bu_hafta_gitti`, `alici_yok`, `gidemedi`). Kurulum denetimi
 kartı özetin açık olup olmadığını, alıcı sayısını ve son gönderim anını
 gösterir.
@@ -625,14 +628,16 @@ isteğe bağlı `SITE_ADRESI` (alan adı ya da `https://` adresi, ör. özel ala
 adı) -> Vercel'in `VERCEL_PROJECT_PRODUCTION_URL`'i -> `dalsansite.vercel.app`;
 alan adı olamayan değer yok sayılır. Bağlantılar `/pano?...#ekran` biçimindedir:
 uyarı, program kapalı ve düzelme `#genel` (bağlantı durumu), haftalık özet
-`?arsiv=7#olaylar` (tür / kamera satırı `&tip=` / `&yer=`, "Bekliyor"
-`?inceleme=1`), deneme ve "Bildirim ayarları" `?bolum=bildirimler#sistem`,
-ayar sorunu `?bolum=kurulum#sistem`. Değerler yüzde kodludur; düz metin de aynı
-adresleri taşır. Pano bunları ilk açılışta ve oturum yoksa girişten sonra
-(/demo'da da) bir kez uygular, sorguyu adres çubuğundan siler. Beyaz liste:
-bilinen ekran, arşiv dönemi (`bugun`, `7`, `30`, `90`), düz metin tür / kamera
-süzgeci, `inceleme=1`, bilinen bölüm; başka her şey yok sayılır, hiçbiri HTML'e
-yazılmaz. Yerel önizleme:
+`?hafta=2026-11-16#olaylar` (özetin haftasının arşivi; tür / kamera satırı
+`&tur=ihlal&tip=` / `&yer=`, "Bekliyor" `&tur=ihlal&durum=new`), deneme ve
+"Bildirim ayarları" `?bolum=bildirimler#sistem`, ayar sorunu
+`?bolum=kurulum#sistem`. Değerler yüzde kodludur; düz metin de aynı adresleri
+taşır. Pano bunları ilk açılışta ve oturum yoksa girişten sonra (/demo'da da)
+bir kez uygular, sorguyu adres çubuğundan siler. Beyaz liste: bilinen ekran,
+gün biçiminde `hafta` ve onunla bilinen `tur` / `durum`, düz metin tür / kamera
+süzgeci, bilinen bölüm; başka her şey yok sayılır, hiçbiri HTML'e yazılmaz.
+Arşiv ucu da `hafta`yı alır (`GET /api/durum?arsiv=1&hafta=...`: o günün Türkiye
+gece yarısından 7 gün, dönemin yerine). Yerel önizleme:
 `python3 tests/eposta_onizleme.py <klasör>` her şablonu örnek veriyle HTML ve
 düz metin olarak yazar.
 

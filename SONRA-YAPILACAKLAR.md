@@ -222,10 +222,10 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
     `VERCEL_PROJECT_PRODUCTION_URL` varken çıkıyor ve panonun ana sayfasını açıyor;
     alıcıları yalnız Vercel'deki listeler belirliyor.~~ Yapıldı (21.11.2026): adres her
     zaman bilinir (`SITE_ADRESI` -> Vercel adresi -> `dalsansite.vercel.app`); bağlantılar
-    doğru ekranı açar (Genel bakış, Olaylar > Arşiv son 7 gün ve tür / kamera süzgeci,
-    İnceleme modu, Sistem > Bildirimler), girişten sonra da. Sistem > Bildirimler: her
+    doğru ekranı açar (Genel bakış, Olaylar > Arşiv'de özetin haftası ve tür / kamera /
+    bekleyen süzgeci, Sistem > Bildirimler), girişten sonra da. Sistem > Bildirimler: her
     hesap kendi adresini ve "Sistem uyarıları" / "Haftalık özet" anahtarlarını kaydeder,
-    "Kendime deneme gönder"; alıcılar Vercel listesi + anahtarı açanlar - kapatanlar,
-    hesaplar yalnız e-posta gidecekken okunur. Kalan: kurucunun hesap kaydı yok (bildirimi
+    "Kendime deneme gönder"; alıcılar Vercel listesi + anahtarı açanlar (hesaptaki anahtar
+    listedeki adresi durdurmaz), hesaplar yalnız e-posta gidecekken okunur. Kalan: kurucunun hesap kaydı yok (bildirimi
     için ayrı hesap ya da Vercel listesi); web push yok (madde 1).
 
