@@ -152,10 +152,17 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
    hesap ekleme / rol / şifre / kapatma / silme / iki adım / rol yetkileri, giriş ve
    çıkış değişikliği satırıyla tek boru hattında yazar.
 4. **Haftalık özet e-postası:** veriler son raporda, SMTP bekçiyle ortak.
-5. **Olay arşivi, süzgeç, arama ve CSV:** site gelen raporlardaki olayları biriktirebilir
-   (sıralı küme), fabrika değişmeden.
-6. **İnceleme modu:** bekleyen ihlaller büyük kanıtla sırayla; klavye kısayolları; toplu
-   inceleme.
+5. ~~**Olay arşivi, süzgeç, arama ve CSV:** site gelen raporlardaki olayları biriktirebilir
+   (sıralı küme), fabrika değişmeden.~~ Yapıldı (20.11.2026): Olaylar > Arşiv, son 90 gün
+   (en çok 5.000), dönem / tür / kamera / durum süzgeci, arama, 25'lik sayfalar ve Excel'in
+   açtığı CSV (`/api/durum?arsiv=1&bicim=csv`); olaylar değişmedikçe rapor başına komut
+   eklemez. Kalan: arşiv raporlardaki son 20 olaydan birikir (iki rapor arasında 20'den
+   fazla olay ya da site kesintisi boşluk bırakır; tam geçmiş için sözleşmeye toplu
+   gönderim gerekir) ve yalnız ana tesisi tutar.
+6. ~~**İnceleme modu:** bekleyen ihlaller büyük kanıtla sırayla; klavye kısayolları~~;
+   Yapıldı (20.11.2026): fotoğraf penceresinde "3 / 12", I / Y / oklar, telefonda iki büyük
+   düğme, mevcut `olay_incele` yolu. Kalan: **toplu inceleme** (bir komutta çok olay
+   sözleşme ister; tek tek göndermek 5 dakikada 60 inceleme sınırına takılır).
 7. ~~**"Diğer cihazlardan çık"**~~ Yapıldı (20.11.2026): Sistem hesap kartında, şifreyle
    onaylanır; oturum sürümü artar, bu cihaz yeni çerezle sürer, işlem kaydına girer; altında
    hesabın son giriş zamanı. Kalan: oturum listesi (cihaz başına kayıt ister; bugün tek

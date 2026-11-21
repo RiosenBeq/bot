@@ -189,6 +189,7 @@ ve `iki_adim_sifirla {ad, sifre}` (yönetici; öbür hesap işleriyle aynı kura
 | Kameraların adı, bölümü, bağlantı durumu, kare hızı | 7 gün | Video kaydı (yalnız tek kareler gelir) |
 | Bugünkü ve dünkü ihlal, inceleme bekleyen, aktif kural, saatlik dağılım, son 14 gün | 7 gün | Kural ve kamera ayarları |
 | Son 20 olayın adı, yeri, önemi, durumu, zamanı; sistem olayının açıklaması (adres ve dosya yolu çıkarılmış) | 7 gün | Takip numarası, olayın ayrıntı kaydı |
+| **Olay arşivi:** raporlarla gelen olayların aynı alanları (site biriktirir; fotoğrafsız) | 90 gün, en çok 5.000 olay (eskisi düşer) | |
 | İhlallerin **kanıt fotoğrafı** (en çok 960 px, ihlal başına bir kez) | 7 gün, en çok 60 fotoğraf | |
 | Kameraların **anlık görüntüsü** (640 px, 10 saniyede bir) | 2 dakika; yalnız Kameralar ekranı açıkken ve yalnız ekranda görünen kutucukların kameraları için gelir | |
 | Kurulu olduğu bilgisayar: adı, IP adresi, işletim sistemi, donanım | 7 gün | Oturum açan kullanıcının adı |
@@ -249,6 +250,25 @@ Buradan alınanlar, sade haliyle:
   satırın içinde ya da kanıt fotoğrafı açıkken fotoğrafın altında yapılır:
   kanıta bakıp aynı yerde karar verilir. Telefonda kanıt fotoğrafının küçüğü
   satırın başında durur.
+- **Arşiv** (Olaylar > Arşiv, 20.11.2026): sitenin biriktirdiği son 90 günün
+  olayları; dönem (bugün, 7, 30, 90 gün), Tümü / İhlal / Sistem, olay türü
+  (ölçümsüz başlık: "Araç-yaya yakınlığı"), kamera ve durum süzgeci, metin
+  arama (büyük/küçük ve Türkçe harf farkı gözetmez; ayrıntıda ve olay
+  numarasında da arar), 25'lik sayfalar. **CSV indir** süzgeçten geçen bütün
+  olayları Excel'in açtığı dosya olarak indirir (UTF-8 BOM, `;` ayraç, Türkçe
+  başlık, Türkiye saati; formül gibi başlayan hücre `'` ile etkisizleşir):
+  `GET /api/durum?arsiv=1&...&bicim=csv`, `Content-Disposition: attachment`,
+  yani iPhone Safari'de de bağlantıyla iner. Olayları gören her rol indirir.
+  Arşiv yalnız ana tesisin olaylarını tutar (pano da yalnız onu gösterir) ve
+  raporlardaki son 20 olaydan birikir: site kapalıyken ya da iki rapor arasında
+  20'den fazla olay olursa aradakiler eksik kalır (asılları fabrikadadır).
+- **İnceleme modu** (operatör+, 20.11.2026): bekleyen ihlal varken Olaylar'da
+  "İncelemeye başla" çıkar; ihlaller fotoğraf penceresinde büyük kanıtla tek
+  tek, "3 / 12" sayacıyla gelir. Karar aynı `olay_incele` komutuyla gider ve
+  sıradaki bekleyene geçilir. Masaüstünde `I` İncelendi, `Y` Yanlış alarm, oklar
+  önceki / sonraki; telefonda iki büyük düğme. Modda tek dokunuş yeter (mod
+  açıkça seçildi, düğmeler büyük ve ayrık); satırdaki düğmeler çift dokunuşlu
+  kalır.
 - **Komut bildirimi:** gönderilen komut sağ altta (telefonda sekme çubuğunun
   üstünde) Sırada → Fabrikada → Yapıldı diye izlenir.
 
@@ -264,7 +284,7 @@ sayılı iş istenebilir. Hepsi aşağıdaki tabloyla sınırlıdır:
 |---|---|---|---|---|
 | Anons (`anons`) | Müdahale | Operatör | Anons sayfasındaki **hazır** bir mesajı seçilen kanaldan ya da "Tüm fabrika"dan çaldırır | Onay kutusu |
 | Hoparlör denemesi (`ses_dene`) | Müdahale | Operatör | Bir kanaldan deneme sesi verir | Çift dokunuş |
-| Olay inceleme (`olay_incele`) | Olaylar | Operatör | Son rapordaki bir ihlali İncelendi ya da Yanlış alarm işaretler | Çift dokunuş |
+| Olay inceleme (`olay_incele`) | Olaylar | Operatör | Son rapordaki bir ihlali İncelendi ya da Yanlış alarm işaretler | Çift dokunuş (inceleme modunda tek dokunuş ya da `I` / `Y`) |
 | Teşhis (`teshis`) | Yönetim | Yönetici | Programdan tek seferlik durum metni ister (adres ve dosya yolu süzülür) | Tek dokunuş |
 | Yeniden başlat (`yeniden_baslat`) | Yönetim | Yönetici | Programı yeniden başlatır (1-3 dakika kameralar izlenmez) | Kendi şifresi |
 | Güncelle (`guncelle`) | Yönetim | Yönetici | GitHub'daki resmi son sürüme günceller (önce veritabanı yedeklenir, açılmazsa eski sürüme dönülür) | Kendi şifresi |
@@ -646,6 +666,14 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   yanlış giriş 2. Müdahale ya da
   Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
   saniyede bir uğrar (ekran kapanınca durur).
+- **Olay arşivi:** rapor başına komut eklemez: son yazılan olaylar raporun zaten
+  yaptığı `MGET`'te okunur, olaylar değişmediyse arşive dokunulmaz. Yeni olay
+  gelince bir istek daha gider (5 komut: ekleme, 90 gün ve 5.000 kırpması,
+  süre, iz), olay bitince ya da incelenince 3 komut (eski satır çıkar, yenisi
+  girer). Günde 100 olaylı fabrikada ayda yaklaşık 30 bin komut ve rapor başına
+  son 20 olay boyu (birkaç KB) okuma. Arşiv sayfası 2 komuttur (oturum ve
+  fotoğraf listesi tek `MGET`, dönem tek `ZREVRANGEBYSCORE`); 90 günlük okuma
+  5.000 olayda ~1 MB'tır.
 - **Bekçi:** her çağrı 3-5 komuttur (biri yanlış anahtar sayacının okuması); 5 dakikada bir çağrılırsa ayda yaklaşık
   35 bin. `BEKCI=acik` rapor başına komut eklemez: "haber yok" işareti raporun
   zaten yaptığı okumayla (aynı `MGET`) okunur; yalnız bir kesintiden sonraki ilk
@@ -674,9 +702,9 @@ tarayıcı ──(kişisel hesapla giriş, oturum çerezi)──> /api/durum, /a
 
 | Dosya | İşi |
 |---|---|
-| `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt |
+| `api/rapor.py` | Fabrikanın raporunu alır: imza ve zaman denetimi, alan süzme, kayıt; olaylar değiştiyse olay arşivine yazar |
 | `api/giris.py`, `api/cikis.py` | Panoya kişisel hesapla giriş ve çıkış (oturum çerezi, kilitler, iki adımlı doğrulama kodu) |
-| `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir, `&kameralar=4,5`: yalnız ekrandaki kameralarınki) |
+| `api/durum.py` | Panonun verisi; oturum ister ve rolü uygular (`?mudahale=1` operatör+, `?yonetim=1` yönetici, `?kare=1`: anlık görüntü istenir, `&kameralar=4,5`: yalnız ekrandaki kameralarınki; `?arsiv=1`: olay arşivi, `&bicim=csv` ile indirme) |
 | `api/hesap.py` | Hesaplar ve işlem kaydı: yönetici hesap açar / siler / rol verir / iki adımı sıfırlar, herkes kendi şifresini değiştirir ve kendi iki adımlı doğrulamasını açar / kapatır (onay şifresiyle) |
 | `api/foto.py` | Kanıt fotoğrafı: fabrikadan imzalı `POST`, panoya oturumlu `GET` |
 | `api/kare.py` | Anlık görüntü: fabrikadan imzalı `POST`, panoya oturumlu `GET` |

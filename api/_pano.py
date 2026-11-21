@@ -406,6 +406,22 @@ FOTO_LISTESI_ANAHTARI = "dalsan:fotolar"
 FOTO_EN_BUYUK_BAYT = 400 * 1024
 FOTO_SAKLAMA_SN = DURUM_SAKLAMA_SN
 FOTO_EN_COK = 60
+# Olay arşivi (Kod maddesi 5, 20.11.2026): raporlarla gelen olaylar sıralı
+# kümede birikir (puan olayın zamanı, üye olayın kısa JSON'u; fotoğraf asla).
+# Son yazılan raporun olayları (üyeleri) ayrı anahtarda durur ve raporun zaten
+# yaptığı MGET'te okunur: olaylar değişmediyse rapor başına komut eklenmez.
+ARSIV_ANAHTARI = "dalsan:olay:arsiv"
+ARSIV_IZ_ANAHTARI = "dalsan:olay:arsiv:iz"
+ARSIV_GUN = 90
+ARSIV_EN_COK = 5000
+ARSIV_SAKLAMA_SN = ARSIV_GUN * 86400
+ARSIV_SAYFA = 25  # telefonda rahat okunan sayfa
+ARSIV_DONEMLERI = {"bugun": 1, "7": 7, "30": 30, "90": 90}  # gün sayısı (bugün dahil)
+ARSIV_ARA_EN_COK = 80
+# Eski program `durum` göndermez; küçük harfli adından çıkarılır (DALSAN ortak.py)
+DURUM_ADINDAN = {"yeni": "new", "incelendi": "reviewed", "yanlış alarm": "false_alarm"}
+DURUM_ADLARI = {"new": "Bekliyor", "reviewed": "İncelendi", "false_alarm": "Yanlış alarm"}
+ONEM_ADLARI = {"critical": "Kritik", "high": "Yüksek", "medium": "Orta", "low": "Düşük"}
 # Anlık görüntü: yalnız Kameralar ekranı açıkken gelir; 2 dakikada silinir
 # (eski bir kare "şu anki görüntü" diye gösterilmesin).
 KARE_ONEKI = "dalsan:kare:"
@@ -836,13 +852,13 @@ class BellekDepo(_OrtakDepo):
     içindir: Vercel'de her istek ayrı bir süreçte çalışabilir, bellek paylaşılmaz.
 
     Sitenin kullandığı Redis komutlarını Upstash'in döndürdüğü biçimde taklit
-    eder (dize ve liste değerler, süre). Bilmediği komutta DepoHatasi verir:
-    yeni bir komut kullanılırsa önce burada da yazılmalıdır.
+    eder (dize, liste ve sıralı küme değerler, süre). Bilmediği komutta
+    DepoHatasi verir: yeni bir komut kullanılırsa önce burada da yazılmalıdır.
     """
 
     def __init__(self, saat: Callable[[], float] = time.time) -> None:
         self.saat = saat
-        self._veri: dict[str, tuple[str | list[str], float | None]] = {}
+        self._veri: dict[str, tuple[str | list[str] | dict[str, float], float | None]] = {}
         self._kilit = threading.Lock()
 
     def komut(self, *parcalar: str) -> object:
@@ -855,7 +871,7 @@ class BellekDepo(_OrtakDepo):
 
     # ---- iç işler (kilit tutulurken çağrılır)
 
-    def _deger(self, anahtar: str) -> str | list[str] | None:
+    def _deger(self, anahtar: str) -> str | list[str] | dict[str, float] | None:
         kayit = self._veri.get(anahtar)
         if kayit is None:
             return None
@@ -867,15 +883,46 @@ class BellekDepo(_OrtakDepo):
 
     def _dize(self, anahtar: str) -> str | None:
         deger = self._deger(anahtar)
-        if isinstance(deger, list):
+        if isinstance(deger, list | dict):
             raise DepoHatasi("WRONGTYPE Operation against a key holding the wrong kind of value")
         return deger
 
     def _liste(self, anahtar: str) -> list[str]:
         deger = self._deger(anahtar)
-        if isinstance(deger, str):
+        if isinstance(deger, str | dict):
             raise DepoHatasi("WRONGTYPE Operation against a key holding the wrong kind of value")
         return deger or []
+
+    def _kume(self, anahtar: str) -> dict[str, float]:
+        """Sıralı küme: üye -> puan (olay arşivi)."""
+        deger = self._deger(anahtar)
+        if isinstance(deger, str | list):
+            raise DepoHatasi("WRONGTYPE Operation against a key holding the wrong kind of value")
+        return deger or {}
+
+    def _kume_yaz(self, anahtar: str, kume: dict[str, float]) -> None:
+        if not kume:
+            self._veri.pop(anahtar, None)  # Redis boş kümeyi siler
+            return
+        bitis = self._veri[anahtar][1] if anahtar in self._veri else None
+        self._veri[anahtar] = (kume, bitis)
+
+    @staticmethod
+    def _sirali(kume: dict[str, float]) -> list[str]:
+        """Redis sırası: puana, eşitlikte üyenin baytlarına göre artan."""
+        return sorted(kume, key=lambda uye: (kume[uye], uye.encode("utf-8")))
+
+    @staticmethod
+    def _puan_icinde(puan: float, en_az: str, en_cok: str) -> bool:
+        """ZRANGEBYSCORE sınırları: -inf, +inf, sayı ya da "(" ile dışlayan sayı."""
+
+        def sinir(metin: str) -> tuple[float, bool]:
+            dislar = metin.startswith("(")
+            return float(metin.lstrip("(")), dislar  # float("+inf") / float("-inf") olur
+
+        alt, alt_dis = sinir(en_az)
+        ust, ust_dis = sinir(en_cok)
+        return (puan > alt if alt_dis else puan >= alt) and (puan < ust if ust_dis else puan <= ust)
 
     def _liste_yaz(self, anahtar: str, liste: list[str]) -> None:
         if not liste:
@@ -974,6 +1021,45 @@ class BellekDepo(_OrtakDepo):
                 del liste[i]
             self._liste_yaz(arg[0], liste)
             return len(hedef)
+        if ad == "ZADD":
+            # ZADD key puan üye [puan üye ...]: yeni eklenen üye sayısı (seçenek yok)
+            kume = dict(self._kume(arg[0]))
+            ciftler = list(zip(arg[1::2], arg[2::2], strict=True))
+            yeni = sum(1 for _, uye in ciftler if uye not in kume)
+            for puan, uye in ciftler:
+                kume[uye] = float(puan)
+            self._kume_yaz(arg[0], kume)
+            return yeni
+        if ad == "ZREM":
+            kume = dict(self._kume(arg[0]))
+            silinen = [uye for uye in dict.fromkeys(arg[1:]) if kume.pop(uye, None) is not None]
+            self._kume_yaz(arg[0], kume)
+            return len(silinen)
+        if ad == "ZCARD":
+            return len(self._kume(arg[0]))
+        if ad == "ZREMRANGEBYSCORE":
+            kume = dict(self._kume(arg[0]))
+            silinen = [u for u in kume if self._puan_icinde(kume[u], arg[1], arg[2])]
+            for uye in silinen:
+                del kume[uye]
+            self._kume_yaz(arg[0], kume)
+            return len(silinen)
+        if ad == "ZREMRANGEBYRANK":
+            kume = dict(self._kume(arg[0]))
+            sirali = self._sirali(kume)
+            silinen = sirali[self._aralik(len(sirali), arg[1], arg[2])]
+            for uye in silinen:
+                del kume[uye]
+            self._kume_yaz(arg[0], kume)
+            return len(silinen)
+        if ad == "ZREVRANGEBYSCORE":
+            # ZREVRANGEBYSCORE key en_cok en_az: büyük puandan küçüğe (LIMIT yok)
+            kume = self._kume(arg[0])
+            return [
+                u
+                for u in reversed(self._sirali(kume))
+                if self._puan_icinde(kume[u], arg[2], arg[1])
+            ]
         raise DepoHatasi(f"ERR unknown command '{ad}'")
 
 
@@ -1449,6 +1535,7 @@ def rapor_kaydet(
         FOTO_LISTESI_ANAHTARI,
         KARE_HEPSI_ANAHTARI,
         KARE_SECIM_ANAHTARI,
+        ARSIV_IZ_ANAHTARI,  # olay arşivi: son yazılan olaylar (arsiv_komutlari)
     ]
     # Bekçi açıkken "sistemden haber yok" işareti aynı MGET'te okunur ve yalnız
     # varsa (kesintiden sonraki ilk taze rapor) silinir: düzelme, bir sonraki
@@ -1462,11 +1549,16 @@ def rapor_kaydet(
         _set_komutu(SON_RAPOR_ANAHTARI, str(int(simdi)), None),
         ["MGET", *okunan],
     ]
-    isaretler = _mget_listesi(depo.boru_hatti(komutlar + ek_komutlar)[2], len(okunan))
-    isaretler = isaretler or [None] * len(okunan)
-    izleyen, komut_var, kare, ham_fotolar, kare_hepsi, ham_secim = isaretler[:6]
-    if bekci and isaretler[6] is not None:
-        depo.sil(BEKCI_UYARI_ANAHTARI)
+    sonuc = _mget_listesi(depo.boru_hatti(komutlar + ek_komutlar)[2], len(okunan))
+    isaretler = sonuc or [None] * len(okunan)
+    izleyen, komut_var, kare, ham_fotolar, kare_hepsi, ham_secim, ham_iz = isaretler[:7]
+    # Olay arşivi: yalnız olaylar değiştiyse (yeni olay, bitti, incelendi) bir boru
+    # hattı daha; MGET okunamadıysa yazılmaz (iz bilinmeden yazmak çift üye bırakırdı)
+    sonra = arsiv_komutlari(rapor, ham_iz, simdi) if sonuc is not None else []
+    if bekci and isaretler[7] is not None:
+        sonra.append(["DEL", BEKCI_UYARI_ANAHTARI])
+    if sonra:
+        depo.boru_hatti(sonra)
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
     # Sık sor: müdahale ya da yönetim açık VE ekran açık ya da komut var (docs/19 §3.8)
     komut_acik = rapor["mudahale"]["acik"] or rapor["yonetim"]["acik"]
@@ -1569,6 +1661,258 @@ def pano_verisi(
 def _turkiye_gunu(zaman: float) -> str:
     """Türkiye günü, "YYYY-AA-GG"."""
     return datetime.fromtimestamp(zaman, TURKIYE_SAATI).strftime("%Y-%m-%d")
+
+
+# ------------------------------------------------- olay arşivi (Kod maddesi 5)
+
+
+def _uye_metni(kayit: dict) -> str:
+    return json.dumps(kayit, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def arsiv_uyeleri(rapor: dict) -> dict[str, tuple[int, str]]:
+    """Raporun olayları arşiv üyesi olarak: {"<tesis>|<id>": (zaman, üye)}.
+    Üye yalnız ekranın ve CSV'nin gösterdiği kısa alanlardır (fotoğraf değil).
+    Kimliği ya da zamanı olmayan olay atlanır (tekilleştirilemez). Süren olayın
+    süresi yazılmaz: program onu her raporda büyütür, arşiv her raporda yeniden
+    yazılırdı; olay bitince son süresiyle bir kez yazılır."""
+    tesis = _sozluk(rapor.get("tesis")).get("id") or ""
+    uyeler = {}
+    for olay in _liste(rapor.get("son_olaylar"), OLAY_EN_COK):
+        if not isinstance(olay, dict) or olay.get("id") is None or not olay.get("zaman"):
+            continue
+        try:
+            an = int(datetime.fromisoformat(olay["zaman"]).timestamp())
+        except (TypeError, ValueError):
+            continue
+        durum = olay.get("durum") or ""
+        if not durum and olay.get("tur") == "ihlal":
+            durum = DURUM_ADINDAN.get(olay.get("durum_adi") or "", "")
+        kayit = {
+            "id": olay["id"],
+            "zaman": olay["zaman"],
+            "tur": olay.get("tur") or "ihlal",
+            "baslik": olay.get("baslik") or "Olay",
+            "yer": olay.get("yer") or "",
+            "onem": olay.get("onem") or "",
+            "onem_adi": olay.get("onem_adi") or "",
+            "durum": durum,
+            # Program durumu tanınmayan adla gönderdiyse ad kalır (eski program)
+            "durum_adi": "" if durum else olay.get("durum_adi") or "",
+            "suruyor": olay.get("suruyor") is True,
+            "sure": "" if olay.get("suruyor") is True else olay.get("sure") or "",
+            "ayrinti": olay.get("ayrinti") or "",
+        }
+        if tesis:
+            kayit["tesis"] = tesis
+        kisa = {ad: deger for ad, deger in kayit.items() if deger != "" and deger is not False}
+        uyeler[f"{tesis}|{olay['id']}"] = (an, _uye_metni(kisa))
+    return uyeler
+
+
+def _uye_anahtari(kayit: dict) -> str:
+    return f"{kayit.get('tesis') or ''}|{kayit.get('id')}"
+
+
+def arsiv_komutlari(rapor: dict, ham_iz: object, simdi: float) -> list[list[str]]:
+    """Arşive yazılacak komutlar; olaylar son yazılandan farklı değilse boş.
+
+    İz (ARSIV_IZ_ANAHTARI) son yazılan raporun üyeleridir (JSON dizisi) ve
+    raporun MGET'inde okunur. Değişen olayın (bitti, incelendi, kamera adı
+    değişti) eski üyesi ZREM ile çıkar, yenisi ZADD ile girer: tesis + olay
+    kimliği başına tek üye.
+    Yeni olay geldiyse küme aynı boru hattında kırpılır: ARSIV_GUN'den eskiler
+    ve ARSIV_EN_COK'tan fazlası (en eskiler) gider; anahtarlar ARSIV_GUN sonra
+    kendiliğinden düşer (rapor gelmezse). Komutlar: yeni olayda 5, durum
+    değişikliğinde 3 (README "Plan ve maliyet")."""
+    yeni = arsiv_uyeleri(rapor)
+    eski: dict[str, str] = {}
+    try:
+        ham = json.loads(ham_iz) if isinstance(ham_iz, str) else []
+    except ValueError:
+        ham = []
+    for kayit in ham if isinstance(ham, list) else []:
+        if isinstance(kayit, dict):  # üye metni aynı kuralla yeniden kurulur
+            eski[_uye_anahtari(kayit)] = _uye_metni(kayit)
+    degisen = {anahtar: deger for anahtar, deger in yeni.items() if eski.get(anahtar) != deger[1]}
+    if not degisen:
+        return []
+    komutlar = []
+    giden = [eski[anahtar] for anahtar in degisen if anahtar in eski]
+    if giden:
+        komutlar.append(["ZREM", ARSIV_ANAHTARI, *giden])
+    ekle = ["ZADD", ARSIV_ANAHTARI]
+    for an, uye in degisen.values():
+        ekle += [str(an), uye]
+    komutlar.append(ekle)
+    if len(giden) < len(degisen):  # yeni olay var: küme büyüdü
+        sinir = int(simdi) - ARSIV_SAKLAMA_SN
+        komutlar += [
+            ["ZREMRANGEBYSCORE", ARSIV_ANAHTARI, "-inf", f"({sinir}"],
+            ["ZREMRANGEBYRANK", ARSIV_ANAHTARI, "0", str(-ARSIV_EN_COK - 1)],
+            ["EXPIRE", ARSIV_ANAHTARI, str(ARSIV_SAKLAMA_SN)],
+        ]
+    iz = "[" + ",".join(uye for _, uye in yeni.values()) + "]"  # üyeler JSON nesnesidir
+    komutlar.append(_set_komutu(ARSIV_IZ_ANAHTARI, iz, ARSIV_SAKLAMA_SN))
+    return komutlar
+
+
+def _durum_sirasi(kayit: dict) -> tuple[bool, bool]:
+    """Aynı olayın iki üyesinden hangisi daha yeni: incelenmiş ve bitmiş olan."""
+    return kayit.get("durum") in ("reviewed", "false_alarm"), not kayit.get("suruyor")
+
+
+def arsiv_coz(ham: object) -> list[dict]:
+    """ZREVRANGEBYSCORE cevabı -> olaylar (yeniden eskiye). Normalde olay başına
+    tek üye vardır; bir yazım yarım kaldıysa aynı olayın iki üyesinden daha
+    ileri durumdaki gösterilir."""
+    secilen: dict[str, dict] = {}
+    sira: list[str] = []
+    for uye in ham if isinstance(ham, list) else []:
+        kayit = _json_sozluk(uye) if isinstance(uye, str) else None
+        if kayit is None or not isinstance(kayit.get("id"), int):
+            continue
+        anahtar = _uye_anahtari(kayit)
+        onceki = secilen.get(anahtar)
+        if onceki is None:
+            sira.append(anahtar)
+        if onceki is None or _durum_sirasi(kayit) > _durum_sirasi(onceki):
+            secilen[anahtar] = kayit
+    olaylar = []
+    for anahtar in sira:
+        k = secilen[anahtar]
+        olaylar.append(
+            {
+                "id": k["id"],
+                "zaman": _metin(k.get("zaman"), 40),
+                "tur": _secim(k.get("tur"), OLAY_TURLERI) or "ihlal",
+                "baslik": _metin(k.get("baslik"), 160) or "Olay",
+                "yer": _metin(k.get("yer"), 160),
+                "onem": _secim(k.get("onem"), ONEMLER),
+                "onem_adi": _metin(k.get("onem_adi"), 40),
+                "durum": _secim(k.get("durum"), OLAY_DURUMLARI),
+                "durum_adi": _metin(k.get("durum_adi"), 40),
+                "suruyor": k.get("suruyor") is True,
+                "sure": _metin(k.get("sure"), 40),
+                "ayrinti": _metin(k.get("ayrinti"), 300),
+                "tesis": _metin(k.get("tesis"), 32),
+            }
+        )
+    return olaylar
+
+
+def olay_tipi(baslik: str) -> str:
+    """Süzgeçteki tür: başlığın ölçümsüz hâli ("Araç-yaya yakınlığı - 1,85 m" ->
+    "Araç-yaya yakınlığı"); program ölçümü başlığa " - " ile ekler."""
+    return baslik.split(" - ", 1)[0]
+
+
+def _ara_katla(metin: str) -> str:
+    return metin.translate(TURKCE_KATLAMA).lower()
+
+
+@dataclass(frozen=True)
+class ArsivSuzgeci:
+    donem: str = "7"
+    tur: str = ""
+    tip: str = ""
+    yer: str = ""
+    durum: str = ""
+    ara: str = ""
+
+    def uyar(self, olay: dict) -> bool:
+        if self.tur and olay["tur"] != self.tur:
+            return False
+        if self.tip and olay_tipi(olay["baslik"]) != self.tip:
+            return False
+        if self.yer and olay["yer"] != self.yer:
+            return False
+        if self.durum and olay["durum"] != self.durum:
+            return False
+        if self.ara:
+            durum_adi = DURUM_ADLARI.get(olay["durum"], olay["durum_adi"])
+            alanlar = (olay["baslik"], olay["yer"], olay["ayrinti"], str(olay["id"]), durum_adi)
+            if _ara_katla(self.ara) not in _ara_katla(" ".join(alanlar)):
+                return False
+        return True
+
+
+def arsiv_suzgeci(istek: Isleyici) -> ArsivSuzgeci:
+    """Sorgudan süzgeç. Tanınmayan dönem 7 gün, tanınmayan tür / durum "hepsi"
+    sayılır; metinler kısaltılır."""
+    donem = istek.sorgu("donem")
+    return ArsivSuzgeci(
+        donem=donem if donem in ARSIV_DONEMLERI else "7",
+        tur=_secim(istek.sorgu("tur"), OLAY_TURLERI),
+        tip=_metin(istek.sorgu("tip"), 160),
+        yer=_metin(istek.sorgu("yer"), 160),
+        durum=_secim(istek.sorgu("durum"), OLAY_DURUMLARI),
+        ara=_metin(istek.sorgu("ara"), ARSIV_ARA_EN_COK),
+    )
+
+
+def arsiv_baslangici(donem: str, simdi: float) -> int:
+    """Dönemin ilk anı: Türkiye saatiyle bugünden (gün - 1) önceki gece yarısı."""
+    gun = ARSIV_DONEMLERI.get(donem, 7)
+    bugun = datetime.fromtimestamp(simdi, TURKIYE_SAATI).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return int((bugun - timedelta(days=gun - 1)).timestamp())
+
+
+# CSV'de hücre başındaki bu işaretler Excel'de formül çalıştırır (CSV enjeksiyonu)
+_FORMUL_BASI = ("=", "+", "-", "@", "\t", "\r")
+ARSIV_CSV_BASLIKLARI = (
+    "Tarih",
+    "Saat",
+    "Tür",
+    "Olay",
+    "Önem",
+    "Kamera / yer",
+    "Durum",
+    "Süre",
+    "Ayrıntı",
+    "Olay no",
+    "Tesis",
+)
+
+
+def _csv_hucresi(deger: object) -> str:
+    metin = str(deger)
+    if metin.startswith(_FORMUL_BASI):
+        metin = "'" + metin
+    if any(isaret in metin for isaret in (";", '"', "\n", "\r")):
+        metin = '"' + metin.replace('"', '""') + '"'
+    return metin
+
+
+def arsiv_csv(olaylar: list[dict]) -> bytes:
+    """Excel'in açtığı CSV: UTF-8 BOM'lu, ";" ayraçlı, Türkçe başlıklı; tarih ve
+    saat Türkiye saatiyle. Formül gibi başlayan hücre "'" ile etkisizleşir."""
+    satirlar = [";".join(ARSIV_CSV_BASLIKLARI)]
+    for o in olaylar:
+        try:
+            an = datetime.fromisoformat(o["zaman"]).astimezone(TURKIYE_SAATI)
+            tarih, saat = an.strftime("%d.%m.%Y"), an.strftime("%H:%M:%S")
+        except ValueError:
+            tarih, saat = "", ""
+        durum = DURUM_ADLARI.get(o["durum"], o["durum_adi"]) if o["tur"] == "ihlal" else ""
+        sure = "Sürüyor" if o["suruyor"] else o["sure"]
+        hucreler = (
+            tarih,
+            saat,
+            "Sistem" if o["tur"] == "sistem" else "İhlal",
+            o["baslik"],
+            o["onem_adi"] or ONEM_ADLARI.get(o["onem"], ""),
+            o["yer"],
+            durum,
+            sure,
+            o["ayrinti"],
+            o["id"],
+            o["tesis"],
+        )
+        satirlar.append(";".join(_csv_hucresi(h) for h in hucreler))
+    return ("\ufeff" + "\r\n".join(satirlar) + "\r\n").encode("utf-8")
 
 
 # ------------------------------------------------- çoklu fabrika / filo (öneri 10)
@@ -3540,11 +3884,13 @@ def onay_sifresi_dogrula(
 
 @dataclass(frozen=True)
 class Ikili:
-    """JSON olmayan cevap (fotoğraf): `calistir` onu olduğu gibi yazar."""
+    """JSON olmayan cevap (fotoğraf, CSV): `calistir` onu olduğu gibi yazar.
+    `dosya` doluysa tarayıcı indirir (Content-Disposition: attachment)."""
 
     veri: bytes
     tur: str
     onbellek: str
+    dosya: str = ""
 
 
 class Isleyici(BaseHTTPRequestHandler):
@@ -3593,6 +3939,8 @@ class Isleyici(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(ikili.veri)))
         self.send_header("Cache-Control", ikili.onbellek)
         self.send_header("X-Content-Type-Options", "nosniff")
+        if ikili.dosya:
+            self.send_header("Content-Disposition", f'attachment; filename="{ikili.dosya}"')
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(ikili.veri)
@@ -3894,7 +4242,7 @@ def site_surumu() -> str:
     return ham[:12] if re.fullmatch(r"[0-9a-f]{40}", ham) else ""
 
 
-def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
+def durum(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
     """GET /api/durum - panonun verisi; oturum ister. Rol süzgeci GORUNUM_EN_AZ_ROL
     tablosundan okunur (docs/19 §1): izleyici bilgisayarın IP'sini, adını, fabrika
     adresini, yönetim bloğunu ve müdahale seçeneklerini (hazır anons metinleri,
@@ -3905,8 +4253,11 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
     onların görüntüsünü gönderir. Sorgu hiç yoksa (eski pano) hepsini; boşsa
     (yeni pano, ekranda kutucuk yok) görüntü istenmez.
     `?filo=1` (yönetici): Tesisler ekranı açık; her tesisin özeti gelir (docs/20 §4).
+    `?arsiv=1`: yalnız olay arşivi (arsiv_getir; `&bicim=csv` ile indirme).
     Oturum, panonun verisi ve kişinin son giriş zamanı (Sistem > hesap kartı;
     kurucuda yok) tek MGET'te okunur (Kod maddesi 2)."""
+    if istek.sorgu("arsiv") == "1":
+        return arsiv_getir(istek)
     ayar = ayar_oku()
     kurulum_tamam_mi(ayar)
     simdi = time.time()
@@ -3957,6 +4308,67 @@ def durum(istek: Isleyici) -> tuple[int, dict, str | None]:
             depo, ayar, simdi, veri, bilgisayar_gorur=oturum.yetkili("veri.bilgisayar")
         )
     return 200, veri, None
+
+
+def arsiv_getir(istek: Isleyici) -> tuple[int, dict | Ikili, str | None]:
+    """GET /api/durum?arsiv=1 - olay arşivi (Olaylar > Arşiv); olayları gören
+    her rol (oturum yeter). Süzgeç: `donem` (bugun, 7, 30, 90), `tur`, `tip`,
+    `yer`, `durum`, `ara`; `sayfa` (ARSIV_SAYFA'lık). Dönemdeki türler ve
+    kameralar süzgeç seçenekleri olarak gelir. `&bicim=csv`: süzgeçten geçen
+    bütün olaylar CSV dosyası olarak iner (Content-Disposition: attachment;
+    iPhone Safari'de de bağlantıyla iner).
+    İki okuma: oturum ve fotoğraf listesi tek MGET'te, dönem tek ZREVRANGEBYSCORE."""
+    ayar = ayar_oku()
+    kurulum_tamam_mi(ayar)
+    simdi = time.time()
+    depo = depo_al(ayar)
+    oturum, (ham_fotolar,) = oturum_ve_oku(
+        depo, ayar, istek.cerez_al(CEREZ_ADI), simdi, [FOTO_LISTESI_ANAHTARI]
+    )
+    istek.gunluk_rol = oturum.rol
+    suzgec = arsiv_suzgeci(istek)
+    bas = arsiv_baslangici(suzgec.donem, simdi)
+    donemdeki = arsiv_coz(depo.komut("ZREVRANGEBYSCORE", ARSIV_ANAHTARI, "+inf", str(bas)))
+    olaylar = [olay for olay in donemdeki if suzgec.uyar(olay)]
+    if istek.sorgu("bicim") == "csv":
+        gun = _turkiye_gunu(bas) + "_" + _turkiye_gunu(simdi)
+        return (
+            200,
+            Ikili(
+                arsiv_csv(olaylar),
+                "text/csv; charset=utf-8",
+                "private, no-store",
+                f"dalsan-olaylar-{gun}.csv",
+            ),
+            None,
+        )
+    sayfa_sayisi = max(1, math.ceil(len(olaylar) / ARSIV_SAYFA))
+    ham_sayfa = istek.sorgu("sayfa")
+    sayfa = min(sayfa_sayisi, max(1, int(ham_sayfa))) if _rakam_mi(ham_sayfa) else 1
+    fotolar = foto_kimlikleri(ham_fotolar, simdi)
+    gosterilen = olaylar[(sayfa - 1) * ARSIV_SAYFA : sayfa * ARSIV_SAYFA]
+    for olay in gosterilen:
+        olay["foto"] = olay["tur"] == "ihlal" and olay["id"] in fotolar
+    tipler = {olay_tipi(o["baslik"]) for o in donemdeki if o["tur"] == "ihlal"}
+    return (
+        200,
+        {
+            "arsiv": {
+                "olaylar": gosterilen,
+                "toplam": len(olaylar),
+                "donemde": len(donemdeki),
+                "sayfa": sayfa,
+                "sayfa_sayisi": sayfa_sayisi,
+                "boyut": ARSIV_SAYFA,
+                "donem": suzgec.donem,
+                "bas": _iso(bas),
+                "tipler": sorted(tipler, key=_ara_katla),
+                "yerler": sorted({o["yer"] for o in donemdeki if o["yer"]}, key=_ara_katla),
+                "sinir": {"gun": ARSIV_GUN, "adet": ARSIV_EN_COK},
+            }
+        },
+        None,
+    )
 
 
 def _bekci_yetkisi(istek: Isleyici, ayar: Ayar) -> None:

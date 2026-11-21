@@ -2662,6 +2662,111 @@ a:hover {
   color: var(--metin-3);
   font-size: 12px;
 }
+/* İnceleme modu bandı: bekleyen ihlal varken listenin üstünde (operatör+) */
+.inceleme-bandi {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--uyari-kenar);
+  border-radius: var(--kose);
+  background: var(--uyari-acik);
+  color: var(--metin);
+  font-size: 14px;
+}
+.inceleme-bandi b {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Arşiv: dönem, süzgeç ve arama; sayfalı liste (sunucu süzer) */
+.arsiv-paneli,
+.arsiv-formu {
+  display: grid;
+  gap: var(--icerik-ara);
+  min-width: 0;
+}
+/* Dört dönem dar telefonda da tek satır: dilimler eşit paylaşır */
+.arsiv-formu > .segment {
+  display: flex;
+  width: 100%;
+  max-width: 480px;
+}
+.arsiv-formu > .segment button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
+}
+.arsiv-suzgec {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.arsiv-suzgec input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.arsiv-ozet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+#arsiv-listesi[aria-busy="true"] {
+  opacity: 0.6;
+}
+.arsiv-sayfalar,
+.inceleme-gezinti {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.arsiv-sayfalar > span,
+.inceleme-gezinti > span {
+  color: var(--metin-2);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.arsiv-foto {
+  justify-self: start;
+}
+
+/* İnceleme modu fotoğraf penceresinde: büyük, başparmakla basılan iki karar
+   ve altında önceki / sonraki ile "3 / 12" */
+.inceleme-gezinti {
+  padding: 12px 18px;
+  border-top: 1px solid var(--ayrac);
+}
+.inceleme-kararlari {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.inceleme-kararlari .dugme {
+  min-height: 56px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+.kisayol {
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-family: var(--es-aralikli);
+  font-size: 12px;
+  opacity: 0.7;
+}
+/* Klavye kısayolu yalnız klavyesi olan cihazda yazılır */
+@media (pointer: coarse) {
+  .kisayol {
+    display: none;
+  }
+}
 
 /* ============================================================== MÜDAHALE */
 .anons-formu {

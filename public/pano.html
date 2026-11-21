@@ -280,11 +280,77 @@
               <button type="button" data-tur="ihlal" aria-pressed="false">İhlal</button>
               <button type="button" data-tur="sistem" aria-pressed="false">Sistem</button>
             </div>
-            <button id="bekleyen-cipi" class="cip bekleyen-cipi" type="button" aria-pressed="false">Bekleyenler<span id="bekleyen-sayisi" class="sayac uyari">0</span></button>
+            <div class="cipler">
+              <button id="bekleyen-cipi" class="cip bekleyen-cipi" type="button" aria-pressed="false">Bekleyenler<span id="bekleyen-sayisi" class="sayac uyari">0</span></button>
+              <!-- Arşiv: son 90 günün olayları, süzgeç, arama ve CSV (pano.js arsiviYukle) -->
+              <button id="arsiv-cipi" class="cip" type="button" aria-pressed="false" aria-controls="arsiv-paneli"><svg class="simge" aria-hidden="true"><use href="#i-saat"/></svg>Arşiv</button>
+            </div>
           </div>
-          <div id="olay-gruplari" class="olay-gruplari"></div>
-          <div id="olay-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg><b id="olay-bos-baslik"></b><span id="olay-bos-metni"></span></div>
-          <p class="not">Son 20 olay. Kanıt fotoğrafları bu sitede 7 gün durur; asılları fabrikadadır.</p>
+          <!-- İnceleme modu: bekleyen ihlaller büyük kanıtla sırayla (operatör+; pano.js incelemeyiAc) -->
+          <div id="inceleme-bandi" class="inceleme-bandi" hidden>
+            <p><b id="inceleme-bandi-sayi">0</b> ihlal inceleme bekliyor</p>
+            <button id="inceleme-ac" class="dugme koyu" type="button"><svg class="simge" aria-hidden="true"><use href="#i-inceleme"/></svg><span>İncelemeye başla</span></button>
+          </div>
+          <div id="canli-olaylar" class="olay-gruplari">
+            <div id="olay-gruplari" class="olay-gruplari"></div>
+            <div id="olay-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-tamam"/></svg><b id="olay-bos-baslik"></b><span id="olay-bos-metni"></span></div>
+            <p class="not">Son 20 olay. Eskileri için Arşiv. Kanıt fotoğrafları bu sitede 7 gün durur; asılları fabrikadadır.</p>
+          </div>
+          <section id="arsiv-paneli" class="arsiv-paneli" aria-label="Olay arşivi" hidden>
+            <form id="arsiv-formu" class="arsiv-formu" role="search" aria-label="Arşivde süz ve ara">
+              <div id="arsiv-donemi" class="segment iri" role="group" aria-label="Dönem">
+                <button type="button" data-donem="bugun" aria-pressed="false">Bugün</button>
+                <button type="button" data-donem="7" aria-pressed="true">7 gün</button>
+                <button type="button" data-donem="30" aria-pressed="false">30 gün</button>
+                <button type="button" data-donem="90" aria-pressed="false">90 gün</button>
+              </div>
+              <div class="arsiv-suzgec">
+                <div class="alan">
+                  <label for="arsiv-tip">Olay türü</label>
+                  <div class="secici-kap">
+                    <select id="arsiv-tip" class="secici"><option value="">Hepsi</option></select>
+                    <svg class="simge" aria-hidden="true"><use href="#i-acilir"/></svg>
+                  </div>
+                </div>
+                <div class="alan">
+                  <label for="arsiv-yer">Kamera</label>
+                  <div class="secici-kap">
+                    <select id="arsiv-yer" class="secici"><option value="">Hepsi</option></select>
+                    <svg class="simge" aria-hidden="true"><use href="#i-acilir"/></svg>
+                  </div>
+                </div>
+                <div class="alan">
+                  <label for="arsiv-durum">Durum</label>
+                  <div class="secici-kap">
+                    <select id="arsiv-durum" class="secici">
+                      <option value="">Hepsi</option>
+                      <option value="new">Bekliyor</option>
+                      <option value="reviewed">İncelendi</option>
+                      <option value="false_alarm">Yanlış alarm</option>
+                    </select>
+                    <svg class="simge" aria-hidden="true"><use href="#i-acilir"/></svg>
+                  </div>
+                </div>
+                <div class="alan">
+                  <label for="arsiv-ara">Ara</label>
+                  <input id="arsiv-ara" type="search" maxlength="80" enterkeyhint="search" autocomplete="off" placeholder="Olay, kamera ya da no">
+                </div>
+              </div>
+            </form>
+            <div class="arsiv-ozet">
+              <p id="arsiv-sonuc" class="ikincil-metin" role="status"></p>
+              <a id="arsiv-csv" class="dugme ikincil kucuk" href="/api/durum?arsiv=1&amp;bicim=csv" download><svg class="simge" aria-hidden="true"><use href="#i-indir"/></svg><span>CSV indir</span></a>
+            </div>
+            <p id="arsiv-hatasi" class="hata" role="alert"></p>
+            <div id="arsiv-listesi" class="olay-gruplari" aria-busy="false"></div>
+            <div id="arsiv-bos" class="bos-kutu" hidden><svg class="simge" aria-hidden="true"><use href="#i-inceleme"/></svg><b>Bu süzgeçle olay yok</b><span>Dönemi genişletin ya da süzgeci temizleyin.</span></div>
+            <nav class="arsiv-sayfalar" aria-label="Arşiv sayfaları">
+              <button id="arsiv-onceki" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg><span>Önceki</span></button>
+              <span id="arsiv-sayfa" class="sayi"></span>
+              <button id="arsiv-sonraki" class="dugme ikincil" type="button"><span>Sonraki</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>
+            </nav>
+            <p class="not">Arşiv bu sitede tutulur: raporlarla gelen olaylar, son 90 gün (en çok 5.000 olay). Fotoğraflar 7 gün durur; asılları fabrikadadır.</p>
+          </section>
         </div>
 
         <!-- MÜDAHALE -->
@@ -673,8 +739,14 @@
       <button id="foto-kapat" class="ikon-dugme gri iri" type="button" aria-label="Kapat"><svg class="simge" aria-hidden="true"><use href="#i-kapat"/></svg></button>
     </div>
     <div class="foto-alani"><img id="foto-buyuk" alt=""><span id="foto-bos" class="foto-bos" hidden></span></div>
-    <!-- Bekleyen ihlalde İncelendi / Yanlış alarm (pano.js fotoEylemiCiz) -->
+    <!-- Bekleyen ihlalde İncelendi / Yanlış alarm (pano.js fotoEylemiCiz; inceleme modunda incelemeyiCiz) -->
     <div id="foto-eylem" class="foto-eylem" hidden></div>
+    <!-- İnceleme modu: sıradaki / önceki ihlal ve sayaç ("3 / 12") -->
+    <nav id="inceleme-gezinti" class="inceleme-gezinti" aria-label="İnceleme sırası" hidden>
+      <button id="inceleme-onceki" class="dugme ikincil" type="button" aria-keyshortcuts="ArrowLeft"><svg class="simge" aria-hidden="true"><use href="#i-geri"/></svg><span>Önceki</span></button>
+      <span id="inceleme-sayac" class="sayi" aria-live="polite"></span>
+      <button id="inceleme-sonraki" class="dugme ikincil" type="button" aria-keyshortcuts="ArrowRight"><span>Sonraki</span><svg class="simge" aria-hidden="true"><use href="#i-ileri"/></svg></button>
+    </nav>
     <dl id="foto-detay" class="foto-detay" hidden></dl>
   </dialog>
 </body>

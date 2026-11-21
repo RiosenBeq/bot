@@ -59,7 +59,8 @@ def _kaydet(depo, ham, simdi, ayar=None):
 def _bugunku_komutlar(rapor, simdi):
     """Tesis özelliğinden ÖNCEKİ rapor_kaydet'in gönderdiği komutlar (canlı site).
     Kameralar ekranında görünen kutucuklar (17.11.2026) aynı MGET'e iki anahtar
-    ekledi ("hepsi" işareti ve seçim): komut ve istek sayısı aynı kaldı."""
+    ekledi ("hepsi" işareti ve seçim), olay arşivi (20.11.2026) son yazılan
+    olayları: komut ve istek sayısı aynı kaldı."""
     kayit = json.dumps({"rapor": rapor}, ensure_ascii=False, separators=(",", ":"))
     return [
         ["SET", "dalsan:durum", kayit, "EX", "604800"],
@@ -72,6 +73,7 @@ def _bugunku_komutlar(rapor, simdi):
             "dalsan:fotolar",
             "dalsan:kare:hepsi",
             "dalsan:kare:secim",
+            "dalsan:olay:arsiv:iz",
         ],
     ]
 

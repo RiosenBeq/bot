@@ -851,6 +851,216 @@
     return Date.UTC(an.getUTCFullYear(), an.getUTCMonth(), 1);
   }
 
+  // ------------------------------------------------------------ olay arşivi
+
+  /* Olaylar > Arşiv (api/_pano.py arsiv_getir): son 20 olay ve onlardan önceki
+     90 günün tohumlu örnekleri. Süzgeç, arama, sayfa ve CSV sunucunun
+     kurallarıyla; inceleme yapılınca arşivdeki durum da değişir (aynı nesne). */
+  const ARSIV_GUN = 90;
+  const ARSIV_SAYFA = 25;
+  const ARSIV_DONEMLERI = { bugun: 1, 7: 7, 30: 30, 90: 90 };
+  const ARSIV_DURUM_ADLARI = { new: "Bekliyor", reviewed: "İncelendi", false_alarm: "Yanlış alarm" };
+  const ARSIV_IHLALLERI = [
+    ["Baret yok", "high", 5],
+    ["Yelek yok", "medium", 4],
+    ["Yasak bölge", "critical", 2],
+    ["Forklift yakınlığı", "critical", 2],
+    ["Eldiven yok", "low", 2],
+    ["Araç-yaya yakınlığı", "critical", 1],
+  ];
+  const TURKCE = { İ: "i", ı: "i", Ç: "c", ç: "c", Ğ: "g", ğ: "g", Ö: "o", ö: "o", Ş: "s", ş: "s", Ü: "u", ü: "u" };
+  let arsivOrnekleri = null;
+
+  function arsivOrnekleriniKur() {
+    const r = tohumlu(9090);
+    const torba = ARSIV_IHLALLERI.flatMap(([ad, onem, agirlik]) => Array(agirlik).fill([ad, onem]));
+    const enEski = olaylar[olaylar.length - 1].zamanMs;
+    const liste = [];
+    let id = olaylar[olaylar.length - 1].id - 1;
+    for (let gun = 0; gun < ARSIV_GUN; gun++) {
+      const adet = 4 + Math.floor(r() * 9);
+      const zamanlar = [];
+      for (let i = 0; i < adet; i++) {
+        // Vardiya saatlerinde (07-19)
+        zamanlar.push(enEski - gun * 24 * SA - Math.floor((1 + r() * 11) * SA) - Math.floor(r() * 59) * DK);
+      }
+      zamanlar.sort((a, b) => b - a);
+      for (const zamanMs of zamanlar) {
+        const kamera = KAMERALAR[Math.floor(r() * KAMERALAR.length)];
+        if (r() < 0.08) {
+          liste.push({
+            id: id--,
+            zamanMs: zamanMs,
+            tur: "sistem",
+            baslik: kamera.durum === "online" ? "Kamera yeniden bağlandı" : "Kamera bağlantısı koptu",
+            yer: kamera.ad + " · " + kamera.bolum,
+            kamera: kamera.id,
+            onem: "",
+            onem_adi: "",
+            durum: "",
+            durum_adi: "",
+            suruyor: false,
+            sure: "",
+            ayrinti: "Kameradan görüntü gelmiyor; program 30 saniyede bir yeniden deniyor.",
+          });
+          continue;
+        }
+        let [baslik, onem] = torba[Math.floor(r() * torba.length)];
+        if (baslik === "Araç-yaya yakınlığı") baslik += " - " + (0.6 + r() * 1.6).toFixed(2).replace(".", ",") + " m";
+        const zar = r();
+        const olayDurumu = zar < 0.08 ? "new" : zar < 0.24 ? "false_alarm" : "reviewed";
+        liste.push({
+          id: id--,
+          zamanMs: zamanMs,
+          tur: "ihlal",
+          baslik: baslik,
+          yer: kamera.ad + " · " + kamera.bolum,
+          kamera: kamera.id,
+          onem: onem,
+          onem_adi: ONEM_ADLARI[onem],
+          durum: olayDurumu,
+          durum_adi: DURUM_ADLARI[olayDurumu],
+          suruyor: false,
+          sure: 3 + Math.floor(r() * 40) + " sn",
+          ayrinti: "",
+        });
+      }
+    }
+    return liste;
+  }
+
+  function arsivTumu() {
+    if (!arsivOrnekleri) arsivOrnekleri = arsivOrnekleriniKur();
+    return [...olaylar, ...arsivOrnekleri];
+  }
+
+  function katla(metin) {
+    return String(metin || "")
+      .replace(/[İıÇçĞğÖöŞşÜü]/g, (h) => TURKCE[h])
+      .toLowerCase();
+  }
+
+  function olayTipi(baslik) {
+    return baslik.split(" - ")[0];
+  }
+
+  // Türkiye'de yaz saati yok: gece yarısı UTC+3'e göre
+  function arsivBaslangici(donem, simdi) {
+    const gun = ARSIV_DONEMLERI[donem] || 7;
+    const bugun = Math.floor((simdi + 3 * SA) / (24 * SA)) * 24 * SA - 3 * SA;
+    return bugun - (gun - 1) * 24 * SA;
+  }
+
+  function arsivSuz(simdi, sorgu) {
+    const donem = ARSIV_DONEMLERI[sorgu.get("donem")] ? sorgu.get("donem") : "7";
+    const bas = arsivBaslangici(donem, simdi);
+    const s = (ad) => (sorgu.get(ad) || "").trim();
+    const ara = katla(s("ara").slice(0, 80));
+    const donemde = arsivTumu().filter((o) => o.zamanMs >= bas);
+    const uyan = donemde.filter(function (o) {
+      if (s("tur") && o.tur !== s("tur")) return false;
+      if (s("tip") && olayTipi(o.baslik) !== s("tip")) return false;
+      if (s("yer") && o.yer !== s("yer")) return false;
+      if (s("durum") && o.durum !== s("durum")) return false;
+      if (ara) {
+        const metin = [o.baslik, o.yer, o.ayrinti, String(o.id), ARSIV_DURUM_ADLARI[o.durum] || o.durum_adi].join(" ");
+        if (!katla(metin).includes(ara)) return false;
+      }
+      return true;
+    });
+    return { donem: donem, bas: bas, donemde: donemde, uyan: uyan };
+  }
+
+  function arsivOlayi(o, simdi) {
+    return {
+      id: o.id,
+      zaman: iso(o.zamanMs),
+      tur: o.tur,
+      baslik: o.baslik,
+      yer: o.yer,
+      onem: o.onem,
+      onem_adi: o.onem_adi,
+      durum: o.durum,
+      durum_adi: o.durum ? "" : o.durum_adi,
+      suruyor: o.suruyor,
+      sure: o.suruyor ? "" : o.sure,
+      ayrinti: o.ayrinti || "",
+      tesis: "",
+      // Fotoğraf sitede 7 gün durur
+      foto: o.tur === "ihlal" && (o.foto !== undefined ? o.foto : simdi - o.zamanMs < 7 * 24 * SA),
+    };
+  }
+
+  function sirala(degerler) {
+    return [...new Set(degerler)].sort((a, b) => a.localeCompare(b, "tr"));
+  }
+
+  function arsivVerisi(simdi, sorgu) {
+    const { donem, bas, donemde, uyan } = arsivSuz(simdi, sorgu);
+    const sayfaSayisi = Math.max(1, Math.ceil(uyan.length / ARSIV_SAYFA));
+    const sayfa = Math.min(sayfaSayisi, Math.max(1, parseInt(sorgu.get("sayfa"), 10) || 1));
+    return {
+      olaylar: uyan.slice((sayfa - 1) * ARSIV_SAYFA, sayfa * ARSIV_SAYFA).map((o) => arsivOlayi(o, simdi)),
+      toplam: uyan.length,
+      donemde: donemde.length,
+      sayfa: sayfa,
+      sayfa_sayisi: sayfaSayisi,
+      boyut: ARSIV_SAYFA,
+      donem: donem,
+      bas: iso(bas),
+      tipler: sirala(donemde.filter((o) => o.tur === "ihlal").map((o) => olayTipi(o.baslik))),
+      yerler: sirala(donemde.map((o) => o.yer).filter(Boolean)),
+      sinir: { gun: ARSIV_GUN, adet: 5000 },
+    };
+  }
+
+  /* api/_pano.py arsiv_csv'nin aynısı: BOM, ";" ayraç, Türkçe başlıklar */
+  function csvHucresi(deger) {
+    let metin = String(deger);
+    if (/^[=+\-@\t\r]/.test(metin)) metin = "'" + metin;
+    if (/[;"\n\r]/.test(metin)) metin = '"' + metin.replace(/"/g, '""') + '"';
+    return metin;
+  }
+
+  function arsivCsv(sorgu) {
+    const simdi = Date.now();
+    const { bas, uyan } = arsivSuz(simdi, sorgu);
+    const tarih = new Intl.DateTimeFormat("tr-TR", { timeZone: SAAT_DILIMI, day: "2-digit", month: "2-digit", year: "numeric" });
+    const saat = new Intl.DateTimeFormat("tr-TR", {
+      timeZone: SAAT_DILIMI,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    const satirlar = ["Tarih;Saat;Tür;Olay;Önem;Kamera / yer;Durum;Süre;Ayrıntı;Olay no;Tesis"];
+    for (const o of uyan) {
+      const an = new Date(o.zamanMs);
+      satirlar.push(
+        [
+          tarih.format(an),
+          saat.format(an),
+          o.tur === "sistem" ? "Sistem" : "İhlal",
+          o.baslik,
+          o.onem_adi,
+          o.yer,
+          o.tur === "ihlal" ? ARSIV_DURUM_ADLARI[o.durum] || "" : "",
+          o.suruyor ? "Sürüyor" : o.sure,
+          o.ayrinti || "",
+          o.id,
+          "",
+        ]
+          .map(csvHucresi)
+          .join(";"),
+      );
+    }
+    const gun = (ms) => new Date(ms).toLocaleDateString("sv-SE", { timeZone: SAAT_DILIMI });
+    return {
+      ad: "dalsan-olaylar-" + gun(bas) + "_" + gun(simdi) + ".csv",
+      metin: "﻿" + satirlar.join("\r\n") + "\r\n",
+    };
+  }
+
   /* pano_verisi + durum(): bağlantı, rol süzgeci, ?mudahale=1 / ?yonetim=1 /
      ?kare=1 ekleri. Bağlantı demo bandından seçilir. */
   function panoVerisi(simdi, sorgu) {
@@ -1350,6 +1560,10 @@
         return yanit(200, { tamam: true });
       }
       if (!durum.girisli) throw new DemoHatasi(401, "giris_gerekli", "Panoyu görmek için giriş yapın.");
+      if (yol === "durum" && url.searchParams.get("arsiv") === "1") {
+        ilerlet(simdi); // inceleme sonucu arşive de yansısın
+        return yanit(200, { arsiv: arsivVerisi(simdi, url.searchParams) });
+      }
       if (yol === "durum") return yanit(200, panoVerisi(simdi, url.searchParams));
       if (yol === "mudahale" && yontem === "POST") return yanit(200, mudahaleIstegi(govde, simdi));
       if (yol === "hesap" && yontem === "POST") return yanit(200, hesapIstegi(govde, simdi));
@@ -1580,13 +1794,15 @@
     fotoAdresi: function (olayId) {
       const anahtar = "foto:" + olayId;
       if (!resimler.has(anahtar)) {
-        const o = olaylar.find((x) => x.id === olayId);
+        const o = arsivTumu().find((x) => x.id === olayId);
         if (!o) return "";
         const k = KAMERALAR.find((x) => x.id === o.kamera) || KAMERALAR[0];
         resimler.set(anahtar, sahne(k.id, k.ad, o.zamanMs, o));
       }
       return resimler.get(anahtar);
     },
+    // Arşivin CSV'si tarayıcıda kurulur (demoda istek sunucuya gitmez)
+    arsivCsv: arsivCsv,
   };
 
   // ------------------------------------------------------------ demo bandı

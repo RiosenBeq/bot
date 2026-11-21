@@ -231,6 +231,12 @@ function panoyuBaslat() {
   const inceleKutulari = new Map(); // olay kimliği -> inceleme denetimi (tazelemede korunur)
   const inceleDurum = new Map(); // olay kimliği -> gönderildiği an (ms)
   const inceleGecti = new Set(); // sonucu 3 dakikada gelmeyen olay kimlikleri
+  let arsivAcik = false; // Olaylar > Arşiv (son 90 gün; sunucudan sayfa sayfa)
+  let arsivVerisi = null; // GET /api/durum?arsiv=1 cevabının "arsiv" bloğu
+  let arsivSirasi = 0; // eski cevap yenisinin üstüne yazılmasın
+  let arsivZamanlayici = null; // aramada yazarken bekleme
+  const arsivSuzgeci = { donem: "7", tip: "", yer: "", durum: "", ara: "", sayfa: 1 };
+  let inceleme = null; // inceleme modu: {liste: [olay], sira, kararlar: Map(id -> karar)}
   const bildirimler = []; // [{id, bitti: ms | 0, uzerinde}] - en yenisi sonda
 
   // ----------------------------------------------------------- yardımcılar
@@ -944,7 +950,8 @@ function panoyuBaslat() {
     }
     const [baslik, aciklama] = GORUNUMLER[ad];
     $("gorunum-basligi").textContent = baslik;
-    $("gorunum-aciklamasi").textContent = ad === "genel" ? bugunMetni() : aciklama;
+    $("gorunum-aciklamasi").textContent =
+      ad === "genel" ? bugunMetni() : ad === "olaylar" && arsivAcik ? "Arşiv · son 90 gün" : aciklama;
     $("geri-dugmesi").hidden = !SISTEM_ALTI.includes(ad);
     document.title = baslik + " · Uzak izleme panosu";
     if (sonVeri) durumBandiniCiz(sonVeri);
@@ -1241,6 +1248,7 @@ function panoyuBaslat() {
   }
 
   $("kpi-ihlal").addEventListener("click", function () {
+    if (arsivAcik) arsivModu(false); // Genel bakıştan gelen bugünün listesini görür
     olaySuzgeciSec("ihlal", false);
     gorunumeGit("olaylar");
   });
@@ -1250,6 +1258,7 @@ function panoyuBaslat() {
     $("grafik").scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
   $("kpi-bekleyen").addEventListener("click", function () {
+    if (arsivAcik) arsivModu(false);
     olaySuzgeciSec("hepsi", true);
     gorunumeGit("olaylar");
   });
@@ -1824,12 +1833,21 @@ function panoyuBaslat() {
   $("foto-penceresi").addEventListener("close", function () {
     acikKare = null;
     $("foto-buyuk").removeAttribute("src");
+    if (inceleme) {
+      inceleme = null;
+      this.classList.remove("inceleme");
+      $("inceleme-gezinti").hidden = true;
+      $("foto-eylem").dataset.imza = "";
+      incelemeDugmesiniCiz();
+      if (!$("inceleme-bandi").hidden) $("inceleme-ac").focus();
+    }
     fotoEylemiCiz(null);
   });
 
   // -------------------------------------------------------------- olaylar
 
   function olaySuzgeciSec(tur, bekleyen) {
+    const turDegisti = tur !== olayTuru;
     olayTuru = tur;
     yalnizBekleyen = bekleyen;
     for (const d of document.querySelectorAll("#olay-segmenti button")) {
@@ -1837,6 +1855,8 @@ function panoyuBaslat() {
     }
     $("bekleyen-cipi").setAttribute("aria-pressed", String(bekleyen));
     if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
+    // Tümü / İhlal / Sistem dilimi arşivi de süzer
+    if (arsivAcik && turDegisti) arsivSuzgeciniDegistir({});
   }
 
   for (const dugme of document.querySelectorAll("#olay-segmenti button")) {
@@ -1858,7 +1878,10 @@ function panoyuBaslat() {
     fotoEylemiCiz(o);
   }
 
-  function olaySatiri(o) {
+  /* `arsiv`: Arşiv satırı. İnceleme düğmesi yoktur (inceleme son raporun
+     olaylarında yapılır) ve kanıtın küçüğü yerine "Fotoğraf" düğmesi durur:
+     telefonda 25 satırlık bir sayfa 25 fotoğraf indirmesin. */
+  function olaySatiri(o, arsiv) {
     const satir = el("li", "olay-satiri");
     const sistem = o.tur === "sistem";
     const [ikon, ton] = olaySimgesi(o);
@@ -1882,6 +1905,22 @@ function panoyuBaslat() {
     if (durum) sag.appendChild(rozet(durum[0], durum[1]));
     satir.appendChild(sag);
 
+    if (arsiv) {
+      if (o.foto && o.id) {
+        const alti = el("div", "olay-alti");
+        const dugme = el("button", "dugme ikincil kucuk arsiv-foto");
+        dugme.type = "button";
+        dugme.setAttribute("aria-label", "Kanıt fotoğrafını aç: " + o.baslik);
+        dugme.append(simge("i-foto"), el("span", "", "Fotoğraf"));
+        dugme.addEventListener("click", function () {
+          acikKare = null;
+          fotoGoster(DEMO ? DEMO.fotoAdresi(o.id) : "/api/foto?olay=" + o.id, o.baslik, olayAciklamasi(o));
+        });
+        alti.appendChild(dugme);
+        satir.appendChild(alti);
+      }
+      return satir;
+    }
     // Kanıt fotoğrafının küçüğü: masaüstünde sağda, telefonda satırın başında
     // (pano.css .olay-satiri). Ekran okuyucu önce olayın adını duysun diye
     // gövdeden sonra gelir.
@@ -2055,9 +2094,11 @@ function panoyuBaslat() {
     for (const [anahtar, kutu] of inceleKutulari) {
       if (!kutu.isConnected) inceleKutulari.delete(anahtar);
     }
+    incelemeDugmesiniCiz();
+    if (inceleme) incelemeyiCiz(false);
   }
 
-  function olayGruplariniKur(kap, gorunen) {
+  function olayGruplariniKur(kap, gorunen, arsiv) {
     temizle(kap);
     // Olaylar güne göre gruplanır: Bugün, Dün, 21.10.2026 ...
     const gruplar = [];
@@ -2075,11 +2116,340 @@ function panoyuBaslat() {
       bolum.setAttribute("aria-label", grup.gun);
       bolum.appendChild(el("h2", "", grup.gun + " · " + grup.olaylar.length + " olay"));
       const liste = el("ul");
-      for (const o of grup.olaylar) liste.appendChild(olaySatiri(o));
+      for (const o of grup.olaylar) liste.appendChild(olaySatiri(o, arsiv));
       bolum.appendChild(liste);
       kap.appendChild(bolum);
     }
   }
+
+  // ------------------------------------------------------------- arşiv
+
+  /* Olaylar > Arşiv: sitenin biriktirdiği son 90 günün olayları (api/_pano.py
+     arsiv_getir). Süzgeç ve sayfa sunucuda uygulanır; Tümü / İhlal / Sistem
+     dilimi de süzer. CSV aynı süzgeçle aynı adresten iner (bicim=csv). */
+  function arsivSorgusu(csv) {
+    const p = new URLSearchParams({ arsiv: "1", donem: arsivSuzgeci.donem });
+    if (olayTuru !== "hepsi") p.set("tur", olayTuru);
+    for (const ad of ["tip", "yer", "durum", "ara"]) if (arsivSuzgeci[ad]) p.set(ad, arsivSuzgeci[ad]);
+    if (csv) p.set("bicim", "csv");
+    else if (arsivSuzgeci.sayfa > 1) p.set("sayfa", String(arsivSuzgeci.sayfa));
+    return p;
+  }
+
+  function arsivModu(acik) {
+    arsivAcik = acik;
+    $("arsiv-cipi").setAttribute("aria-pressed", String(acik));
+    $("arsiv-paneli").hidden = !acik;
+    $("canli-olaylar").hidden = acik;
+    $("bekleyen-cipi").hidden = acik;
+    if (aktifGorunum === "olaylar") gorunumuUygula(); // başlığın altı: "Arşiv · son 90 gün"
+    incelemeDugmesiniCiz();
+    if (acik) arsiviYukle();
+  }
+
+  $("arsiv-cipi").addEventListener("click", function () {
+    arsivModu(!arsivAcik);
+  });
+
+  function arsivSuzgeciniDegistir(degisen) {
+    Object.assign(arsivSuzgeci, { sayfa: 1 }, degisen);
+    arsiviYukle();
+  }
+
+  for (const dugme of document.querySelectorAll("#arsiv-donemi button")) {
+    dugme.addEventListener("click", function () {
+      for (const d of document.querySelectorAll("#arsiv-donemi button")) {
+        d.setAttribute("aria-pressed", String(d === this));
+      }
+      arsivSuzgeciniDegistir({ donem: this.dataset.donem });
+    });
+  }
+  for (const [kimlik, ad] of [
+    ["arsiv-tip", "tip"],
+    ["arsiv-yer", "yer"],
+    ["arsiv-durum", "durum"],
+  ]) {
+    $(kimlik).addEventListener("change", function () {
+      arsivSuzgeciniDegistir({ [ad]: this.value });
+    });
+  }
+  // Arama yazarken 350 ms durunca, Enter'da hemen
+  $("arsiv-ara").addEventListener("input", function () {
+    clearTimeout(arsivZamanlayici);
+    const metin = this.value.trim();
+    arsivZamanlayici = setTimeout(function () {
+      if (metin !== arsivSuzgeci.ara) arsivSuzgeciniDegistir({ ara: metin });
+    }, 350);
+  });
+  $("arsiv-formu").addEventListener("submit", function (olay) {
+    olay.preventDefault();
+    clearTimeout(arsivZamanlayici);
+    arsivSuzgeciniDegistir({ ara: $("arsiv-ara").value.trim() });
+  });
+  $("arsiv-onceki").addEventListener("click", function () {
+    arsivSayfasi(-1);
+  });
+  $("arsiv-sonraki").addEventListener("click", function () {
+    arsivSayfasi(1);
+  });
+
+  function arsivSayfasi(adim) {
+    if (!arsivVerisi) return;
+    const sayfa = Math.min(arsivVerisi.sayfa_sayisi, Math.max(1, arsivVerisi.sayfa + adim));
+    if (sayfa === arsivVerisi.sayfa) return;
+    arsivSuzgeci.sayfa = sayfa;
+    arsiviYukle(true);
+  }
+
+  // Demoda istek sunucuya gitmez: dosya tarayıcıda kurulur (demo.js arsivCsv)
+  $("arsiv-csv").addEventListener("click", function (olay) {
+    if (!DEMO) return;
+    olay.preventDefault();
+    const dosya = DEMO.arsivCsv(arsivSorgusu(true));
+    const adres = URL.createObjectURL(new Blob([dosya.metin], { type: "text/csv;charset=utf-8" }));
+    const bag = el("a");
+    bag.href = adres;
+    bag.download = dosya.ad;
+    document.body.appendChild(bag);
+    bag.click();
+    bag.remove();
+    setTimeout(function () {
+      URL.revokeObjectURL(adres);
+    }, 1000);
+  });
+
+  async function arsiviYukle(sayfaDegisti) {
+    const sira = ++arsivSirasi;
+    $("arsiv-listesi").setAttribute("aria-busy", "true");
+    if (!arsivVerisi) yaz($("arsiv-sonuc"), "Arşiv okunuyor…");
+    try {
+      const yanit = await fetch("/api/durum?" + arsivSorgusu(false), { credentials: "same-origin", cache: "no-store" });
+      const veri = await yanit.json().catch(() => ({}));
+      if (sira !== arsivSirasi) return;
+      if (yanit.status === 401) {
+        oturumuKapat();
+        return;
+      }
+      if (!yanit.ok || !veri.arsiv) {
+        $("arsiv-hatasi").textContent = veri.mesaj || "Arşiv yüklenemedi (HTTP " + yanit.status + ").";
+        return;
+      }
+      arsivVerisi = veri.arsiv;
+      arsivSuzgeci.sayfa = arsivVerisi.sayfa;
+      $("arsiv-hatasi").textContent = "";
+      arsiviCiz();
+      // Sayfa değişince liste başına dönülür (telefonda düğme listenin altında)
+      if (sayfaDegisti) $("arsiv-paneli").scrollIntoView({ block: "start" });
+    } catch (hata) {
+      if (sira === arsivSirasi) $("arsiv-hatasi").textContent = "Siteye ulaşılamıyor.";
+    } finally {
+      if (sira === arsivSirasi) $("arsiv-listesi").setAttribute("aria-busy", "false");
+    }
+  }
+
+  /* Seçeneği dönemdeki değerlerden kurar; seçili değer dönemde yoksa da
+     listede kalır (süzgeç görünür olsun, sessizce kaybolmasın). */
+  function arsivSecenekleri(kimlik, degerler, secili) {
+    const secici = $(kimlik);
+    const liste = degerler.includes(secili) || !secili ? degerler : [secili, ...degerler];
+    const imza = JSON.stringify(liste);
+    if (secici.dataset.imza !== imza) {
+      secici.dataset.imza = imza;
+      temizle(secici);
+      secici.appendChild(el("option", "", "Hepsi")).value = "";
+      for (const deger of liste) secici.appendChild(el("option", "", deger)).value = deger;
+    }
+    secici.value = secili;
+  }
+
+  function arsiviCiz() {
+    const a = arsivVerisi;
+    if (!a) return;
+    arsivSecenekleri("arsiv-tip", a.tipler, arsivSuzgeci.tip);
+    arsivSecenekleri("arsiv-yer", a.yerler, arsivSuzgeci.yer);
+    $("arsiv-durum").value = arsivSuzgeci.durum;
+    const ilk = (a.sayfa - 1) * a.boyut + 1;
+    const son = ilk + a.olaylar.length - 1;
+    const donem = { bugun: "Bugün", 7: "Son 7 gün", 30: "Son 30 gün", 90: "Son 90 gün" }[a.donem] || "";
+    yaz(
+      $("arsiv-sonuc"),
+      a.toplam
+        ? donem + ": " + sayiMetni(a.toplam) + " olay" + (a.toplam > a.boyut ? " · " + ilk + "-" + son + " gösteriliyor" : "")
+        : donem + ": süzgece uyan olay yok"
+    );
+    $("arsiv-csv").href = "/api/durum?" + arsivSorgusu(true);
+    $("arsiv-csv").hidden = !a.toplam;
+    const kap = $("arsiv-listesi");
+    olayGruplariniKur(kap, a.olaylar, true);
+    $("arsiv-bos").hidden = a.olaylar.length > 0;
+    const sayfalar = $("arsiv-sayfa").parentNode;
+    sayfalar.hidden = a.sayfa_sayisi < 2;
+    $("arsiv-sayfa").textContent = "Sayfa " + a.sayfa + " / " + a.sayfa_sayisi;
+    $("arsiv-onceki").disabled = a.sayfa <= 1;
+    $("arsiv-sonraki").disabled = a.sayfa >= a.sayfa_sayisi;
+  }
+
+  // ----------------------------------------------------- inceleme modu
+
+  /* İnceleme modu (operatör+): bekleyen ihlaller fotoğraf penceresinde büyük
+     kanıtla tek tek, "3 / 12" sayacıyla. Karar mevcut olay_incele komutuyla
+     gider (satırdaki düğmelerle aynı yol); sonra sıradaki bekleyene geçilir.
+     Masaüstünde I = İncelendi, Y = Yanlış alarm, oklar = önceki / sonraki.
+     Pencerede tek dokunuş yeter: mod açıkça seçildi, düğmeler büyük ve ayrık. */
+  function incelemeDugmesiniCiz() {
+    const rapor = sonVeri && sonVeri.rapor;
+    const bekleyen = rapor ? bekleyenOlaylar(rapor).filter((o) => o.id && !inceleDurum.has(String(o.id))) : [];
+    const goster = inceleyebilir() && canliMi() && !arsivAcik && bekleyen.length > 0;
+    $("inceleme-bandi").hidden = !goster;
+    yaz($("inceleme-bandi-sayi"), sayiMetni(bekleyen.length));
+    return bekleyen;
+  }
+
+  $("inceleme-ac").addEventListener("click", function () {
+    const liste = incelemeDugmesiniCiz();
+    if (!liste.length) return;
+    inceleme = { liste: liste.slice(), sira: 0, kararlar: new Map() };
+    acikKare = null;
+    incelemeyiCiz(true);
+    $("foto-penceresi").classList.add("inceleme");
+    $("inceleme-gezinti").hidden = false;
+    $("foto-penceresi").showModal();
+  });
+
+  /* Sıradaki olayın son raporda bilinen hâli (fabrika inceledi mi) */
+  function incelemeOlayi() {
+    const o = inceleme.liste[inceleme.sira];
+    const taze = sonVeri && sonVeri.rapor ? sonVeri.rapor.son_olaylar.find((x) => x.id === o.id) : null;
+    return taze || o;
+  }
+
+  /* `tam`: olay değişti (fotoğraf ve başlık yeniden); değilse yalnız karar
+     alanı ve sayaç (tazelemede fotoğraf yeniden inmesin). */
+  function incelemeyiCiz(tam) {
+    const o = incelemeOlayi();
+    const sayi = inceleme.liste.length;
+    if (tam) {
+      fotoResmi(o.foto ? (DEMO ? DEMO.fotoAdresi(o.id) : "/api/foto?olay=" + o.id) : "", "Bu ihlalin fotoğrafı sitede yok.");
+      $("foto-buyuk").alt = o.baslik;
+      $("foto-baslik").textContent = o.baslik;
+      $("foto-alt").textContent = olayAciklamasi(o);
+      fotoDetayiCiz([
+        ["Önem", o.onem_adi || "-"],
+        ["Süre", o.suruyor ? "Sürüyor" + (o.sure ? " · " + o.sure : "") : o.sure || "-"],
+        ["Olay no", String(o.id)],
+      ]);
+    }
+    yaz($("inceleme-sayac"), sayiMetni(inceleme.sira + 1) + " / " + sayiMetni(sayi));
+    $("inceleme-onceki").disabled = inceleme.sira === 0;
+    $("inceleme-sonraki").disabled = inceleme.sira >= sayi - 1;
+    const kap = $("foto-eylem");
+    const karar = inceleme.kararlar.get(o.id) || (o.durum && o.durum !== "new" ? o.durum : null);
+    const imza = JSON.stringify([o.id, karar, canliMi(), inceleDurum.has(String(o.id))]);
+    if (!tam && kap.dataset.imza === imza) return;
+    kap.dataset.imza = imza;
+    temizle(kap);
+    kap.hidden = false;
+    if (karar || inceleDurum.has(String(o.id))) {
+      const kutu = el("p", "incele-durum");
+      kutu.setAttribute("role", "status");
+      kutu.appendChild(simge("i-tamam"));
+      const ad = karar ? OLAY_DURUMU[karar][0] : "Fabrikaya gönderildi";
+      kutu.appendChild(el("span", "", inceleme.kararlar.has(o.id) ? "Fabrikaya gönderildi: " + ad : ad));
+      kap.appendChild(kutu);
+      return;
+    }
+    const satir = el("div", "inceleme-kararlari");
+    for (const [deger, etiket, ikon, tus] of [
+      ["reviewed", "İncelendi", "i-onay", "I"],
+      ["false_alarm", "Yanlış alarm", "i-kapat", "Y"],
+    ]) {
+      const dugme = el("button", "dugme " + (deger === "reviewed" ? "koyu" : "ikincil"));
+      dugme.type = "button";
+      dugme.dataset.karar = deger;
+      dugme.setAttribute("aria-keyshortcuts", tus);
+      dugme.disabled = !canliMi();
+      const kisayol = el("kbd", "kisayol", tus);
+      kisayol.setAttribute("aria-hidden", "true"); // aria-keyshortcuts söyler
+      dugme.append(simge(ikon), el("span", "", etiket), kisayol);
+      dugme.addEventListener("click", function () {
+        incelemeKarari(deger);
+      });
+      satir.appendChild(dugme);
+    }
+    kap.appendChild(satir);
+    kap.appendChild(el("p", "hata incele-hatasi"));
+    if (!canliMi()) kap.appendChild(el("p", "incele-not", "Fabrikadan haber yok: karar şimdi gönderilemez."));
+  }
+
+  function incelemeGit(adim) {
+    if (!inceleme) return;
+    const sira = Math.min(inceleme.liste.length - 1, Math.max(0, inceleme.sira + adim));
+    if (sira === inceleme.sira) return;
+    inceleme.sira = sira;
+    incelemeyiCiz(true);
+  }
+
+  $("inceleme-onceki").addEventListener("click", function () {
+    incelemeGit(-1);
+  });
+  $("inceleme-sonraki").addEventListener("click", function () {
+    incelemeGit(1);
+  });
+
+  async function incelemeKarari(karar) {
+    if (!inceleme || !canliMi()) return;
+    const o = incelemeOlayi();
+    const kap = $("foto-eylem");
+    const dugmeler = kap.querySelectorAll(".inceleme-kararlari button");
+    if (!dugmeler.length || dugmeler[0].disabled) return; // karar verildi ya da gidiyor
+    for (const d of dugmeler) d.disabled = true;
+    const hata = kap.querySelector(".incele-hatasi");
+    try {
+      await mudahaleGonder({ tur: "olay_incele", olay_id: o.id, karar: karar });
+    } catch (e) {
+      for (const d of dugmeler) d.disabled = false;
+      if (hata) hata.textContent = e.message;
+      return;
+    }
+    // Satırdaki düğmelerle aynı defter: liste "Fabrikaya gönderildi" der
+    inceleDurum.set(String(o.id), simdiMs());
+    inceleGecti.delete(String(o.id));
+    inceleKutulari.delete(String(o.id));
+    if (!inceleme) return; // pencere bu arada kapandı
+    inceleme.kararlar.set(o.id, karar);
+    incelemeyiCiz(false);
+    if (sonVeri && sonVeri.rapor) olaylariCiz(sonVeri.rapor);
+    setTimeout(yukle, 1500);
+    // Sıradaki karar bekleyen olaya geç (önce ileri, yoksa geri)
+    const bekleyen = (i) => !inceleme.kararlar.has(inceleme.liste[i].id) && !inceleDurum.has(String(inceleme.liste[i].id));
+    const simdiki = inceleme.sira;
+    setTimeout(function () {
+      if (!inceleme || inceleme.sira !== simdiki) return;
+      for (let i = 1; i < inceleme.liste.length; i++) {
+        const j = (simdiki + i) % inceleme.liste.length;
+        if (bekleyen(j)) {
+          inceleme.sira = j;
+          incelemeyiCiz(true);
+          return;
+        }
+      }
+      duyur("Bekleyen ihlal kalmadı.");
+    }, 700);
+  }
+
+  function incelemeTusu(olay) {
+    if (!inceleme || olay.altKey || olay.ctrlKey || olay.metaKey || olay.repeat) return;
+    if (olay.target && /^(INPUT|TEXTAREA|SELECT)$/.test(olay.target.tagName)) return;
+    const tus = olay.key;
+    if (tus === "ArrowRight") incelemeGit(1);
+    else if (tus === "ArrowLeft") incelemeGit(-1);
+    else if (["i", "I", "ı", "İ"].includes(tus)) incelemeKarari("reviewed");
+    else if (["y", "Y"].includes(tus)) incelemeKarari("false_alarm");
+    else return;
+    olay.preventDefault();
+  }
+
+  $("foto-penceresi").addEventListener("keydown", incelemeTusu);
 
   // ------------------------------------------------------- bilgisayar
 
