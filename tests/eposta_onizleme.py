@@ -55,16 +55,37 @@ def _ozet() -> dict:
     }
 
 
+def _ayar_sorunlari() -> list[str]:
+    ayar = _pano.ayar_oku(
+        {
+            "BEKCI": "evet",
+            "BEKCI_ALICILAR": "amir@firma.example, tg:12345, adres-degil",
+            "OTURUM_ANAHTARI": "kisa",
+        }
+    )
+    return _pano.ayar_sorunlari(ayar)
+
+
 def epostalar(adres: str = ORNEK_ADRES) -> dict[str, tuple[str, str, str]]:
-    """Ad -> (konu, düz metin, HTML): sitenin gönderdiği her e-posta, örnek veriyle."""
+    """Ad -> (konu, düz metin, HTML): sitenin gönderdiği her e-posta, örnek veriyle.
+    Alt yazı alıcının kaynağına göre değişir: bazıları Vercel listesindeki adrese
+    ("liste"), bazıları Sistem > Bildirimler'de anahtarı açan hesaba ("hesap")."""
     son_rapor = _pano._iso(SIMDI - 27 * 60)
     haber_yok = {"baglanti": "yok", "gecikme_sn": 27 * 60, "son_rapor": son_rapor}
     kapandi = {"baglanti": "kapandi", "gecikme_sn": 95 * 60, "son_rapor": son_rapor}
+    canli = {"baglanti": "canli", "gecikme_sn": 12, "son_rapor": _pano._iso(SIMDI - 12)}
+    uyari = _pano._uyari_degeri(SIMDI - 2 * 3600, {"gecikme_sn": 25 * 60})
+    donus = _pano._kayit_metni({"uyari": uyari, "dondu": int(SIMDI - 60)})
     return {
         "bekci-haber-yok": _pano._bekci_metni("Gebze fabrikası", haber_yok, adres),
-        "bekci-program-kapali": _pano._bekci_metni("İzmir <depo>", kapandi, adres),
+        "bekci-program-kapali": _pano._bekci_metni("İzmir <depo>", kapandi, adres, "hesap"),
+        "bekci-yeniden-haber": _pano._donus_metni("Gebze fabrikası", canli, donus, adres, "hesap"),
+        "ayar-sorunu": _pano._ayar_sorunu_metni(_ayar_sorunlari(), adres),
         "haftalik-ozet": _pano.haftalik_ozet_metni(_ozet(), adres),
         "deneme": _pano.deneme_epostasi_metni("isg.uzmani", "resend", SIMDI, adres),
+        "deneme-kendine": _pano.deneme_epostasi_metni(
+            "vardiya.amiri", "smtp", SIMDI, adres, kendine=True
+        ),
     }
 
 

@@ -508,6 +508,18 @@ BEKCI_KILIT_SN = 300
 # İlk bildirim gidince işaret uzar (taze rapor zaten siler); kesinti bundan da
 # uzun sürerse günde bir hatırlatma gider.
 BEKCI_UYARI_TTL_SN = 24 * 3600
+# "Sistem yeniden haber veriyor" (21.11.2026): uyarıdan sonra rapor dönünce
+# fabrikanın /api/rapor isteği e-posta göndermez; uyarı işaretini silerken aynı
+# boru hattında bu küçük "döndü" işaretini bırakır (sonuna aynı ":<tesis>").
+# Sonraki /api/bekci çağrısı işareti panonun okumasıyla aynı MGET'te görür,
+# DEL ile sahiplenir (eşzamanlı ikinci çağrı göndermez) ve kesinti başına bir
+# düzelme e-postası gönderir. Hiçbiri gidemezse işaret geri yazılır.
+BEKCI_DONUS_ANAHTARI = "dalsan:bekci:dondu"
+BEKCI_DONUS_SN = 7 * 86400  # günde bir çalışan Vercel Cron da yetişsin
+# "Ayar sorunu" e-postası: bekçinin görüp yine de e-postayla bildirebildiği ayar
+# hataları, Türkiye günü başına en çok bir kez (SET NX EX; + "YYYY-AA-GG").
+AYAR_SORUNU_ONEKI = "dalsan:bekci:ayar_sorunu:"
+AYAR_SORUNU_SN = 2 * 86400
 BEKCI_ESIK_VARSAYILAN_DK = 20
 # Serverless süresi kısadır: gönderim kısa bir zaman aşımıyla yapılır.
 BEKCI_GONDERIM_ZAMAN_ASIMI_SN = 10.0
@@ -526,9 +538,22 @@ RESEND_ADRESI = "https://api.resend.com/emails"
 RESEND_BEKLE_SN = 1.0  # saniyelik sınıra (429) takılınca bir kez yeniden denemeden önce
 # Gönderen: "Ad <adres@alan>" ya da yalnız adres; satır sonu ve tırnak yok.
 GONDEREN_DESENI = re.compile(r"(?:[^<>\"\r\n]{1,80}<([^<>\s]+)>|([^<>\s]+))")
-# Vercel'in kendi değişkeni VERCEL_PROJECT_PRODUCTION_URL (şemasız alan adı):
-# e-postadaki "Panoyu aç" düğmesi. Yoksa ya da alan adı değilse düğme çıkmaz.
+# E-postadaki düğmenin ve bağlantıların adresi her zaman bilinir (21.11.2026):
+# isteğe bağlı SITE_ADRESI (alan adı ya da https adresi) -> Vercel'in kendi
+# VERCEL_PROJECT_PRODUCTION_URL'si (şemasız alan adı) -> DALSAN belgelerindeki
+# resmi adres. Alan adı olamayan değer yok sayılır, sıradakine geçilir.
 ALAN_ADI_DESENI = re.compile(r"(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
+VARSAYILAN_SITE_ADRESI = "dalsansite.vercel.app"
+# E-posta bağlantısının panoda açtığı yer: /pano?arsiv=7&tip=...#olaylar. Ekran
+# adresin çapasıdır (#genel, #olaylar, #sistem); sorgu yalnız bu adları taşır ve
+# pano.js aynı beyaz listeyle okur (derinBagCoz): tanınmayan ad yok sayılır.
+DERIN_BAG_ADLARI = ("arsiv", "tip", "yer", "inceleme", "bolum")
+# Kişinin kendi bildirimleri (Sistem > Bildirimler): hesap kaydında "bildirim"
+# {"eposta", "sistem", "haftalik"}; ikisi de varsayılan kapalı. Kurucunun kaydı
+# yoktur. Alıcılar gönderim anında birleşir (bildirim_alicilari).
+BILDIRIM_TURLERI = ("sistem", "haftalik")
+BILDIRIM_ADLARI = {"sistem": "Sistem uyarıları", "haftalik": "Haftalık özet"}
+EPOSTA_EN_UZUN = 254
 # Kurulum denetimi kartındaki "Deneme e-postası gönder": hesap başına saatte 5.
 DENEME_EPOSTA_SINIRI = 5
 DENEME_EPOSTA_PENCERESI_SN = 3600
@@ -662,6 +687,9 @@ class Ayar:
     bekci_alicilar: tuple[str, ...] = ()
     # BEKCI_ALICILAR'da eski tg: girdisi vardı: yok sayılır; /api/bekci ve Tesisler uyarır.
     bekci_tg_yok_sayildi: bool = False
+    # E-posta adresi olamayan girdiler (yok sayılır; Kurulum denetimi ve "Ayar
+    # sorunu" e-postası sayısını söyler, girdinin kendisini yazmaz)
+    bekci_alici_gecersiz: int = 0
     bekci_anahtari: str = field(default="", repr=False)
     cron_sirri: str = field(default="", repr=False)
     smtp_sunucu: str = ""
@@ -682,11 +710,14 @@ class Ayar:
     # Haftalık özet (Kod maddesi 4): opt-in; alıcı listesi boşsa bekçinin alıcıları.
     haftalik_ozet: str = "kapali"
     haftalik_alicilar: tuple[str, ...] = ()
+    haftalik_tg_yok_sayildi: bool = False  # HAFTALIK_OZET_ALICILAR'daki tg: girdisi
+    haftalik_alici_gecersiz: int = 0
     # E-posta yolu: RESEND_API_KEY yazılıysa Resend, yoksa SMTP (eposta_saglayicisi).
     # Gönderen EPOSTA_KIMDEN, boşsa SMTP_KIMDEN (yalnız Resend kullanır; SMTP bugünkü gibi).
     resend_anahtari: str = field(default="", repr=False)
     eposta_kimden: str = ""
-    # E-postadaki "Panoyu aç" düğmesinin adresi; boşsa düğme çıkmaz.
+    # E-postadaki düğmenin ve bağlantıların kökü (https://alan/pano). ayar_oku
+    # her zaman doldurur (_pano_adresi); boşsa (yalnız testlerde) düğme çıkmaz.
     pano_adresi: str = ""
 
 
@@ -698,18 +729,21 @@ def _tam_ortam(deger: str | None, varsayilan: int, en_az: int, en_cok: int) -> i
     return max(en_az, min(en_cok, int(ham)))
 
 
-def _alicilar(ham: str | None) -> tuple[tuple[str, ...], bool]:
-    """Virgülle ayrık e-posta alıcıları (boşlar atılır, en çok BEKCI_ALICI_EN_COK)
-    ve listede eski bir `tg:` girdisi olup olmadığı. tg: girdileri (büyük harfle
-    yazılmış olsa da) artık desteklenmez: atlanır ve sayıya girmez."""
-    liste, tg_vardi = [], False
+def _alicilar(ham: str | None) -> tuple[tuple[str, ...], bool, int]:
+    """Virgülle ayrık e-posta alıcıları (boşlar atılır, en çok BEKCI_ALICI_EN_COK),
+    listede eski bir `tg:` girdisi olup olmadığı ve e-posta adresi olamayan girdi
+    sayısı. tg: girdileri (büyük harfle yazılmış olsa da) artık desteklenmez;
+    bozuk adresler de (gönderimde zaten reddedilirdi) atlanır, sayıya girmez."""
+    liste, tg_vardi, gecersiz = [], False, 0
     for parca in (ham or "").split(","):
         alici = parca.strip()
         if alici[: len(BEKCI_TG_ONEKI)].lower() == BEKCI_TG_ONEKI:
             tg_vardi = True
-        elif alici and len(alici) <= 200 and len(liste) < BEKCI_ALICI_EN_COK:
+        elif alici and (len(alici) > EPOSTA_EN_UZUN or not EPOSTA_DESENI.fullmatch(alici)):
+            gecersiz += 1
+        elif alici and len(liste) < BEKCI_ALICI_EN_COK:
             liste.append(alici)
-    return tuple(liste), tg_vardi
+    return tuple(liste), tg_vardi, gecersiz
 
 
 def _katla(ham: str | None) -> str:
@@ -738,9 +772,9 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
     bekci = _katla(ortam.get("BEKCI"))
     ana_tesis = _katla(ortam.get("ANA_TESIS"))
     ana_gecerli = TESIS_ID_DESENI.fullmatch(ana_tesis) is not None
-    alicilar, tg_vardi = _alicilar(ortam.get("BEKCI_ALICILAR"))
+    alicilar, tg_vardi, gecersiz = _alicilar(ortam.get("BEKCI_ALICILAR"))
     ozet = _katla(ortam.get("HAFTALIK_OZET"))
-    ozet_alicilari, _ = _alicilar(ortam.get("HAFTALIK_OZET_ALICILAR"))
+    ozet_alicilari, ozet_tg, ozet_gecersiz = _alicilar(ortam.get("HAFTALIK_OZET_ALICILAR"))
     return Ayar(
         pano_sifresi=ortam.get("PANO_SIFRESI", "").strip(),
         rapor_anahtari=ortam.get("RAPOR_ANAHTARI", "").strip(),
@@ -755,6 +789,7 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
         bekci_esik_dk=_tam_ortam(ortam.get("BEKCI_ESIK_DK"), BEKCI_ESIK_VARSAYILAN_DK, 1, 1440),
         bekci_alicilar=alicilar,
         bekci_tg_yok_sayildi=tg_vardi,
+        bekci_alici_gecersiz=gecersiz,
         bekci_anahtari=ortam.get("BEKCI_ANAHTARI", "").strip(),
         cron_sirri=ortam.get("CRON_SECRET", "").strip(),
         smtp_sunucu=ortam.get("SMTP_SUNUCU", "").strip(),
@@ -770,18 +805,39 @@ def ayar_oku(ortam: Mapping[str, str] | None = None) -> Ayar:
             (ozet if ozet in HAFTALIK_OZET_DEGERLERI else "gecersiz") if ozet else "kapali"
         ),
         haftalik_alicilar=ozet_alicilari or alicilar,
+        haftalik_tg_yok_sayildi=ozet_tg,
+        haftalik_alici_gecersiz=ozet_gecersiz,
         resend_anahtari=ortam.get("RESEND_API_KEY", "").strip(),
         eposta_kimden=(ortam.get("EPOSTA_KIMDEN") or ortam.get("SMTP_KIMDEN") or "").strip(),
-        pano_adresi=_pano_adresi(ortam.get("VERCEL_PROJECT_PRODUCTION_URL")),
+        pano_adresi=_pano_adresi(
+            ortam.get("SITE_ADRESI"), ortam.get("VERCEL_PROJECT_PRODUCTION_URL")
+        ),
     )
 
 
-def _pano_adresi(ham: str | None) -> str:
-    """E-postadaki "Panoyu aç" düğmesinin adresi. Vercel'in kendi değişkeni
-    VERCEL_PROJECT_PRODUCTION_URL şemasız bir alan adıdır (ör. dalsan.vercel.app;
-    özel alan adı varsa o). Alan adı olamayan değer yok sayılır: düğme çıkmaz."""
-    alan = (ham or "").strip().lower().removeprefix("https://").rstrip("/")
-    return f"https://{alan}/pano" if ALAN_ADI_DESENI.fullmatch(alan) else ""
+def _pano_adresi(*adaylar: str | None) -> str:
+    """E-postadaki düğmenin ve bağlantıların kökü: sırayla SITE_ADRESI (alan adı
+    ya da https adresi; sondaki /pano atılır), VERCEL_PROJECT_PRODUCTION_URL
+    (Vercel'in kendi değişkeni, şemasız alan adı; özel alan adı varsa o) ve
+    VARSAYILAN_SITE_ADRESI. Alan adı olamayan değer (http://, javascript:, boşluk,
+    tırnak) yok sayılır, sıradakine geçilir: adres her zaman bilinir."""
+    for ham in (*adaylar, VARSAYILAN_SITE_ADRESI):
+        alan = (ham or "").strip().lower().removeprefix("https://").rstrip("/")
+        alan = alan.removesuffix("/pano")
+        if ALAN_ADI_DESENI.fullmatch(alan):
+            return f"https://{alan}/pano"
+    return ""  # ulaşılmaz: varsayılan adres desene uyar
+
+
+def pano_bagi(adres: str, ekran: str, **sorgu: str) -> str:
+    """E-postadaki derin bağlantı: https://alan/pano?arsiv=7&tip=Baret%20yok#olaylar.
+    Sorgu yalnız DERIN_BAG_ADLARI'ndan olur ve yüzde kodlanır (boşluk %20, Türkçe
+    harf UTF-8, & = # / dahil); boş değer yazılmaz. `adres` boşsa boş döner."""
+    if not adres:
+        return ""
+    degerler = {ad: deger for ad, deger in sorgu.items() if deger and ad in DERIN_BAG_ADLARI}
+    soru = urllib.parse.urlencode(degerler, quote_via=urllib.parse.quote, safe="")
+    return f"{adres}{'?' + soru if soru else ''}#{ekran}"
 
 
 def _fabrika_adresi(ham: str) -> str:
@@ -1611,8 +1667,10 @@ def rapor_kaydet(
     ]
     # Bekçi açıkken "sistemden haber yok" işareti aynı MGET'te okunur ve yalnız
     # varsa (kesintiden sonraki ilk taze rapor) silinir: düzelme, bir sonraki
-    # kesintide yeniden uyarılır (docs/20 §3). Rapor başına ek komut yok; bekçi
-    # kapalıyken tek fabrika yolu birebir aynı kalır.
+    # kesintide yeniden uyarılır (docs/20 §3). Silinirken yerine küçük bir "döndü"
+    # işareti bırakılır; düzelme e-postasını sonraki bekçi çağrısı gönderir (bu
+    # istek e-posta göndermez). Rapor başına ek komut yok; bekçi kapalıyken tek
+    # fabrika yolu birebir aynı kalır.
     bekci = ayar is not None and ayar.bekci == "acik"
     if bekci:
         okunan.append(BEKCI_UYARI_ANAHTARI)
@@ -1628,7 +1686,7 @@ def rapor_kaydet(
     # hattı daha; MGET okunamadıysa yazılmaz (iz bilinmeden yazmak çift üye bırakırdı)
     sonra = arsiv_komutlari(rapor, ham_iz, simdi) if sonuc is not None else []
     if bekci and isaretler[7] is not None:
-        sonra.append(["DEL", BEKCI_UYARI_ANAHTARI])
+        sonra += _donus_komutlari(BEKCI_UYARI_ANAHTARI, isaretler[7], simdi)
     if sonra:
         depo.boru_hatti(sonra)
     fotolar = foto_kimlikleri(ham_fotolar, simdi)
@@ -1649,6 +1707,19 @@ def rapor_kaydet(
     if tesis:
         cevap["filo"] = {"ana": True}
     return cevap
+
+
+def _donus_anahtari(isaret: str) -> str:
+    """Uyarı işaretinin "döndü" eşi (sonundaki ":<tesis>" aynı kalır)."""
+    return BEKCI_DONUS_ANAHTARI + isaret[len(BEKCI_UYARI_ANAHTARI) :]
+
+
+def _donus_komutlari(isaret: str, ham_uyari: object, simdi: float) -> list[list[str]]:
+    """Kesintiden sonraki ilk taze rapor: uyarı işareti silinir, yerine uyarının
+    değeri (kesintinin başı) ve dönüş anıyla "döndü" işareti yazılır. Rapor
+    yolunun mevcut boru hattına eklenir; e-posta gönderilmez."""
+    deger = _kayit_metni({"uyari": _metin(ham_uyari, 200), "dondu": int(simdi)})
+    return [["DEL", isaret], _set_komutu(_donus_anahtari(isaret), deger, BEKCI_DONUS_SN)]
 
 
 def _mget_listesi(sonuc: object, adet: int) -> list | None:
@@ -2012,7 +2083,8 @@ def _tesis_kaydet(
     Ek istek yok: işaret, panonun durumu (eski program denetimi) ve bekçi açıksa
     bu tesisin "haber yok" işareti kütük yazımıyla aynı boru hattında tek MGET'le
     okunur. Ana olamayacak tesis (ANA_TESIS başka bir tesis) panoyu hiç okumaz.
-    Bekçi işareti yalnız varsa silinir: ana tesiste panonun boru hattında.
+    Bekçi işareti yalnız varsa silinir (yerine "döndü" işareti: düzelme e-postası
+    bekçide): ana tesiste panonun boru hattında.
 
     Aynı kimlik iki bilgisayardan (SONRA-YAPILACAKLAR B3): özet raporun
     bilgisayarını taşır; önceki özet aynı komutla (SET ... GET) okunur. Önceki
@@ -2072,10 +2144,11 @@ def _tesis_kaydet(
     else:
         ana = False
     if oku.get(isaret) is not None:  # bu tesis döndü: "haber yok" işareti kalkar
+        donus = _donus_komutlari(isaret, oku[isaret], simdi)  # düzelme e-postası bekçide
         if ana:
-            ek.append(["DEL", isaret])
+            ek.extend(donus)
         else:
-            depo.sil(isaret)
+            depo.boru_hatti(donus)
     if cakisma:
         if ana:
             ek.extend(cakisma)
@@ -2182,20 +2255,31 @@ def _mevcut_tesis_satiri(veri: dict) -> dict:
     }
 
 
-def tesis_ozeti(depo: UpstashDepo | BellekDepo, simdi: float) -> list[dict]:
+def tesis_ozeti(
+    depo: UpstashDepo | BellekDepo, simdi: float, donusler: dict[str, str] | None = None
+) -> list[dict]:
     """Kütükteki tesislerin satırları (en son rapor veren sonda). Süresi dolan
-    tesisler dizinden onarılır. Kimlik çakışmaları özetlerle aynı MGET'te okunur."""
+    tesisler dizinden onarılır. Kimlik çakışmaları özetlerle aynı MGET'te okunur.
+    `donusler` verilirse (bekçi) tesislerin "döndü" işaretleri de aynı MGET'te
+    okunur ve işaret anahtarı -> değer olarak ona yazılır (ek komut yok)."""
     ham = depo.komut("LRANGE", TESISLER_ANAHTARI, "0", str(TESIS_EN_COK - 1))
     idler = list(
         dict.fromkeys(o for o in (ham if isinstance(ham, list) else []) if isinstance(o, str))
     )
     if not idler:
         return []
+    donus_anahtarlari = (
+        [BEKCI_DONUS_ANAHTARI + ":" + kimlik for kimlik in idler] if donusler is not None else []
+    )
     degerler = depo.al_coklu(
         [TESIS_ONEKI + kimlik for kimlik in idler]
         + [TESIS_CAKISMA_ONEKI + kimlik for kimlik in idler]
+        + donus_anahtarlari
     )
-    kayitlar, cakismalar = degerler[: len(idler)], degerler[len(idler) :]
+    for anahtar, deger in zip(donus_anahtarlari, degerler[2 * len(idler) :], strict=True):
+        if deger is not None:
+            donusler[anahtar] = deger
+    kayitlar, cakismalar = degerler[: len(idler)], degerler[len(idler) : 2 * len(idler)]
     satirlar, onarim = [], []
     for kimlik, ham_kayit, ham_cakisma in zip(idler, kayitlar, cakismalar, strict=True):
         kayit = _json_sozluk(ham_kayit)
@@ -2554,30 +2638,42 @@ def eposta_tasarla(
     bilgiler: list[tuple[str, str]],
     neden: str,
     adres: str = "",
-    bolumler: list[tuple[str, list[tuple[str, str]], bool]] | None = None,
+    bolumler: list[tuple[str, list[tuple[str, ...]], bool]] | None = None,
     notlar: list[str] | None = None,
+    dugme: str = "Panoyu aç",
+    ayar_bagi: str = "",
 ) -> tuple[str, str]:
     """Sitenin bütün e-postalarının ortak tasarımı: (düz metin, HTML).
 
     Tablo düzeni ve satır içi stil (Gmail, Outlook, iPhone Mail), en çok 560 px,
     açık zemin, görsel yerine yazıyla marka, üstte durum şeridi (alarm kırmızı,
     basari yeşil, uyari turuncu, notr gri), başlık, 2-4 temel bilgi, isteğe
-    bağlı bölümler (ad / sayı satırları; `True` ise sayıya göre çubuk) ve notlar,
-    pano adresi biliniyorsa tek düğme, altta neden geldiği. Bütün değerler
-    kaçışlıdır (tesis ve kamera adları programdan gelir). Düz metin aynı
-    içeriği taşır; bölümler "Başlık:\\n  ad: değer" biçimindedir."""
+    bağlı bölümler (ad / sayı satırları; `True` ise sayıya göre çubuk; satırın
+    üçüncü öğesi varsa ad o adrese bağlantıdır) ve notlar, `adres` (panonun
+    açılacak yeri, pano_bagi) biliniyorsa tek düğme (`dugme` yazısıyla), altta
+    neden geldiği ve `ayar_bagi` varsa bildirim ayarlarının bağlantısı. Bütün
+    değerler ve adresler kaçışlıdır (tesis ve kamera adları programdan gelir).
+    Düz metin aynı içeriği ve aynı adresleri taşır; bölümler "Başlık:\\n  ad:
+    değer" biçimindedir, bağlantılı satırın adresi altında girintili durur."""
     serit, rozet_zemin, rozet_yazi = EPOSTA_DURUMLARI[durum]
     bolumler, notlar = bolumler or [], notlar or []
     metin = [f"{EPOSTA_MARKA} | {etiket}", "", baslik, "", giris, ""]
     metin += [f"{ad}: {deger}" for ad, deger in bilgiler]
     for bolum, satirlar, _ in bolumler:
         metin += ["", bolum + ":"]
-        metin += [f"  {ad}: {deger}" for ad, deger in satirlar] or ["  -"]
+        for ad, deger, *bag in satirlar:
+            metin.append(f"  {ad}: {deger}")
+            if bag and bag[0]:
+                metin.append(f"    {bag[0]}")
+        if not satirlar:
+            metin.append("  -")
     if notlar:
         metin += ["", *notlar]
     if adres:
-        metin += ["", f"Panoyu açın: {adres}"]
+        metin += ["", f"{dugme}: {adres}"]
     metin += ["", "--", neden]
+    if ayar_bagi:
+        metin.append(f"Bildirim ayarları: {ayar_bagi}")
 
     e = html.escape
     cizgi = "border-top:1px solid #e8e8e8;"
@@ -2640,8 +2736,8 @@ def eposta_tasarla(
                 f'<tr><td style="{_EY}{cizgi}padding:8px 0;font-size:14px;color:#616367;">-</td>'
                 "</tr>"
             )
-        en_cok = max((int(d) for _, d in satirlar if d.isdigit()), default=0) if cubuklu else 0
-        for ad, deger in satirlar:
+        en_cok = max((int(s[1]) for s in satirlar if s[1].isdigit()), default=0) if cubuklu else 0
+        for ad, deger, *bag in satirlar:
             cubuk = ""
             if en_cok:
                 yuzde = max(2, round(int(deger) * 100 / en_cok)) if deger != "0" else 0
@@ -2657,9 +2753,15 @@ def eposta_tasarla(
                     )
                     + "</td>"
                 )
+            adi = e(ad)
+            if bag and bag[0]:
+                adi = (
+                    f'<a href="{e(bag[0])}" target="_blank" style="color:#2f58f7;'
+                    f'text-decoration:underline;">{adi}</a>'
+                )
             parca.append(
                 f'<tr><td style="{_EY}{cizgi}padding:8px 12px 8px 0;font-size:14px;'
-                f'line-height:20px;color:#3d4048;">{e(ad)}</td>{cubuk}'
+                f'line-height:20px;color:#3d4048;">{adi}</td>{cubuk}'
                 f'<td align="right" style="{_EY}{cizgi}padding:8px 0 8px 12px;font-size:14px;'
                 f"line-height:20px;font-weight:bold;color:#0c0e1b;text-align:right;"
                 f'white-space:nowrap;">{e(deger)}</td></tr>'
@@ -2677,13 +2779,19 @@ def eposta_tasarla(
             f'border-radius:8px;"><a href="{e(adres)}" target="_blank" style="{_EY}'
             "display:inline-block;padding:12px 24px;font-size:15px;line-height:20px;"
             'font-weight:bold;color:#ffffff;text-decoration:none;border-radius:8px;">'
-            "Panoyu aç</a></td></tr></table></td></tr>"
+            f"{e(dugme)}</a></td></tr></table></td></tr>"
+        )
+    ayar = ""
+    if ayar_bagi:
+        ayar = (
+            f' <a href="{e(ayar_bagi)}" target="_blank" style="color:#2f58f7;'
+            'text-decoration:underline;">Bildirim ayarları</a>'
         )
     parca += [
         '<tr><td height="24" style="height:24px;font-size:0;line-height:0;">&nbsp;</td></tr>',
         "</table></td></tr>",
         f'<tr><td style="{_EY}padding:16px 4px 0;font-size:12px;line-height:18px;'
-        f'color:#616367;">{e(neden)}</td></tr>',
+        f'color:#616367;">{e(neden)}{ayar}</td></tr>',
         "</table>",
         "<!--[if mso]></td></tr></table><![endif]-->",
         "</td></tr></table></body></html>",
@@ -2691,9 +2799,46 @@ def eposta_tasarla(
     return "\n".join(metin) + "\n", "\n".join(parca) + "\n"
 
 
-def _bekci_metni(ad: str, hedef: dict, adres: str = "") -> tuple[str, str, str]:
+def _bildirim_nedeni(tur: str, kaynak: str) -> str:
+    """E-postanın altındaki "neden aldınız" cümlesi (alıcının kaynağına göre):
+    hesabında anahtarı açan kişi ya da Vercel'deki alıcı listesindeki adres.
+    Altındaki "Bildirim ayarları" bağlantısı Sistem > Bildirimler'i açar."""
+    ad = BILDIRIM_ADLARI[tur]
+    if kaynak == "hesap":
+        return (
+            f'Panodaki hesabınızda Sistem > Bildirimler\'de "{ad}" açık olduğu için bu '
+            "e-postayı aldınız. Kapatmak için anahtarı oradan kapatın."
+        )
+    liste = "BEKCI_ALICILAR" if tur == "sistem" else "HAFTALIK_OZET_ALICILAR (boşsa BEKCI_ALICILAR)"
+    return (
+        f"Bu adres Vercel'deki {liste} listesinde olduğu için bu e-postayı aldınız; listeden "
+        "çıkmak için yöneticinize yazın. Panoda hesabınız varsa bu adresi Sistem > "
+        f'Bildirimler\'e yazıp "{ad}" anahtarını kapalı bırakmanız da yeter.'
+    )
+
+
+def _bildirim_ayari_bagi(adres: str) -> str:
+    return pano_bagi(adres, "sistem", bolum="bildirimler")
+
+
+def _sure_metni(saniye: float) -> str:
+    """Kesinti süresi: "45 dakika", "2 saat 5 dakika", "3 gün 4 saat"."""
+    dakika = max(1, round(saniye / 60))
+    if dakika < 60:
+        return f"{dakika} dakika"
+    saat, dakika = divmod(dakika, 60)
+    if saat < 48:
+        return f"{saat} saat" + (f" {dakika} dakika" if dakika else "")
+    gun, saat = divmod(saat, 24)
+    return f"{gun} gün" + (f" {saat} saat" if saat else "")
+
+
+def _bekci_metni(
+    ad: str, hedef: dict, adres: str = "", kaynak: str = "liste"
+) -> tuple[str, str, str]:
     """Hedef başına kısa Türkçe uyarı (konu, düz metin, HTML): tesisin adı,
-    son rapordan beri geçen dakika, neye bakılacağı. Sır yok, görüntü yok."""
+    son rapordan beri geçen dakika, neye bakılacağı. Düğme bağlantının durumunu
+    gösteren ekranı (#genel) açar. Sır yok, görüntü yok."""
     gecikme = hedef.get("gecikme_sn")
     dakika = round(gecikme / 60) if isinstance(gecikme, int | float) else None
     sure = f"yaklaşık {dakika} dakikadır" if dakika is not None else "uzun süredir"
@@ -2712,31 +2857,247 @@ def _bekci_metni(ad: str, hedef: dict, adres: str = "") -> tuple[str, str, str]:
         baslik,
         f"{olan} Bu sürede kameralar izlenmiyor ve uyarı verilmiyor olabilir.",
         bilgiler,
-        "Bu adres Vercel'deki BEKCI_ALICILAR listesinde olduğu için bu uyarıyı aldınız. "
-        "Bildirim kesinti başına bir kez gelir (kesinti uzarsa günde bir hatırlatılır); "
-        "bağlantı gelince kendiliğinden sıfırlanır.",
-        adres,
+        _bildirim_nedeni("sistem", kaynak)
+        + " Uyarı kesinti başına bir kez gelir (kesinti uzarsa günde bir hatırlatılır); "
+        'rapor gelince ayrıca "yeniden haber veriyor" e-postası gelir.',
+        pano_bagi(adres, "genel"),
         notlar=[
             "Kontrol edin: fabrika bilgisayarı açık mı, NextGen Detector programı çalışıyor "
             "mu, internet bağlantısı var mı."
         ],
+        dugme="Bağlantı durumunu gör",
+        ayar_bagi=_bildirim_ayari_bagi(adres),
     )
     return konu, metin, html_metni
 
 
+def _uyari_degeri(simdi: float, hedef: dict) -> str:
+    """Uyarı işaretinin değeri: uyarı anı ve kesintinin başı (son raporun anı).
+    Rapor yolu bunu "döndü" işaretine taşır; düzelme e-postası süreyi buradan
+    hesaplar (eski düz sayı değeri de okunur: _donus_bilgisi)."""
+    gecikme = hedef.get("gecikme_sn")
+    son = int(simdi - gecikme) if isinstance(gecikme, int | float) else None
+    return _kayit_metni({"z": int(simdi), "son": son})
+
+
+def _donus_bilgisi(ham: object) -> tuple[int | None, int | None]:
+    """ "Döndü" işaretinden (kesintinin başı, raporun döndüğü an). Kesintinin başı
+    bilinmiyorsa (eski biçim: yalnız uyarı anı) uyarı anı kullanılır."""
+    kayit = _sozluk(_json_sozluk(ham))
+    dondu = _tam(kayit.get("dondu"), 0, 10**12) or None
+    ham_uyari = kayit.get("uyari")
+    uyari = _json_sozluk(ham_uyari) if isinstance(ham_uyari, str) else None
+    if uyari is not None:
+        bas = _tam(uyari.get("son"), 0, 10**12) or _tam(uyari.get("z"), 0, 10**12) or None
+    elif isinstance(ham_uyari, str) and _rakam_mi(ham_uyari):
+        bas = int(ham_uyari)
+    else:
+        bas = None
+    return bas, dondu
+
+
+def _donus_metni(
+    ad: str, hedef: dict, ham_donus: object, adres: str = "", kaynak: str = "liste"
+) -> tuple[str, str, str]:
+    """ "Sistem yeniden haber veriyor" (yeşil şerit): kesintinin ne kadar sürdüğü
+    ve son raporun anı. Düğme bağlantının durumunu gösteren ekranı açar."""
+    bas, dondu = _donus_bilgisi(ham_donus)
+    sure = _sure_metni(dondu - bas) if bas and dondu and dondu > bas else ""
+    bilgiler = [("Tesis", ad)]
+    if sure:
+        bilgiler.append(("Kesinti", f"yaklaşık {sure}"))
+    if bas:
+        bilgiler.append(("Haber kesildi", _turkiye_saati(_iso(bas))))
+    bilgiler.append(("Son rapor", _turkiye_saati(hedef.get("son_rapor"))))
+    giris = f"{ad}: uzak izleme panosu yeniden bu tesisten rapor alıyor" + (
+        f"; kesinti yaklaşık {sure} sürdü." if sure else "."
+    )
+    metin, html_metni = eposta_tasarla(
+        "basari",
+        "Düzeldi",
+        "Sistem yeniden haber veriyor",
+        giris,
+        bilgiler,
+        _bildirim_nedeni("sistem", kaynak)
+        + ' Bu e-posta "haber yok" uyarısından sonra, kesinti başına bir kez gelir.',
+        pano_bagi(adres, "genel"),
+        notlar=[
+            "Kesinti sırasında uyarı verilmemiş olabilir: o saatlerin olaylarına panodan bakın."
+        ],
+        dugme="Bağlantı durumunu gör",
+        ayar_bagi=_bildirim_ayari_bagi(adres),
+    )
+    return f"Düzeldi: {ad} - sistem yeniden haber veriyor", metin, html_metni
+
+
+def ayar_sorunlari(ayar: Ayar) -> list[str]:
+    """Bekçinin görebildiği ve yine de e-postayla bildirebildiği ayar hataları:
+    ne yapılacağı (sabit cümleler); hiçbir ayarın değeri yazılmaz. E-posta
+    yolunun kendi eksikleri (RESEND_API_KEY / SMTP_SUNUCU, EPOSTA_KIMDEN) burada
+    yoktur: o durumda bu e-posta da gidemezdi (Kurulum denetimi kartı söyler)."""
+    sorunlar = []
+    if ayar.bekci == "gecersiz":
+        sorunlar.append(
+            "BEKCI değeri tanınmıyor: bekçi çalışmıyor, fabrikadan haber kesilince uyarı "
+            "gelmez. Açmak için acik yazın, kapatmak için silin."
+        )
+    if ayar.haftalik_ozet == "gecersiz":
+        sorunlar.append(
+            "HAFTALIK_OZET değeri tanınmıyor: haftalık özet gitmiyor. Açmak için acik "
+            "yazın, kapatmak için silin."
+        )
+    for liste, tg, gecersiz in (
+        ("BEKCI_ALICILAR", ayar.bekci_tg_yok_sayildi, ayar.bekci_alici_gecersiz),
+        ("HAFTALIK_OZET_ALICILAR", ayar.haftalik_tg_yok_sayildi, ayar.haftalik_alici_gecersiz),
+    ):
+        if tg:
+            sorunlar.append(f"{liste}: eski tg: girdileri artık desteklenmiyor; silin.")
+        if gecersiz:
+            sorunlar.append(
+                f"{liste}: {gecersiz} girdi e-posta adresi değil ve yok sayılıyor; adresleri "
+                "ad@firma.com biçiminde, virgülle ayırarak yazın."
+            )
+    if ayar.oturum_anahtari_kisa:
+        sorunlar.append(
+            "OTURUM_ANAHTARI 32 karakterden kısa olduğu için yok sayılıyor: en az 32 "
+            "karakterlik rastgele bir değer yazın ya da silin (bütün oturumlar bir kez kapanır)."
+        )
+    if ayar.ana_tesis_gecersiz:
+        sorunlar.append(
+            "ANA_TESIS bir tesis kimliği olmadığı için yok sayılıyor: programdaki "
+            "UZAK_PANO_TESIS_ID değerini yazın."
+        )
+    return sorunlar
+
+
+def _ayar_sorunu_metni(
+    sorunlar: list[str], adres: str = "", kaynak: str = "liste"
+) -> tuple[str, str, str]:
+    """ "Ayar sorunu" (turuncu şerit): Vercel'de neyin düzeltileceği, değersiz."""
+    adet = len(sorunlar)
+    metin, html_metni = eposta_tasarla(
+        "uyari",
+        "Ayar sorunu",
+        "Vercel ayarlarında düzeltilecek bir şey var",
+        "Site bu ayarları okuyamadığı için yok sayıyor; bazı uyarılar ve e-postalar bu "
+        "yüzden gitmeyebilir. Ayarların değerleri bu e-postaya yazılmaz.",
+        [
+            ("Düzeltilecek", f"{adet} madde"),
+            ("Nerede", "Vercel > Settings > Environment Variables"),
+        ],
+        _bildirim_nedeni("sistem", kaynak)
+        + " Bu e-posta sorun sürdükçe günde en çok bir kez gelir.",
+        pano_bagi(adres, "sistem", bolum="kurulum"),
+        notlar=[f"{sira}. {sorun}" for sira, sorun in enumerate(sorunlar, 1)]
+        + ["Değiştirdikten sonra Vercel'de Redeploy edin."],
+        dugme="Kurulum denetimini aç",
+        ayar_bagi=_bildirim_ayari_bagi(adres),
+    )
+    return f"Ayar sorunu: Vercel'de düzeltilecek {adet} madde", metin, html_metni
+
+
+def _hesap_bildirimi(kayit: object) -> dict | None:
+    """Hesap kaydındaki bildirim ayarı {"eposta", "sistem", "haftalik"}; adres
+    yoksa ya da bozuksa None (anahtarlar adres olmadan anlamsızdır)."""
+    ham = _sozluk(_sozluk(kayit).get("bildirim"))
+    eposta = ham.get("eposta")
+    if not isinstance(eposta, str) or len(eposta) > EPOSTA_EN_UZUN:
+        return None
+    if not EPOSTA_DESENI.fullmatch(eposta):
+        return None
+    return {"eposta": eposta, **{tur: ham.get(tur) is True for tur in BILDIRIM_TURLERI}}
+
+
+def bildirim_alicilari(
+    depo: UpstashDepo | BellekDepo, ayar: Ayar, tur: str, adlar: object = None
+) -> list[tuple[str, str]]:
+    """Bir bildirimin alıcıları, (adres, kaynak): kaynak "hesap" (Sistem >
+    Bildirimler'de anahtarı açık) ya da "liste" (yalnız Vercel'deki liste).
+    Kural: Vercel listesi (sistem: BEKCI_ALICILAR, haftalik: HAFTALIK_OZET_ALICILAR,
+    boşsa BEKCI_ALICILAR) + anahtarı açık ve adresi olan hesaplar - hesabında aynı
+    adresle o anahtarı kapalı kaydeden kişinin liste adresi. Girişi kapalı hesap
+    hiç almaz (açık anahtarı sayılmaz, kapalı sayılır); silinen hesabın kaydı yoktur.
+    Aynı adres (büyük-küçük harf farkıyla) bir kez. YALNIZ e-posta gönderilecekken
+    çağrılır: hesap dizini (LRANGE; `adlar` başka bir boru hattında okunduysa
+    verilir) ve kayıtlar (MGET, dizin boşsa yok) okunur."""
+    liste = ayar.bekci_alicilar if tur == "sistem" else ayar.haftalik_alicilar
+    if adlar is None:
+        adlar = depo.komut("LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2))
+    adlar = [a for a in adlar if isinstance(a, str)] if isinstance(adlar, list) else []
+    kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
+    acik: dict[str, str] = {}
+    kapali: set[str] = set()
+    for ham in kayitlar:
+        kayit = _json_sozluk(ham)
+        bildirim = _hesap_bildirimi(kayit)
+        if bildirim is None:
+            continue
+        anahtar = bildirim["eposta"].lower()
+        if bildirim[tur] and _sozluk(kayit).get("acik") is True:
+            acik.setdefault(anahtar, bildirim["eposta"])
+        else:
+            kapali.add(anahtar)
+    sonuc, gorulen = [], set()
+    for adres in liste:
+        anahtar = adres.lower()
+        if anahtar in gorulen or (anahtar in kapali and anahtar not in acik):
+            continue
+        gorulen.add(anahtar)
+        sonuc.append((adres, "hesap" if anahtar in acik else "liste"))
+    for anahtar, adres in acik.items():
+        if anahtar not in gorulen:
+            gorulen.add(anahtar)
+            sonuc.append((adres, "hesap"))
+    return sonuc
+
+
+def _kaynaklara_gonder(
+    ayar: Ayar,
+    alicilar: list[tuple[str, str]],
+    uret: Callable[[str], tuple[str, str, str]],
+    gonder: Callable[..., int],
+    **ek: object,
+) -> int:
+    """Alıcıları kaynağına göre (liste, hesap) gruplar: her grup kendi alt
+    yazısıyla (neden aldığı) bir kez gönderilir; giden toplamı döner. `ek`
+    gönderene geçer (basarida, ne); `basarida` gruplar boyunca yalnız ilk
+    başarıda çağrılır (işaret bir kez uzar)."""
+    basarida = ek.pop("basarida", None)
+    if basarida is not None:
+        cagrildi: list[bool] = []
+
+        def ilk_basarida() -> None:
+            if not cagrildi:
+                cagrildi.append(True)
+                basarida()
+
+        ek["basarida"] = ilk_basarida
+    toplam = 0
+    for kaynak in ("liste", "hesap"):
+        grup = tuple(adres for adres, k in alicilar if k == kaynak)
+        if grup:
+            konu, metin, html_metni = uret(kaynak)
+            toplam += gonder(ayar, grup, konu, metin, html_metni=html_metni, **ek)
+    return toplam
+
+
 def _bekci_hedefleri(
     depo: UpstashDepo | BellekDepo, ayar: Ayar, simdi: float
-) -> list[tuple[str, str, dict]]:
-    """(işaret anahtarı, ad, bağlantı bilgisi). İlk hedef komut alan fabrikadır:
+) -> tuple[list[tuple[str, str, dict]], dict[str, str]]:
+    """(işaret anahtarı, ad, bağlantı bilgisi) listesi ve bekleyen "döndü"
+    işaretleri (döndü anahtarı -> değer). İlk hedef komut alan fabrikadır:
     ana tesis yoksa ya da panonun raporu ana tesisten veya kimliksiz (eski)
     programdan geliyorsa panonun kendisi. Ana tesis belli ama pano başka bir
     tesisin raporunu gösteriyorsa (ANA_TESIS değişti) ya da hiç rapor yoksa ana
     hedef ana tesisin kütük satırından kurulur ve onun tesis işaretini taşır:
     uyarı susan ana tesisi adıyla anar. Sonra öbür kütük tesisleri; aynı
-    fabrika iki kez sayılmaz."""
-    veri = pano_verisi(depo, ayar, simdi)
+    fabrika iki kez sayılmaz. "Döndü" işaretleri panonun ve kütüğün okumalarıyla
+    aynı MGET'lerde okunur: sıradan bir bekçi çağrısına komut eklenmez."""
+    okunan = depo.al_coklu([*PANO_ANAHTARLARI, BEKCI_DONUS_ANAHTARI])
+    donusler = {BEKCI_DONUS_ANAHTARI: okunan[-1]} if okunan[-1] is not None else {}
+    veri = pano_verisi(depo, ayar, simdi, okunan[:-1])
     ana = ana_tesis_oku(depo, ayar)
-    satirlar = tesis_ozeti(depo, simdi)
+    satirlar = tesis_ozeti(depo, simdi, donusler)
     rapor = veri.get("rapor")
     # Panodaki raporun tesisi: None hiç rapor yok, "" kimliksiz (eski) program
     panodaki = (_sozluk(rapor.get("tesis")).get("id") or "") if isinstance(rapor, dict) else None
@@ -2751,7 +3112,7 @@ def _bekci_hedefleri(
     for satir in satirlar:
         if satir["id"] != atla:
             hedefler.append((BEKCI_UYARI_ANAHTARI + ":" + satir["id"], satir["ad"], satir))
-    return hedefler
+    return hedefler, donusler
 
 
 def bekci_isle(
@@ -2764,15 +3125,27 @@ def bekci_isle(
     şey yapmaz. Açıksa her hedef için: bağlantı koptu ve son rapor eşikten
     eskiyse BİR KEZ uyarır. İşaret önce kısa bir kilit olarak SET NX EX ile
     alınır (eşzamanlı ikinci çağrı göndermez); ilk bildirim gidince uzar, hiçbiri
-    gidemezse silinir (sonraki çağrı yeniden dener). Taze rapor işareti siler.
-    BEKCI_ALICILAR'daki eski tg: girdileri ayar okunurken atlanmıştır; varsa
-    cevaba `uyarilar` eklenir (sabit metin, girdiler yazılmaz)."""
+    gidemezse silinir (sonraki çağrı yeniden dener). Taze rapor işareti siler ve
+    "döndü" işareti bırakır: hedef canlıysa bu çağrı işareti DEL ile sahiplenir
+    ve bir "Sistem yeniden haber veriyor" e-postası gönderir (kesinti başına bir
+    kez; hiçbiri gidemezse işaret geri yazılır), hedef yeniden bayatsa düzelme
+    e-postası yerine yeni uyarı gider. Alıcılar (bildirim_alicilari: Vercel
+    listesi ve "Sistem uyarıları" açık hesaplar) yalnız e-posta gidecekken ve
+    çağrı başına bir kez okunur. BEKCI_ALICILAR'daki eski tg: girdileri ayar
+    okunurken atlanmıştır; varsa cevaba `uyarilar` eklenir (sabit metin)."""
     if ayar.bekci != "acik":
         return {"atlandi": True}
     gonder = gonder or bekci_uyari_gonder
-    alicilar = ayar.bekci_alicilar
-    uyarildi, gonderilen, durum = False, 0, []
-    for isaret, ad, hedef in _bekci_hedefleri(depo, ayar, simdi):
+    okunan_alicilar: list[list[tuple[str, str]]] = []
+
+    def alicilar() -> list[tuple[str, str]]:
+        if not okunan_alicilar:
+            okunan_alicilar.append(bildirim_alicilari(depo, ayar, "sistem"))
+        return okunan_alicilar[0]
+
+    uyarildi, gonderilen, durum, duzelen = False, 0, [], 0
+    hedefler, donusler = _bekci_hedefleri(depo, ayar, simdi)
+    for isaret, ad, hedef in hedefler:
         bayat = bekci_karari(hedef, ayar.bekci_esik_dk)
         gecikme = hedef.get("gecikme_sn")
         durum.append(
@@ -2783,25 +3156,101 @@ def bekci_isle(
                 "bayat": bayat,
             }
         )
+        donus = _donus_anahtari(isaret)
+        ham_donus = donusler.get(donus)
+        if ham_donus is not None and not bayat and hedef.get("baglanti") == "canli":
+            duzelen += _duzelme_gonder(depo, ayar, ad, hedef, donus, ham_donus, alicilar, gonder)
         if not bayat:
             continue
-        kilit = depo.komut("SET", isaret, str(int(simdi)), "EX", str(BEKCI_KILIT_SN), "NX")
+        if ham_donus is not None:
+            depo.sil(donus)  # düzelme gitmeden yeniden kesildi: düzelme değil, yeni uyarı
+        kilit = depo.komut(
+            "SET", isaret, _uyari_degeri(simdi, hedef), "EX", str(BEKCI_KILIT_SN), "NX"
+        )
         if kilit != "OK":
             continue  # bu kesinti için zaten uyarıldı (ya da şu an uyarılıyor)
-        konu, metin, html_metni = _bekci_metni(ad, hedef, ayar.pano_adresi)
         uzat = partial(depo.komut, "EXPIRE", isaret, str(BEKCI_UYARI_TTL_SN))
-        sayi = gonder(ayar, alicilar, konu, metin, basarida=uzat, html_metni=html_metni)
+        sayi = _kaynaklara_gonder(
+            ayar,
+            alicilar(),
+            partial(_bekci_metni, ad, hedef, ayar.pano_adresi),
+            gonder,
+            basarida=uzat,
+        )
         if sayi:
             uzat()
             uyarildi = True
             gonderilen += sayi
             print(f"Bekçi: {ad} için {sayi} bildirim gönderildi.", file=sys.stderr)
         else:
-            depo.sil(isaret)  # hiçbiri gidemedi: sonraki çağrı yeniden denesin
+            # Hiçbiri gidemedi: sonraki çağrı yeniden denesin. Gönderim sürerken rapor
+            # döndüyse bıraktığı "döndü" işareti de gider (gitmeyen uyarının düzelmesi
+            # gitmesin).
+            depo.komut("DEL", isaret, donus)
     sonuc = {"uyarildi": uyarildi, "gonderilen": gonderilen, "durum": durum}
+    if duzelen:
+        sonuc["duzelme"] = duzelen
     if ayar.bekci_tg_yok_sayildi:
         sonuc["uyarilar"] = [BEKCI_TG_METNI]
     return sonuc
+
+
+def _duzelme_gonder(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    ad: str,
+    hedef: dict,
+    donus: str,
+    ham_donus: str,
+    alicilar: Callable[[], list[tuple[str, str]]],
+    gonder: Callable[..., int],
+) -> int:
+    """ "Döndü" işaretini DEL ile sahiplenir (yalnız silen çağrı gönderir) ve
+    düzelme e-postasını gönderir; hiçbiri gidemezse işaret geri yazılır."""
+    if depo.komut("DEL", donus) != 1:
+        return 0  # başka bir çağrı aldı
+    sayi = _kaynaklara_gonder(
+        ayar, alicilar(), partial(_donus_metni, ad, hedef, ham_donus, ayar.pano_adresi), gonder
+    )
+    if sayi:
+        print(f"Bekçi: {ad} için {sayi} düzelme bildirimi gönderildi.", file=sys.stderr)
+    elif alicilar():
+        depo.komut("SET", donus, ham_donus, "EX", str(BEKCI_DONUS_SN))
+    return sayi
+
+
+def ayar_sorunu_isle(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    simdi: float,
+    gonder: Callable[..., int] | None = None,
+) -> dict | None:
+    """ "Ayar sorunu" e-postası: ayar_sorunlari boşsa ya da e-posta yolu yoksa
+    hiçbir şey yapmaz, komut harcamaz (None). Varsa Türkiye günü başına bir işaret
+    (SET NX EX): o gün gittiyse tek komut. Alıcılar "Sistem uyarıları"nınkilerdir;
+    alıcı yoksa işaret kalır (yarın yeniden bakılır), hiçbiri gidemezse silinir
+    (sonraki çağrı yeniden dener). Cevapta yalnız sayı vardır."""
+    sorunlar = ayar_sorunlari(ayar)
+    if not sorunlar or not eposta_saglayicisi(ayar):
+        return None
+    isaret = AYAR_SORUNU_ONEKI + _turkiye_gunu(simdi)
+    if depo.komut("SET", isaret, str(int(simdi)), "EX", str(AYAR_SORUNU_SN), "NX") != "OK":
+        return {"gonderildi": False, "sebep": "bugun_gitti", "madde": len(sorunlar)}
+    alicilar = bildirim_alicilari(depo, ayar, "sistem")
+    if not alicilar:
+        return {"gonderildi": False, "sebep": "alici_yok", "madde": len(sorunlar)}
+    sayi = _kaynaklara_gonder(
+        ayar,
+        alicilar,
+        partial(_ayar_sorunu_metni, sorunlar, ayar.pano_adresi),
+        gonder or bekci_uyari_gonder,
+        ne="Ayar sorunu e-postası",
+    )
+    if not sayi:
+        depo.sil(isaret)
+        return {"gonderildi": False, "sebep": "gidemedi", "madde": len(sorunlar)}
+    print(f"Ayar sorunu e-postası {sayi} alıcıya gönderildi.", file=sys.stderr)
+    return {"gonderildi": True, "gonderilen": sayi, "madde": len(sorunlar)}
 
 
 # ------------------------------------------- haftalık özet e-postası (Kod 4)
@@ -2898,9 +3347,12 @@ def haftalik_ozet_icerigi(olaylar: list[dict], veri: dict, gece: int) -> dict:
     }
 
 
-def haftalik_ozet_metni(ozet: dict, adres: str = "") -> tuple[str, str, str]:
+def haftalik_ozet_metni(ozet: dict, adres: str = "", kaynak: str = "liste") -> tuple[str, str, str]:
     """(konu, düz metin, HTML): ortak e-posta tasarımıyla (eposta_tasarla);
-    bütün değerler kaçışlıdır (kamera ve tesis adları programdan gelir)."""
+    bütün değerler kaçışlıdır (kamera ve tesis adları programdan gelir).
+    Bağlantılar panoda doğru yeri açar: düğme Olaylar > Arşiv'i (son 7 gün), her
+    tür ve kamera satırı arşivi o türe / kameraya süzülmüş, "Bekliyor" satırı
+    İnceleme modunu (inceleyemeyen kişi Olaylar'a düşer)."""
     ilk = datetime.fromtimestamp(ozet["bas"], TURKIYE_SAATI)
     son = ilk + timedelta(days=6)
     konu = f"Haftalık özet: {ozet['tesis']}, {ilk:%d.%m} - {son:%d.%m.%Y}: {ozet['toplam']} ihlal"
@@ -2925,22 +3377,31 @@ def haftalik_ozet_metni(ozet: dict, adres: str = "") -> tuple[str, str, str]:
             ("Önceki hafta", str(ozet["onceki"])),
             ("Sistem olayı", str(ozet["sistem"])),
         ],
-        "Sayılar sitenin olay arşivinden. Bu e-posta haftada bir, pazartesi sabahı gelir; "
-        "bu adres Vercel'deki HAFTALIK_OZET_ALICILAR (boşsa BEKCI_ALICILAR) listesinde. "
-        "Kapatmak için Vercel'deki HAFTALIK_OZET ayarını silin.",
-        adres,
+        "Sayılar sitenin olay arşivinden; bu e-posta haftada bir, pazartesi sabahı gelir. "
+        + _bildirim_nedeni("haftalik", kaynak),
+        pano_bagi(adres, "olaylar", arsiv="7"),
         bolumler=[
             ("Gün gün ihlal", gunler, True),
-            ("En sık türler", [(ad, str(sayi)) for ad, sayi in ozet["tipler"]], False),
+            (
+                "En sık türler",
+                [
+                    (ad, str(sayi), pano_bagi(adres, "olaylar", arsiv="7", tip=ad))
+                    for ad, sayi in ozet["tipler"]
+                ],
+                False,
+            ),
             (
                 "En çok ihlal olan kameralar",
-                [(ad, str(sayi)) for ad, sayi in ozet["yerler"]],
+                [
+                    (ad, str(sayi), pano_bagi(adres, "olaylar", arsiv="7", yer=ad))
+                    for ad, sayi in ozet["yerler"]
+                ],
                 False,
             ),
             (
                 "İnceleme",
                 [
-                    ("Bekliyor", str(ozet["bekleyen"])),
+                    ("Bekliyor", str(ozet["bekleyen"]), pano_bagi(adres, "olaylar", inceleme="1")),
                     ("İncelendi", str(ozet["incelenen"])),
                     ("Yanlış alarm", str(ozet["yanlis_alarm"])),
                 ],
@@ -2948,6 +3409,8 @@ def haftalik_ozet_metni(ozet: dict, adres: str = "") -> tuple[str, str, str]:
             ),
         ],
         notlar=[ozet["calisma"], ozet["baglanti"]],
+        dugme="Olay arşivini aç",
+        ayar_bagi=_bildirim_ayari_bagi(adres),
     )
     return konu, metin, html_metni
 
@@ -2965,28 +3428,32 @@ def haftalik_ozet_isle(
     işaret bir haftayı aşar ve son gönderim anı yazılır (Kurulum denetimi kartı
     okur; uzatma düştüyse gönderimden sonra bir kez daha denenir), hiçbiri
     gidemezse silinir (sonraki çağrı yeniden dener). Veri tek boru hattında
-    okunur: arşivin son 14 günü ve panonun son raporu."""
+    okunur: arşivin son 14 günü, panonun son raporu ve hesap dizini; alıcılar
+    (bildirim_alicilari: Vercel listesi ve "Haftalık özet" açık hesaplar) hesap
+    kayıtları okunarak (dizin boşsa okunmaz) kurulur. Alıcı yoksa işaret silinir."""
     if ayar.haftalik_ozet != "acik":
         return {"atlandi": True}
     hafta = haftalik_ozet_haftasi(simdi)
     if hafta is None:
         return {"gonderildi": False, "sebep": "zamani_degil"}
-    if not ayar.haftalik_alicilar:
-        return {"gonderildi": False, "sebep": "alici_yok"}
     isaret = HAFTALIK_OZET_ONEKI + hafta
     if depo.komut("SET", isaret, str(int(simdi)), "EX", str(BEKCI_KILIT_SN), "NX") != "OK":
         return {"gonderildi": False, "sebep": "bu_hafta_gitti"}
     gece = _pazartesi_gecesi(simdi)
-    ham_olaylar, okunan = depo.boru_hatti(
+    ham_olaylar, okunan, adlar = depo.boru_hatti(
         [
             ["ZREVRANGEBYSCORE", ARSIV_ANAHTARI, f"({gece}", str(gece - 14 * 86400)],
             ["MGET", *PANO_ANAHTARLARI],
+            ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
         ]
     )
+    alicilar = bildirim_alicilari(depo, ayar, "haftalik", adlar)
+    if not alicilar:
+        depo.sil(isaret)  # alıcı gelince (hesap anahtarı ya da Vercel listesi) yeniden denensin
+        return {"gonderildi": False, "sebep": "alici_yok"}
     okunan = _mget_listesi(okunan, len(PANO_ANAHTARLARI)) or [None] * len(PANO_ANAHTARLARI)
     veri = pano_verisi(depo, ayar, simdi, okunan)
     ozet = haftalik_ozet_icerigi(arsiv_coz(ham_olaylar), veri, gece)
-    konu, metin, html_metni = haftalik_ozet_metni(ozet, ayar.pano_adresi)
     uzatma = [
         ["EXPIRE", isaret, str(HAFTALIK_OZET_ISARET_SN)],
         _set_komutu(HAFTALIK_OZET_SON_ANAHTARI, str(int(simdi)), None),
@@ -2997,14 +3464,12 @@ def haftalik_ozet_isle(
         depo.boru_hatti(uzatma)
         uzatildi.append(True)
 
-    gonder = gonder or bekci_uyari_gonder
-    sayi = gonder(
+    sayi = _kaynaklara_gonder(
         ayar,
-        ayar.haftalik_alicilar,
-        konu,
-        metin,
+        alicilar,
+        partial(haftalik_ozet_metni, ozet, ayar.pano_adresi),
+        gonder or bekci_uyari_gonder,
         basarida=uzat,
-        html_metni=html_metni,
         ne="Haftalık özet",
     )
     if not sayi:
@@ -3021,9 +3486,14 @@ def haftalik_ozet_isle(
     return {"gonderildi": True, "gonderilen": sayi, "hafta": hafta}
 
 
-def deneme_epostasi_metni(ad: str, saglayici: str, simdi: float, adres: str = "") -> tuple:
-    """Kurulum denetimi kartındaki "Deneme e-postası gönder"in iletisi (konu,
-    düz metin, HTML). Yalnız gönderim yolunun adı girer; ayar değeri girmez."""
+def deneme_epostasi_metni(
+    ad: str, saglayici: str, simdi: float, adres: str = "", kendine: bool = False
+) -> tuple:
+    """Deneme e-postasının iletisi (konu, düz metin, HTML): Kurulum denetimi
+    kartındaki "Deneme e-postası gönder" ya da (`kendine`) Sistem > Bildirimler'deki
+    "Kendime deneme gönder". Yalnız gönderim yolunun adı girer; ayar değeri girmez.
+    Düğme bildirim ayarlarını açar."""
+    yer = "Bildirimler'den kendi adresine" if kendine else "Kurulum denetimi kartından"
     metin, html_metni = eposta_tasarla(
         "basari",
         "Deneme",
@@ -3035,9 +3505,10 @@ def deneme_epostasi_metni(ad: str, saglayici: str, simdi: float, adres: str = ""
             ("İsteyen hesap", ad),
             ("Zaman", _turkiye_saati(_iso(simdi))),
         ],
-        f"Bu deneme e-postasını panoda {ad} hesabı Sistem > Kurulum denetimi kartından "
-        "istedi. Siz istemediyseniz yok sayabilirsiniz.",
-        adres,
+        f"Bu deneme e-postasını panoda {ad} hesabı Sistem > {yer} istedi. Siz "
+        "istemediyseniz yok sayabilirsiniz.",
+        _bildirim_ayari_bagi(adres),
+        dugme="Bildirim ayarlarını aç",
     )
     return "Deneme: e-posta gönderimi çalışıyor", metin, html_metni
 
@@ -4141,6 +4612,9 @@ class Oturum:
     # Bu oturumun yetkileri: rolün AYARLANMIŞ kümesi (kurucuda hepsi). Rol gibi
     # her istekte okunur; çerezde taşınmaz, eski çerez eski yetkiyi getirmez.
     yetkiler: frozenset[str] = frozenset()
+    # Kişinin kendi bildirim ayarı (Sistem > Bildirimler): hesap kaydıyla aynı
+    # okumadan gelir, ek komut yok. Kurucuda ve ayar yoksa None.
+    bildirim: dict | None = None
 
     def yetkili(self, yetki: str) -> bool:
         """Bu oturum bu işi yapabilir mi (docs/19 §1). Tanınmayan anahtar: hayır."""
@@ -4162,6 +4636,8 @@ def oturum_ozeti(oturum: Oturum) -> dict:
     }
     if oturum.iki_adim:
         ozet["iki_adim"] = True
+    if oturum.bildirim is not None:  # kişinin kendi adresi ve anahtarları
+        ozet["bildirim"] = dict(oturum.bildirim)
     return ozet
 
 
@@ -4223,7 +4699,19 @@ def oturum_ve_oku(
     degismeli = hesap.get("sifre_degismeli") is True
     acik = _iki_adim_siri(hesap) is not None
     yetkiler = rol_yetkileri_coz(yetki_ham).get(rol, frozenset())
-    oturum = Oturum(ad, rol, kimlik, surum, False, degismeli, imza, bitis, acik, yetkiler)
+    oturum = Oturum(
+        ad,
+        rol,
+        kimlik,
+        surum,
+        False,
+        degismeli,
+        imza,
+        bitis,
+        acik,
+        yetkiler,
+        _hesap_bildirimi(hesap),
+    )
     return oturum, ek_degerler
 
 
@@ -5043,12 +5531,18 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
     HEAD de aynı yoldan geçer (api/bekci.py).
     HAFTALIK_OZET=acik ise bekçiden SONRA haftalık özet de denenir (yalnız
     pazartesi sabahı bir şey yapar; bekçi kapalı olsa da): cevaba `haftalik`
-    eklenir. Özet bekçiden sonradır: yavaş bir SMTP alarmı geciktirmesin."""
+    eklenir. Özet bekçiden sonradır: yavaş bir SMTP alarmı geciktirmesin.
+    En sonda "Ayar sorunu" e-postası (ayar_sorunu_isle; BEKCI ya da HAFTALIK_OZET
+    kapalı değilse): sorun yoksa komut harcamaz; varsa cevaba `ayar_sorunu`
+    (yalnız sayı) eklenir. BEKCI tanınmayan bir değerse bekçi çalışmaz ama bu
+    e-posta 503'ten önce yine denenir: sorunu söyleyen tek yol odur."""
     ayar = ayar_oku()
     _bekci_yetkisi(istek, ayar)
-    if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın
-        raise PanoHatasi(503, "bekci_ayari", BEKCI_AYAR_HATASI_METNI)
     depo_var = DEPO is not None or bool(ayar.redis_adresi and ayar.redis_jetonu)
+    if ayar.bekci not in BEKCI_DEGERLERI:  # yanlış yazılmış ayar sessizce kapalı kalmasın
+        if depo_var:
+            _ayar_sorunu_dene(depo_al(ayar), ayar)
+        raise PanoHatasi(503, "bekci_ayari", BEKCI_AYAR_HATASI_METNI)
     kod, sonuc = 200, {"atlandi": True}
     if ayar.bekci == "acik":
         if not depo_var:
@@ -5061,7 +5555,20 @@ def bekci_calistir(istek: Isleyici) -> tuple[int, dict, str | None]:
         except Exception as hata:  # noqa: BLE001 - özet hatası bekçinin cevabını bozmasın
             print(f"Haftalık özet hazırlanamadı: {_hata_ozeti(hata)}", file=sys.stderr)
             sonuc["haftalik"] = {"gonderildi": False, "sebep": "hata"}
+    if depo_var and (ayar.bekci != "kapali" or ayar.haftalik_ozet != "kapali"):
+        ayar_sorunu = _ayar_sorunu_dene(depo_al(ayar), ayar)
+        if ayar_sorunu is not None:
+            sonuc["ayar_sorunu"] = ayar_sorunu
     return kod, sonuc, None
+
+
+def _ayar_sorunu_dene(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict | None:
+    """ayar_sorunu_isle; hatası bekçinin cevabını bozmaz (günlüğe sırsız yazılır)."""
+    try:
+        return ayar_sorunu_isle(depo, ayar, time.time())
+    except Exception as hata:  # noqa: BLE001 - ayar e-postası bekçiyi durdurmasın
+        print(f"Ayar sorunu e-postası hazırlanamadı: {_hata_ozeti(hata)}", file=sys.stderr)
+        return {"gonderildi": False, "sebep": "hata"}
 
 
 def _durum_degistiren(
@@ -5131,6 +5638,9 @@ def _kullanici_satiri(kayit: dict, son: object) -> dict:
     }
     if _iki_adim_siri(kayit) is not None:  # sır asla dönmez; yalnız açık olduğu
         satir["iki_adim"] = True
+    bildirim = _hesap_bildirimi(kayit)  # adres dönmez; yalnız bir bildirim aldığı
+    if satir["acik"] and bildirim and any(bildirim[tur] for tur in BILDIRIM_TURLERI):
+        satir["bildirim"] = True
     return satir
 
 
@@ -5251,7 +5761,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
     girmez (tests/test_hesap.py denetler). Cümleleri pano kurar; fabrika
     raporunun canlı olup olmadığını pano zaten /api/durum'dan bilir.
     İki okuma: hesap dizini, tesis sayısı, kurucunun iki adım kaydı ve son
-    haftalık özetin anı tek boru hattında; hesap kayıtları tek MGET'te."""
+    haftalık özetin anı tek boru hattında; hesap kayıtları tek MGET'te. Alıcı
+    sayıları Vercel listesinden ve "bildirim" anahtarı açık hesaplardan ayrı ayrı
+    (girişi kapalı hesap sayılmaz); adresler dönmez."""
     ham_adlar, tesis_sayisi, kurucu_kaydi, ozet_son = depo.boru_hatti(
         [
             ["LRANGE", KULLANICILAR_ANAHTARI, "0", str(HESAP_EN_COK * 2)],
@@ -5264,11 +5776,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
     kurucu_iki_adim = _json_sozluk(kurucu_kaydi) is not None
     adlar = [a for a in ham_adlar if isinstance(a, str)] if isinstance(ham_adlar, list) else []
     kayitlar = depo.al_coklu([KULLANICI_ONEKI + a for a in adlar]) if adlar else []
-    yoneticiler = [
-        kayit
-        for kayit in map(_json_sozluk, kayitlar)
-        if kayit is not None and kayit.get("acik") is True and kayit.get("rol") == "yonetici"
-    ]
+    acik_hesaplar = [k for k in map(_json_sozluk, kayitlar) if k and k.get("acik") is True]
+    yoneticiler = [kayit for kayit in acik_hesaplar if kayit.get("rol") == "yonetici"]
+    bildirimler = [b for b in map(_hesap_bildirimi, acik_hesaplar) if b is not None]
     return {
         "oturum_anahtari": bool(ayar.oturum_anahtari),
         "oturum_anahtari_kisa": ayar.oturum_anahtari_kisa,
@@ -5282,7 +5792,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         "eposta_saglayici": eposta_saglayicisi(ayar),
         "eposta_kimden": bool(ayar.eposta_kimden),
         "alici": len(ayar.bekci_alicilar),
+        "alici_hesap": sum(b["sistem"] for b in bildirimler),
         "alici_tg": ayar.bekci_tg_yok_sayildi,  # Tesisler ekranının uyarısıyla aynı
+        "alici_gecersiz": ayar.bekci_alici_gecersiz,
         "ana_tesis": bool(ayar.ana_tesis),
         "ana_tesis_gecersiz": ayar.ana_tesis_gecersiz,
         "tesis": tesis_sayisi if isinstance(tesis_sayisi, int) else 0,
@@ -5294,6 +5806,9 @@ def kurulum_denetimi(depo: UpstashDepo | BellekDepo, ayar: Ayar) -> dict:
         "haftalik_ozet": ayar.haftalik_ozet == "acik",
         "haftalik_ozet_gecersiz": ayar.haftalik_ozet == "gecersiz",
         "haftalik_alici": len(ayar.haftalik_alicilar),
+        "haftalik_alici_hesap": sum(b["haftalik"] for b in bildirimler),
+        "haftalik_alici_tg": ayar.haftalik_tg_yok_sayildi,
+        "haftalik_alici_gecersiz": ayar.haftalik_alici_gecersiz,
         "haftalik_son": (
             _iso(int(ozet_son)) if isinstance(ozet_son, str) and _rakam_mi(ozet_son) else None
         ),
@@ -5474,18 +5989,40 @@ def _deneme_epostasi(
     Hesap değiştirmediği için onay şifresi istemez. Hesap başına saatte
     DENEME_EPOSTA_SINIRI deneme; her deneme işlem kaydına girer (alıcı kısmen
     gizli, sonuç tamam / hata). Hata iletisi sabittir: anahtar ya da şifre taşımaz."""
-    saglayici = eposta_saglayicisi(ayar)
-    if not saglayici:
-        raise PanoHatasi(
-            409,
-            "eposta_yok",
-            "E-posta ayarı yok: Vercel'de RESEND_API_KEY ve EPOSTA_KIMDEN ekleyin, sonra "
-            "Redeploy (README, E-posta).",
-        )
+    saglayici = _saglayici_gerekli(ayar, oturum)
     alici = govde.get("alici")
     alici = alici.strip() if isinstance(alici, str) else ""
     if len(alici) > 200 or not EPOSTA_DESENI.fullmatch(alici):
         raise PanoHatasi(400, "alici", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).")
+    return _deneme_gonder(depo, ayar, oturum, alici, saglayici, simdi)
+
+
+def _saglayici_gerekli(ayar: Ayar, oturum: Oturum) -> str:
+    """Etkin e-posta yolu; yoksa 409 (yöneticiye ne yazılacağı, ötekine kime söyleneceği)."""
+    saglayici = eposta_saglayicisi(ayar)
+    if saglayici:
+        return saglayici
+    if oturum.yetkili("hesap.yonet"):
+        metin = (
+            "E-posta ayarı yok: Vercel'de RESEND_API_KEY ve EPOSTA_KIMDEN ekleyin, sonra "
+            "Redeploy (README, E-posta)."
+        )
+    else:
+        metin = "Sitede e-posta gönderimi kurulu değil; yöneticinize söyleyin."
+    raise PanoHatasi(409, "eposta_yok", metin)
+
+
+def _deneme_gonder(
+    depo: UpstashDepo | BellekDepo,
+    ayar: Ayar,
+    oturum: Oturum,
+    alici: str,
+    saglayici: str,
+    simdi: float,
+    kendine: bool = False,
+) -> tuple[int, dict, str | None]:
+    """İki deneme e-postasının ortak yolu: hesap başına saatte DENEME_EPOSTA_SINIRI
+    (iki düğme aynı sayacı paylaşır), işlem kaydı, sırsız hata."""
     sayac = DENEME_EPOSTA_SAYAC_ONEKI + oturum.ad
     if depo.say(sayac, DENEME_EPOSTA_PENCERESI_SN) > DENEME_EPOSTA_SINIRI:
         raise PanoHatasi(
@@ -5494,7 +6031,9 @@ def _deneme_epostasi(
             f"Bir saatte en çok {DENEME_EPOSTA_SINIRI} deneme e-postası gönderilir; "
             "biraz sonra yeniden deneyin.",
         )
-    konu, metin, html_metni = deneme_epostasi_metni(oturum.ad, saglayici, simdi, ayar.pano_adresi)
+    konu, metin, html_metni = deneme_epostasi_metni(
+        oturum.ad, saglayici, simdi, ayar.pano_adresi, kendine
+    )
     ozet = f"{_alici_gizle(alici)} · {'Resend' if saglayici == 'resend' else 'SMTP'}"
     try:
         _eposta_gonder(ayar, alici, konu, metin, html_metni)
@@ -5507,6 +6046,81 @@ def _deneme_epostasi(
     satir = _islem_satiri(simdi, oturum.ad, oturum.rol, "deneme_epostasi", ozet, "tamam")
     kayit_yaz(depo, KAYIT_ANAHTARI, satir, KAYIT_EN_COK)
     return 200, {"tamam": True, "saglayici": saglayici}, None
+
+
+KURUCU_BILDIRIM_METNI = (
+    "Kurucu hesabının kaydı yok, bildirim ayarı tutulamaz: kendinize ayrı bir hesap açın "
+    "ya da adresinizi Vercel'deki BEKCI_ALICILAR listesine yazın."
+)
+
+
+def _bildirim_ayarla(
+    depo: UpstashDepo | BellekDepo, oturum: Oturum, govde: dict, simdi: float
+) -> tuple[int, dict, str | None]:
+    """POST /api/hesap {"eylem": "bildirim_ayarla", "eposta", "sistem", "haftalik"}:
+    kişinin kendi bildirimleri (Sistem > Bildirimler; her rol, kurucu hariç). Adres
+    boşsa ve iki anahtar kapalıysa ayar silinir. Hesap kaydına kilit altında yazılır,
+    işlem kaydı satırı (adres kısmen gizli) aynı boru hattındadır. Onay şifresi
+    istemez (güvenlik ayarı değil); hesap işlemi sınırına sayılır."""
+    if oturum.kurucu:
+        raise PanoHatasi(400, "kurucu", KURUCU_BILDIRIM_METNI)
+    eposta = govde.get("eposta")
+    eposta = eposta.strip() if isinstance(eposta, str) else ""
+    acik = {tur: govde.get(tur) is True for tur in BILDIRIM_TURLERI}
+    if eposta and (len(eposta) > EPOSTA_EN_UZUN or not EPOSTA_DESENI.fullmatch(eposta)):
+        raise PanoHatasi(400, "eposta", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).")
+    if not eposta and any(acik.values()):
+        raise PanoHatasi(400, "eposta", "Bildirim almak için e-posta adresinizi yazın.")
+    if depo.say(HESAP_ISLEM_SAYAC_ONEKI + oturum.ad, HESAP_ISLEM_PENCERESI_SN) > HESAP_ISLEM_SINIRI:
+        raise PanoHatasi(
+            429,
+            "cok_sik",
+            "Kısa sürede çok fazla hesap işlemi yaptınız; 15 dakika sonra yeniden deneyin.",
+        )
+    with _hesap_kilidi(depo, oturum.ad):
+        hesap = hesap_oku(depo, oturum.ad)
+        if (
+            hesap is None
+            or hesap.get("acik") is not True
+            or hesap.get("hesap_kimligi") != oturum.hesap_kimligi
+        ):
+            raise PanoHatasi(401, "oturum_kapandi", OTURUM_KAPANDI_METNI)
+        if eposta:
+            hesap["bildirim"] = {"eposta": eposta, **acik}
+            ozet = (
+                _alici_gizle(eposta)
+                + " · "
+                + ", ".join(
+                    f"{BILDIRIM_ADLARI[tur]} {'açık' if acik[tur] else 'kapalı'}"
+                    for tur in BILDIRIM_TURLERI
+                )
+            )
+        else:
+            hesap.pop("bildirim", None)
+            ozet = "Adres silindi"
+        satir = _islem_satiri(simdi, oturum.ad, oturum.rol, "bildirim_ayarla", ozet, "tamam")
+        depo.boru_hatti(
+            [
+                _hesap_yaz_komutu(oturum.ad, hesap, simdi),
+                *kayit_komutlari(KAYIT_ANAHTARI, satir, KAYIT_EN_COK),
+            ]
+        )
+    return 200, {"tamam": True, "bildirim": _hesap_bildirimi(hesap)}, None
+
+
+def _bildirim_dene(
+    depo: UpstashDepo | BellekDepo, ayar: Ayar, oturum: Oturum, simdi: float
+) -> tuple[int, dict, str | None]:
+    """POST /api/hesap {"eylem": "bildirim_dene"}: "Kendime deneme gönder" (her rol,
+    kurucu hariç). Kişinin KAYITLI adresine gider (oturumla aynı okumadan; ek komut
+    yok); sınır ve işlem kaydı Kurulum denetimindeki denemeyle ortaktır."""
+    if oturum.kurucu:
+        raise PanoHatasi(400, "kurucu", KURUCU_BILDIRIM_METNI)
+    saglayici = _saglayici_gerekli(ayar, oturum)
+    alici = (oturum.bildirim or {}).get("eposta")
+    if not alici:
+        raise PanoHatasi(400, "eposta", "Önce e-posta adresinizi yazıp kaydedin.")
+    return _deneme_gonder(depo, ayar, oturum, alici, saglayici, simdi, kendine=True)
 
 
 def _hesap_ekle(
@@ -5867,10 +6481,11 @@ def _rol_yetkileri_yaz(
 
 
 def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
-    """POST /api/hesap - {"eylem", ...}; sifre_degistir, diger_cihazlardan_cik ve
-    kendi iki adımı (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) herkese, ötekiler
-    (deneme_epostasi dahil) yönetici (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON ->
-    sifre_degismeli -> önizleme -> işe özgü rol -> onay şifresi -> doğrulama."""
+    """POST /api/hesap - {"eylem", ...}; sifre_degistir, diger_cihazlardan_cik, kendi
+    iki adımı (iki_adim_baslat / iki_adim_onayla / iki_adim_kapat) ve kendi bildirimleri
+    (bildirim_ayarla / bildirim_dene) herkese, ötekiler (deneme_epostasi dahil) yönetici
+    (docs/19 §3.4, öneri 6). Sıra: oturum -> köken -> JSON -> sifre_degismeli -> önizleme
+    -> işe özgü rol -> onay şifresi -> doğrulama."""
     ayar, simdi, oturum, govde = _durum_degistiren(istek, None, "hesap")
     eylem = govde.get("eylem")
     if oturum.sifre_degismeli and eylem != "sifre_degistir":
@@ -5884,6 +6499,10 @@ def hesap_islem(istek: Isleyici) -> tuple[int, dict, str | None]:
         return _iki_adim_kendi(depo, ayar, oturum, eylem, govde, simdi, istek)
     if eylem == "diger_cihazlardan_cik":
         return _diger_cihazlardan_cik(depo, ayar, oturum, govde, simdi, istek)
+    if eylem == "bildirim_ayarla":
+        return _bildirim_ayarla(depo, oturum, govde, simdi)
+    if eylem == "bildirim_dene":
+        return _bildirim_dene(depo, ayar, oturum, simdi)
     if not oturum.yetkili("hesap.yonet"):
         _komut_red_yaz(depo, oturum, f"Yetki yetmedi: {_metin(eylem, 40)}", simdi)
         raise PanoHatasi(403, "yetki", "Bu iş için yönetici yetkisi gerekir.")

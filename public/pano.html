@@ -552,6 +552,37 @@
                     </div>
                   </form>
                 </section>
+                <!-- Bildirimler: kişinin kendi e-posta adresi ve iki anahtar (hesap kaydında;
+                     kurucunun kaydı yok). E-postadaki "Bildirim ayarları" bağlantısı buraya gelir. -->
+                <section id="bildirim-ayari" class="iki-adim bildirim-ayari" aria-labelledby="bildirim-ayari-baslik">
+                  <div class="ayar-satiri">
+                    <svg class="simge" aria-hidden="true"><use href="#i-posta"/></svg>
+                    <h3 id="bildirim-ayari-baslik" class="ayar-adi" tabindex="-1">Bildirimler</h3>
+                    <span id="bildirim-ayari-durumu" class="rozetler"></span>
+                  </div>
+                  <p id="bildirim-kurucu" class="ikincil-metin ayar-notu" hidden></p>
+                  <form id="bildirim-ayari-formu" class="ic-form bildirim-formu" novalidate>
+                    <div class="alan">
+                      <label for="bildirim-adresi">E-posta adresiniz</label>
+                      <input id="bildirim-adresi" name="bildirim-adresi" type="email" inputmode="email" autocomplete="email" maxlength="254" placeholder="ad@firma.com" aria-describedby="bildirim-ayari-hatasi">
+                    </div>
+                    <label class="anahtar-satiri" for="bildirim-sistem">
+                      <span class="anahtar-metni"><b>Sistem uyarıları</b><small id="bildirim-sistem-aciklama">Haber yok, program kapalı, yeniden bağlandı, ayar sorunu</small></span>
+                      <input id="bildirim-sistem" class="secim-anahtari" type="checkbox" role="switch" aria-describedby="bildirim-sistem-aciklama">
+                    </label>
+                    <label class="anahtar-satiri" for="bildirim-haftalik">
+                      <span class="anahtar-metni"><b>Haftalık özet</b><small id="bildirim-haftalik-aciklama">Her pazartesi sabahı geçen haftanın sayıları</small></span>
+                      <input id="bildirim-haftalik" class="secim-anahtari" type="checkbox" role="switch" aria-describedby="bildirim-haftalik-aciklama">
+                    </label>
+                    <p class="not">Adresiniz Vercel'deki alıcı listesinde de olsa anahtar kapalıysa o e-posta size gelmez.</p>
+                    <p id="bildirim-ayari-hatasi" class="hata" role="alert"></p>
+                    <p id="bildirim-ayari-sonuc" class="sonuc-satiri" role="status" hidden></p>
+                    <div class="dugmeler">
+                      <button id="bildirim-dene" class="dugme ikincil" type="button"><svg class="simge" aria-hidden="true"><use href="#i-posta"/></svg>Kendime deneme gönder</button>
+                      <button id="bildirim-kaydet" class="dugme birincil" type="submit">Kaydet</button>
+                    </div>
+                  </form>
+                </section>
                 <!-- Görünüm: bu cihazda saklanır (tema.js); Sistem cihazın ayarını izler -->
                 <div id="gorunum-satiri" class="ayar-satiri gorunum-satiri">
                   <svg class="simge" aria-hidden="true"><use href="#i-ay"/></svg>

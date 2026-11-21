@@ -1007,7 +1007,9 @@ def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # n
             "eposta_saglayici": "resend",  # RESEND_API_KEY SMTP'den önce gelir
             "eposta_kimden": True,
             "alici": 2,
+            "alici_hesap": 0,
             "alici_tg": False,
+            "alici_gecersiz": 0,
             "ana_tesis": True,
             "ana_tesis_gecersiz": False,
             "tesis": 0,
@@ -1017,6 +1019,9 @@ def test_kurulum_denetimi_yalniz_yoneticiye_ve_degersiz(site, monkeypatch):  # n
             "haftalik_ozet": False,
             "haftalik_ozet_gecersiz": False,
             "haftalik_alici": 2,  # HAFTALIK_OZET_ALICILAR boş: bekçinin alıcıları
+            "haftalik_alici_hesap": 0,
+            "haftalik_alici_tg": False,
+            "haftalik_alici_gecersiz": 0,
             "haftalik_son": None,
         }
     }

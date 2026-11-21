@@ -100,7 +100,8 @@ def test_tesissiz_rapor_bugunku_komutlarin_aynisini_gonderir():
 def test_bekci_acikken_tesissiz_rapor_isareti_ayni_okumada_okur_yalniz_varsa_siler():
     """BEKCI=acik rapor başına komut eklemez (30 sn'de bir DEL ayda ~86 bin komut
     olurdu): işaret raporun zaten yaptığı MGET'in son anahtarıdır. DEL yalnız
-    işaret varsa (kesintiden sonraki ilk taze rapor) gider ve işaret kalkar."""
+    işaret varsa (kesintiden sonraki ilk taze rapor) gider ve işaret kalkar; aynı
+    boru hattında "döndü" işareti yazılır (düzelme e-postasını bekçi gönderir)."""
     rapor = _pano.rapor_temizle(_rapor())
     ayar = _ayar(bekci="acik")
     depo = KayitliDepo(Saat(T0))
@@ -112,11 +113,16 @@ def test_bekci_acikken_tesissiz_rapor_isareti_ayni_okumada_okur_yalniz_varsa_sil
     depo.komut("SET", "dalsan:bekci:uyarildi", "1")  # bekçi bu kesinti için uyardı
     depo.cagrilar.clear()
     cevap = _pano.rapor_kaydet(depo, rapor, T0 + 30, ayar)
+    donus = _pano._kayit_metni({"uyari": "1", "dondu": int(T0 + 30)})
     assert depo.cagrilar == [
         _bugunku_komutlar(rapor, T0 + 30)[:2] + [beklenen[2]],
-        [["DEL", "dalsan:bekci:uyarildi"]],
+        [
+            ["DEL", "dalsan:bekci:uyarildi"],
+            ["SET", "dalsan:bekci:dondu", donus, "EX", str(_pano.BEKCI_DONUS_SN)],
+        ],
     ]
     assert depo.komut("GET", "dalsan:bekci:uyarildi") is None
+    assert depo.komut("GET", "dalsan:bekci:dondu") == donus
     assert set(cevap) == {"komut", "kare", "foto"}
 
 
@@ -373,9 +379,16 @@ def test_tesis_raporu_ek_istek_atmaz_isareti_kutuk_okumasinda_okur():
     assert ["DEL", "dalsan:bekci:uyarildi:gebze"] in depo.cagrilar[1]
     depo.cagrilar.clear()
     _kaydet(depo, _tesisli("izmir"), T0 + 60, ayar)
-    assert depo.cagrilar[1:] == [[["DEL", "dalsan:bekci:uyarildi:izmir"]]]
+    donus = _pano._kayit_metni({"uyari": "1", "dondu": int(T0 + 60)})
+    assert depo.cagrilar[1:] == [
+        [
+            ["DEL", "dalsan:bekci:uyarildi:izmir"],
+            ["SET", "dalsan:bekci:dondu:izmir", donus, "EX", str(_pano.BEKCI_DONUS_SN)],
+        ]
+    ]
     for kimlik in ("gebze", "izmir"):
         assert depo.komut("GET", f"dalsan:bekci:uyarildi:{kimlik}") is None
+        assert depo.komut("GET", f"dalsan:bekci:dondu:{kimlik}") == donus
 
     # ANA_TESIS yazılıyken öbür tesis panonun durumunu okumaz (bekçi kapalı: 5 komut)
     depo = KayitliDepo(Saat(T0))

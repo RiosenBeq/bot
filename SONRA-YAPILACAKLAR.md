@@ -210,7 +210,22 @@ yüklenmesi, 16:9 kamera kutusu, grafik ekseni, ana ekran simgeleri ve CI. Kalan
     metni), yoksa SMTP bugünkü gibi; bütün e-postalar ortak tasarımda (düz metin + HTML,
     "Panoyu aç" düğmesi); Kurulum denetimi kartında yol (Resend / SMTP / yok) ve "Deneme
     e-postası gönder" (yönetici, saatte 5, işlem kaydında); önizleme `tests/eposta_onizleme.py`.
-    Kalan: "sistem yeniden haber veriyor" e-postası yok (işareti fabrikanın raporu siler,
+    ~~Kalan: "sistem yeniden haber veriyor" e-postası yok (işareti fabrikanın raporu siler,
     bekçi düzelmeyi görmez; eklemek 30 sn'lik rapor yoluna yazma ister); bekçi ayar hatası
-    e-postası da yok (yanlış `BEKCI` zaten 503 `bekci_ayari` ile bildirilir).
+    e-postası da yok (yanlış `BEKCI` zaten 503 `bekci_ayari` ile bildirilir).~~ Yapıldı
+    (21.11.2026): rapor yolu uyarı işaretini silerken aynı boru hattında küçük bir "döndü"
+    işareti bırakır (ek istek yok, e-posta yok); sonraki `/api/bekci` onu panonun MGET'inde
+    görür ve kesinti başına bir "Sistem yeniden haber veriyor" gönderir. "Ayar sorunu"
+    e-postası günde en çok bir kez, değersiz; e-posta yolu, anahtar ya da Upstash eksikse
+    gidemez (Kurulum denetimi kartı söyler).
+12. ~~**E-postadaki bağlantılar ve kişi başına bildirim:** düğme yalnız
+    `VERCEL_PROJECT_PRODUCTION_URL` varken çıkıyor ve panonun ana sayfasını açıyor;
+    alıcıları yalnız Vercel'deki listeler belirliyor.~~ Yapıldı (21.11.2026): adres her
+    zaman bilinir (`SITE_ADRESI` -> Vercel adresi -> `dalsansite.vercel.app`); bağlantılar
+    doğru ekranı açar (Genel bakış, Olaylar > Arşiv son 7 gün ve tür / kamera süzgeci,
+    İnceleme modu, Sistem > Bildirimler), girişten sonra da. Sistem > Bildirimler: her
+    hesap kendi adresini ve "Sistem uyarıları" / "Haftalık özet" anahtarlarını kaydeder,
+    "Kendime deneme gönder"; alıcılar Vercel listesi + anahtarı açanlar - kapatanlar,
+    hesaplar yalnız e-posta gidecekken okunur. Kalan: kurucunun hesap kaydı yok (bildirimi
+    için ayrı hesap ya da Vercel listesi); web push yok (madde 1).
 

@@ -24,6 +24,7 @@ KOK = Path(__file__).resolve().parents[1]
 T0 = 1_800_000_000.0
 DK = 60
 ISARET = "dalsan:bekci:uyarildi"
+DONUS = "dalsan:bekci:dondu"
 GIZLI = {
     "BEKCI_ANAHTARI": "bekci-gizli-anahtar-0123456789",
     "CRON_SECRET": "cron-gizli-sir-0123456789",
@@ -158,13 +159,23 @@ def test_bayat_rapor_tek_uyari_duzelince_yeniden_uyari():
     assert kontrol(21 + _pano.BEKCI_KILIT_SN // DK + 2)["uyarildi"] is False
     assert len(gonder.cagrilar) == 1
 
-    # Taze rapor işareti siler
+    # Taze rapor işareti siler, "döndü" işareti bırakır; e-posta göndermez
     _kaydet(depo, rapor, T0 + 41 * DK, ayar)
     assert depo.komut("GET", ISARET) is None
-    assert kontrol(42)["durum"][0]["bayat"] is False
+    assert depo.komut("GET", DONUS) is not None and len(gonder.cagrilar) == 1
+    # Sonraki bekçi çağrısı bir kez "yeniden haber veriyor" gönderir
+    sonuc = kontrol(42)
+    assert sonuc["durum"][0]["bayat"] is False and sonuc["duzelme"] == 1
+    alicilar, konu, metin = gonder.cagrilar[1]
+    assert alicilar == ("sef@ornek.com.tr",)
+    assert konu == "Düzeldi: Gebze fabrikası - sistem yeniden haber veriyor"
+    assert "Kesinti: yaklaşık 41 dakika" in metin and "Son rapor" in metin
+    assert "#15803d" in gonder.html  # yeşil şerit
+    assert depo.komut("GET", DONUS) is None
+    assert "duzelme" not in kontrol(43) and len(gonder.cagrilar) == 2
     # Yeniden kesilince yeniden uyarır
     assert kontrol(41 + 21)["uyarildi"] is True
-    assert len(gonder.cagrilar) == 2
+    assert len(gonder.cagrilar) == 3
 
 
 def test_hic_bildirim_gidemezse_isaret_birakilir_sonraki_cagri_yeniden_dener():
@@ -701,7 +712,8 @@ def test_eski_tg_alicisi_ve_bot_jetonu_varken_yalniz_eposta_gider(monkeypatch):
 def test_yalniz_eski_tg_alicisi_kaldiysa_alici_hic_yokmus_gibi(site, monkeypatch):  # noqa: F811
     """BEKCI_ALICILAR'da yalnız eski tg: girdileri kaldıysa bekçi çökmez ve bugünkü
     "alıcı yok" durumunun aynısını yapar: bayat hedefte 503, bildirim yok, işaret
-    bırakılmaz (sonraki çağrı yeniden dener). Cevaba yalnız yok sayma notu eklenir."""
+    bırakılmaz (sonraki çağrı yeniden dener). Cevaba yok sayma notu ve "Ayar sorunu"
+    e-postasının durumu (alıcı yok: gitmedi, yalnız sayı) eklenir."""
     istekler = _dis_istekler(monkeypatch)
     epostalar = []
     monkeypatch.setattr(
@@ -724,8 +736,10 @@ def test_yalniz_eski_tg_alicisi_kaldiysa_alici_hic_yokmus_gibi(site, monkeypatch
     kod, _, govde = _bekci_iste(site, jeton)
     yalniz_tg = json.loads(govde)
     assert kod == 503
-    assert {ad: deger for ad, deger in yalniz_tg.items() if ad != "uyarilar"} == alicisiz
+    ekler = ("uyarilar", "ayar_sorunu")
+    assert {ad: deger for ad, deger in yalniz_tg.items() if ad not in ekler} == alicisiz
     assert yalniz_tg["uyarilar"] == [_pano.BEKCI_TG_METNI]
+    assert yalniz_tg["ayar_sorunu"] == {"gonderildi": False, "sebep": "alici_yok", "madde": 1}
     assert _pano.DEPO.komut("GET", ISARET) is None  # sonraki çağrı yeniden dener
     assert epostalar == [] and istekler == []
 

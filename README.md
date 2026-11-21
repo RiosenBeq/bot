@@ -443,8 +443,9 @@ adı ve zamanı, 1 saat).
 
 Pano açık olmasa da fabrika bilgisayarı kapanır, program durur ya da internet
 uzun süre giderse site seçtiğiniz kişilere **bir kez** e-posta bildirimi
-gönderir. Bağlantı geri gelince (ilk taze rapor) işaret sıfırlanır ve
-bir sonraki kesintide yeniden uyarır. Kesinti 24 saatten uzun sürerse günde bir
+gönderir. Bağlantı geri gelince (ilk taze rapor) işaret sıfırlanır, bir sonraki
+bekçi çağrısı bir kez **"Sistem yeniden haber veriyor"** e-postası gönderir
+(aşağıda) ve bir sonraki kesintide yeniden uyarır. Kesinti 24 saatten uzun sürerse günde bir
 hatırlatma gider. Ana pano ve izlenen her tesis ayrı işaret taşır; aynı fabrika
 iki kez sayılmaz. `ANA_TESIS` değişmişse ve pano hâlâ eski ana tesisin son
 raporunu gösteriyorsa uyarı susan yeni ana tesisi adıyla anar.
@@ -457,7 +458,7 @@ eksik ayar listesine girmez.
 |---|---|
 | `BEKCI` | `acik` (ya da `açık`) yazılmadıkça bekçi çalışmaz (`{"atlandi": true}` döner). Tanınmayan bir değer (ör. `evet`) bekçiyi açmaz; `/api/bekci` onu 503 `bekci_ayari` ile bildirir |
 | `BEKCI_ESIK_DK` | Kaç dakika haber gelmezse uyarsın; varsayılan 20 (1-1440). Dalgalı internette uzun tutun |
-| `BEKCI_ALICILAR` | Virgülle ayrık e-posta adresleri; en çok 20 |
+| `BEKCI_ALICILAR` | Virgülle ayrık e-posta adresleri; en çok 20. Adres olmayan girdi yok sayılır (Kurulum denetimi ve "Ayar sorunu" e-postası sayısını söyler). Kişiler kendileri de açabilir: Sistem > Bildirimler (aşağıda) |
 | `CRON_SECRET` | Vercel Cron'un gizli değeri, en az 16 karakter. Vercel onu `Authorization: Bearer` başlığıyla kendisi yollar |
 | `BEKCI_ANAHTARI` | Dış izleme servisinin gizli anahtarı, en az 16 karakter |
 | `SMTP_SUNUCU`, `SMTP_PORT` | E-posta sunucusu. Port 465 ise doğrudan TLS, başka port (varsayılan 587) ise STARTTLS; şifresiz bağlantıyla gönderilmez |
@@ -503,13 +504,57 @@ adresi ya da görüntü yoktur.
 Bildirim kısadır (konu `Alarm: <tesis> - sistemden haber yok`, program kapatıldıysa
 `... - program kapalı`): tesisin adı, son rapordan bu yana geçen dakika, son
 raporun saati (Türkiye) ve neye bakılacağı (bilgisayar açık mı, program çalışıyor
-mu, internet var mı). SMTP'de bütün alıcılara tek oturumda (bir bağlanma ve giriş),
-Resend'de her alıcıya ayrı istekle ayrı ileti gider. Düzelme e-postası yoktur:
-işareti fabrikanın raporu siler, bekçi düzelmeyi görmez. Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
+mu, internet var mı); düğme bağlantı durumunu gösteren ekranı (Genel bakış) açar.
+SMTP'de bütün alıcılara tek oturumda (bir bağlanma ve giriş),
+Resend'de her alıcıya ayrı istekle ayrı ileti gider. Bir alıcıya gidemezse öbürleri yine denenir; hiçbir alıcıya
 gidemezse işaret bırakılır ve sonraki çağrı yeniden dener. Hata Vercel
 günlüğüne yalnız türüyle yazılır, alıcı kısmen gizlenir; şifre yazılmaz.
 Program kapatılıp açılmadıysa (Kapandı) da eşik dolunca uyarır; hiç rapor
 gelmemiş kurulumda uyarmaz.
+
+**Sistem yeniden haber veriyor (21.11.2026, yeşil şerit):** uyarıdan sonra rapor
+dönünce fabrikanın `/api/rapor` isteği e-posta göndermez; uyarı işaretini
+silerken aynı boru hattında küçük bir "döndü" işareti bırakır (7 gün). Sonraki
+`/api/bekci` çağrısı onu panonun okumasıyla aynı MGET'te görür, hedef canlıysa
+işareti sahiplenir (`DEL`) ve kesintinin ne kadar sürdüğünü ve son raporun
+saatini bildiren tek bir e-posta gönderir; cevaba `duzelme` eklenir. Kesinti
+başına bir kez gider; hiçbir alıcıya gidemezse işaret geri yazılır, hedef bu
+arada yeniden kesildiyse düzelme yerine yeni uyarı gider. Alıcılar "Sistem
+uyarıları"nınkilerdir. Günde bir çalışan Vercel Cron'da düzelme ertesi sabah
+gelir.
+
+**Ayar sorunu (21.11.2026, turuncu şerit):** bekçinin görüp yine de e-postayla
+bildirebildiği ayar hataları: `BEKCI` ya da `HAFTALIK_OZET` tanınmayan bir
+değer, `BEKCI_ALICILAR` / `HAFTALIK_OZET_ALICILAR`'da eski `tg:` ya da adres
+olmayan girdi, 32 karakterden kısa `OTURUM_ANAHTARI`, kimlik olamayan
+`ANA_TESIS`. Türkiye günü başına en çok bir kez (`SET NX`), yalnız "Sistem
+uyarıları" alıcılarına gider ve ne düzeltileceğini sayar; hiçbir ayarın değeri
+yazılmaz. `BEKCI` tanınmazsa e-posta 503 `bekci_ayari`'dan önce denenir.
+`BEKCI` ve `HAFTALIK_OZET` ikisi de kapalıyken denenmez. E-postayla
+bildirilemeyenler e-postaya girmez, Kurulum denetimi kartında görünür: e-posta
+yolu yoksa (ya da Resend'de `EPOSTA_KIMDEN` yoksa) bu e-posta da gidemez,
+anahtar (`CRON_SECRET` / `BEKCI_ANAHTARI`) ya da Upstash yoksa bekçi hiç
+çalışmaz. Sorun yoksa çağrıya komut eklenmez; varsa o gün gittikten sonra tek
+komut (`SET NX`). Cevaba `ayar_sorunu` (yalnız sayı) eklenir.
+
+**Sistem > Bildirimler (21.11.2026):** her hesap (izleyici, operatör, yönetici)
+kendi e-posta adresini ve iki anahtarı kaydeder: **Sistem uyarıları** (haber yok,
+program kapalı, yeniden bağlandı, ayar sorunu) ve **Haftalık özet**; ikisi de
+varsayılan kapalı. Kurucunun hesap kaydı yoktur: kendine ayrı bir hesap açar ya
+da adresini Vercel'deki listeye yazar. **Kendime deneme gönder** kayıtlı adrese
+tasarımlı deneme e-postası gönderir (hesap başına saatte 5, Kurulum denetimindeki
+denemeyle aynı sayaç). Gönderim anında alıcılar: Vercel listesi + anahtarı açık
+ve adresi olan hesaplar - aynı adresle o anahtarı kapalı kaydeden kişinin liste
+adresi; girişi kapalı ya da silinen hesap almaz; aynı adres (büyük-küçük harf
+farkıyla) bir kez. Hesaplar yalnız e-posta gidecekken okunur: sıradan bekçi
+çağrısına komut eklenmez. Her e-postanın altında neden geldiği (hesap anahtarı
+ya da Vercel listesi) ve Sistem > Bildirimler'in bağlantısı yazar. Ayar
+`POST /api/hesap {"eylem": "bildirim_ayarla", "eposta", "sistem", "haftalik"}`
+ile hesap kaydına kilit altında yazılır (işlem kaydına adres kısmen gizli);
+kişi kendi ayarını `/api/durum`'un `oturum.bildirim`'inde görür (ek okuma yok).
+Kullanıcılar listesinde bildirim alan hesapta **Bildirim açık** etiketi çıkar
+(adres gösterilmez); Kurulum denetimi alıcıları "Vercel listesinden 2,
+hesaplardan 3" diye sayar.
 
 ### Haftalık özet e-postası (isteğe bağlı, 20.11.2026)
 
@@ -525,7 +570,7 @@ salı-pazar her sabah 08:00-09:00 arası; o haftanın özeti yine geçen haftad�
 | Ad | Not |
 |---|---|
 | `HAFTALIK_OZET` | `acik` yazılmadıkça özet gitmez. Tanınmayan değer açmaz; Kurulum denetimi kartı söyler |
-| `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Boşsa `BEKCI_ALICILAR` |
+| `HAFTALIK_OZET_ALICILAR` | Virgülle ayrık e-posta adresleri (en çok 20). Boşsa `BEKCI_ALICILAR`. Sistem > Bildirimler'de "Haftalık özet"i açan hesaplar da alır |
 
 E-posta ayarları ve gönderim bekçiyle ortaktır (alıcılar birbirini
 görmez). İleti düz metin ve ortak tasarımlı HTML'dir: gün gün ihlal sayısı, önceki
@@ -533,14 +578,18 @@ haftayla fark, en sık 5 tür (ölçümsüz başlık) ve 5 kamera, inceleme duru
 (bekliyor / incelendi / yanlış alarm), sistem olayı sayısı, programın
 gönderdiği bu ayın çalışma oranı ve bağlantının şu anki durumu. Sayılar olay
 arşivinden gelir (aşağıda Plan ve maliyet). Fotoğraf, olay ayrıntısı, adres ya
-da sır girmez. Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
+da sır girmez. Bağlantılar panoda doğru yeri açar: düğme Olaylar > Arşiv'i
+(son 7 gün), her tür ve kamera satırı arşivi o türe / kameraya süzülmüş,
+"Bekliyor" satırı İnceleme modunu (inceleyemeyen kişi Olaylar'da bekleyenleri
+görür). Bekçinin cevabına `haftalik` eklenir (`gonderildi`, `sebep`:
 `zamani_degil`, `bu_hafta_gitti`, `alici_yok`, `gidemedi`). Kurulum denetimi
 kartı özetin açık olup olmadığını, alıcı sayısını ve son gönderim anını
 gösterir.
 
 ### E-posta (Resend) ve tasarım (20.11.2026)
 
-Sitenin bütün e-postaları (bekçi uyarısı, haftalık özet, deneme) tek yoldan gider:
+Sitenin bütün e-postaları (bekçi uyarısı, yeniden haber veriyor, ayar sorunu,
+haftalık özet, deneme) tek yoldan gider:
 `RESEND_API_KEY` yazılıysa [Resend](https://resend.com)'in HTTPS API'siyle, yoksa
 yukarıdaki SMTP ayarlarıyla bugünkü gibi. Kurmak için:
 
@@ -566,10 +615,24 @@ yalnız hangi yolun açık olduğunu (Resend / SMTP / yok) gösterir.
 
 **Tasarım:** her e-posta düz metin ve HTML'dir; HTML tablo düzeninde, satır içi
 stilli (Gmail, Outlook, iPhone Mail), en çok 560 px, açık zeminli: üstte yazıyla
-"NextGen Detector · DALSAN", renkli durum şeridi (alarm kırmızı, deneme yeşil,
-özet gri), başlık, birkaç temel bilgi, site kendi adresini biliyorsa
-(Vercel'in `VERCEL_PROJECT_PRODUCTION_URL`'i) **Panoyu aç** düğmesi ve altta
-neden geldiği. Programdan gelen adlar kaçışlıdır. Yerel önizleme:
+"NextGen Detector · DALSAN", renkli durum şeridi (alarm kırmızı, düzelme ve
+deneme yeşil, ayar sorunu turuncu, özet gri), başlık, birkaç temel bilgi, panoda
+doğru yeri açan bir düğme ve altta neden geldiği ile bildirim ayarlarının
+bağlantısı. Programdan gelen adlar kaçışlıdır.
+
+**Bağlantılar doğrudan açılır (21.11.2026):** sitenin adresi her zaman bilinir:
+isteğe bağlı `SITE_ADRESI` (alan adı ya da `https://` adresi, ör. özel alan
+adı) -> Vercel'in `VERCEL_PROJECT_PRODUCTION_URL`'i -> `dalsansite.vercel.app`;
+alan adı olamayan değer yok sayılır. Bağlantılar `/pano?...#ekran` biçimindedir:
+uyarı, program kapalı ve düzelme `#genel` (bağlantı durumu), haftalık özet
+`?arsiv=7#olaylar` (tür / kamera satırı `&tip=` / `&yer=`, "Bekliyor"
+`?inceleme=1`), deneme ve "Bildirim ayarları" `?bolum=bildirimler#sistem`,
+ayar sorunu `?bolum=kurulum#sistem`. Değerler yüzde kodludur; düz metin de aynı
+adresleri taşır. Pano bunları ilk açılışta ve oturum yoksa girişten sonra
+(/demo'da da) bir kez uygular, sorguyu adres çubuğundan siler. Beyaz liste:
+bilinen ekran, arşiv dönemi (`bugun`, `7`, `30`, `90`), düz metin tür / kamera
+süzgeci, `inceleme=1`, bilinen bölüm; başka her şey yok sayılır, hiçbiri HTML'e
+yazılmaz. Yerel önizleme:
 `python3 tests/eposta_onizleme.py <klasör>` her şablonu örnek veriyle HTML ve
 düz metin olarak yazar.
 

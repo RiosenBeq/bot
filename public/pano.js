@@ -153,6 +153,7 @@ function panoyuBaslat() {
     iki_adim_sifirla: "İki adımlı doğrulama sıfırlandı",
     diger_cihazlardan_cik: "Diğer cihazlardan çıkıldı",
     deneme_epostasi: "Deneme e-postası",
+    bildirim_ayarla: "Bildirim ayarı",
     komut: "Komut gönderildi",
     komut_sonuc: "Komut sonucu",
     komut_dustu: "Komut düştü",
@@ -238,6 +239,7 @@ function panoyuBaslat() {
   let arsivZamanlayici = null; // aramada yazarken bekleme
   const arsivSuzgeci = { donem: "7", tip: "", yer: "", durum: "", ara: "", sayfa: 1 };
   let inceleme = null; // inceleme modu: {liste: [olay], sira, kararlar: Map(id -> karar)}
+  let bildirimTaslak = false; // Sistem > Bildirimler'de kaydedilmemiş değişiklik var
   const bildirimler = []; // [{id, bitti: ms | 0, uzerinde}] - en yenisi sonda
 
   // ----------------------------------------------------------- yardımcılar
@@ -556,6 +558,7 @@ function panoyuBaslat() {
     kurulumVerisi = null;
     denemeEpostaFormunuKapat();
     $("deneme-eposta-sonuc").hidden = true;
+    bildirimFormunuTemizle();
     tekEkranGoster("giris");
     girisAdiminaDon();
     $("oturum-bandi").hidden = !oturumDustu;
@@ -672,6 +675,7 @@ function panoyuBaslat() {
     $("son-giris").hidden = !son;
     if (son) yaz($("son-giris"), "Hesabınıza son giriş: " + (gunEtiketi(son) ? "" : "bugün ") + tarihSaatMetni(son));
     ikiAdimCiz();
+    bildirimAyariniCiz();
   }
 
   $("sifre-ac").addEventListener("click", function () {
@@ -735,6 +739,145 @@ function panoyuBaslat() {
       duyur(CIHAZLAR_SONUC);
     } catch (hata) {
       $("cihazlar-hatasi").textContent = hata.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
+
+  // ------------------------------------------------------- bildirimler
+
+  /* Sistem > Bildirimler: kişinin kendi adresi ve iki anahtarı (sunucuda hesap
+     kaydında; /api/durum oturum.bildirim'de döner, ek istek yok). Kutular
+     yazılırken tazeleme onlara dokunmaz; Kaydet'ten sonra sunucunun hâli
+     çizilir. Kurucunun kaydı olmadığı için yalnız kısa bir not görür. */
+  const EPOSTA_DESENI = /^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/;
+  const KURUCU_BILDIRIM =
+    "Kurucu hesabının kaydı yok, bildirim ayarı tutulamaz: kendinize ayrı bir hesap açın " +
+    "ya da adresinizi Vercel'deki BEKCI_ALICILAR listesine yazın.";
+  const BILDIRIM_ADLARI = { sistem: "sistem uyarıları", haftalik: "haftalık özet" };
+
+  function bildirimAyari() {
+    return (oturum && oturum.bildirim) || null;
+  }
+
+  function bildirimAyariniCiz() {
+    if (!oturum) return;
+    const kurucu = !!oturum.kurucu;
+    $("bildirim-ayari-formu").hidden = kurucu;
+    $("bildirim-kurucu").hidden = !kurucu;
+    if (kurucu) yaz($("bildirim-kurucu"), KURUCU_BILDIRIM);
+    const ayar = bildirimAyari();
+    const acik = !!ayar && (ayar.sistem || ayar.haftalik);
+    const durum = $("bildirim-ayari-durumu");
+    const imza = kurucu ? "" : acik ? "acik" : "kapali";
+    if (durum.dataset.imza !== imza) {
+      durum.dataset.imza = imza;
+      temizle(durum);
+      if (imza) durum.appendChild(acik ? rozet("Açık", "basari") : rozet("Kapalı", ""));
+    }
+    if (kurucu || bildirimTaslak) return;
+    const adres = ayar ? ayar.eposta : "";
+    if ($("bildirim-adresi").value !== adres) $("bildirim-adresi").value = adres;
+    $("bildirim-sistem").checked = !!(ayar && ayar.sistem);
+    $("bildirim-haftalik").checked = !!(ayar && ayar.haftalik);
+  }
+
+  function bildirimFormunuTemizle() {
+    bildirimTaslak = false;
+    $("bildirim-adresi").value = "";
+    $("bildirim-adresi").removeAttribute("aria-invalid");
+    $("bildirim-sistem").checked = false;
+    $("bildirim-haftalik").checked = false;
+    $("bildirim-ayari-hatasi").textContent = "";
+    $("bildirim-ayari-sonuc").hidden = true;
+  }
+
+  function bildirimDegisti() {
+    bildirimTaslak = true;
+    $("bildirim-ayari-sonuc").hidden = true;
+    $("bildirim-ayari-hatasi").textContent = "";
+    $("bildirim-adresi").removeAttribute("aria-invalid");
+  }
+  $("bildirim-adresi").addEventListener("input", bildirimDegisti);
+  $("bildirim-sistem").addEventListener("change", bildirimDegisti);
+  $("bildirim-haftalik").addEventListener("change", bildirimDegisti);
+
+  function bildirimSonucu(metin) {
+    $("bildirim-ayari-sonuc").textContent = metin;
+    $("bildirim-ayari-sonuc").hidden = false;
+    duyur(metin);
+  }
+
+  $("bildirim-ayari-formu").addEventListener("submit", async function (olay) {
+    olay.preventDefault();
+    const hata = $("bildirim-ayari-hatasi");
+    hata.textContent = "";
+    $("bildirim-ayari-sonuc").hidden = true;
+    const eposta = $("bildirim-adresi").value.trim();
+    const sistem = $("bildirim-sistem").checked;
+    const haftalik = $("bildirim-haftalik").checked;
+    let sorun = "";
+    if (eposta && (eposta.length > 254 || !EPOSTA_DESENI.test(eposta))) {
+      sorun = "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).";
+    } else if (!eposta && (sistem || haftalik)) {
+      sorun = "Bildirim almak için e-posta adresinizi yazın.";
+    }
+    if (sorun) {
+      $("bildirim-adresi").setAttribute("aria-invalid", "true");
+      hata.textContent = sorun;
+      $("bildirim-adresi").focus();
+      return;
+    }
+    const dugme = $("bildirim-kaydet");
+    dugme.disabled = true;
+    try {
+      const veri = await hesapIslem({ eylem: "bildirim_ayarla", eposta: eposta, sistem: sistem, haftalik: haftalik });
+      bildirimTaslak = false;
+      if (oturum) {
+        if (veri.bildirim) oturum.bildirim = veri.bildirim;
+        else delete oturum.bildirim;
+      }
+      bildirimAyariniCiz();
+      const b = veri.bildirim;
+      const acik = b ? ["sistem", "haftalik"].filter((tur) => b[tur]).map((tur) => BILDIRIM_ADLARI[tur]) : [];
+      bildirimSonucu(
+        acik.length
+          ? "Kaydedildi: " + acik.join(" ve ") + " " + b.eposta + " adresine gelir."
+          : "Kaydedildi: size bildirim e-postası gelmez."
+      );
+    } catch (e) {
+      hata.textContent = e.message;
+    } finally {
+      dugme.disabled = false;
+    }
+  });
+
+  /* Kendime deneme gönder: deneme KAYITLI adrese gider (sunucu oturumdan okur);
+     saatte 5, Kurulum denetimindeki denemeyle aynı sayaç. */
+  $("bildirim-dene").addEventListener("click", async function () {
+    const hata = $("bildirim-ayari-hatasi");
+    hata.textContent = "";
+    $("bildirim-ayari-sonuc").hidden = true;
+    const ayar = bildirimAyari();
+    if (bildirimTaslak || !ayar) {
+      hata.textContent = bildirimTaslak
+        ? "Önce Kaydet'e basın: deneme kayıtlı adrese gider."
+        : "Önce e-posta adresinizi yazıp kaydedin.";
+      return;
+    }
+    const dugme = $("bildirim-dene");
+    dugme.disabled = true;
+    try {
+      const veri = await hesapIslem({ eylem: "bildirim_dene" });
+      bildirimSonucu(
+        "Deneme e-postası " +
+          (veri.saglayici === "smtp" ? "SMTP" : "Resend") +
+          " ile " +
+          ayar.eposta +
+          " adresine gönderildi. Gelmezse istenmeyen e-posta klasörüne bakın."
+      );
+    } catch (e) {
+      hata.textContent = e.message;
     } finally {
       dugme.disabled = false;
     }
@@ -1008,6 +1151,75 @@ function panoyuBaslat() {
   function gorunumeGit(ad) {
     if (location.hash === "#" + ad) gorunumuUygula();
     else location.hash = ad;
+  }
+
+  // ------------------------------------------------------- derin bağ
+
+  /* E-postadaki bağlantılar (api/_pano.py pano_bagi): /pano?arsiv=7&tip=...#olaylar.
+     Ekran adresin çapasıdır (gorunumAdi okur). Sorgu SIKI bir beyaz listeyle
+     okunur: bilinen arşiv dönemi, düz metin tür / kamera süzgeci (yalnız arşivle;
+     kontrol karakteri atılır, en çok 160), inceleme bayrağı, bilinen bölüm.
+     Başka her şey yok sayılır; değerler yalnız süzgece, sorguya ve textContent'e
+     gider, HTML'e yazılmaz. */
+  const ARSIV_DONEMLERI = ["bugun", "7", "30", "90"];
+  const DERIN_BOLUMLER = { bildirimler: "bildirim-ayari", kurulum: "denetim-karti" };
+
+  function derinBagCoz(sorgu) {
+    const p = new URLSearchParams(sorgu);
+    const bag = {};
+    if (ARSIV_DONEMLERI.includes(p.get("arsiv"))) {
+      bag.arsiv = p.get("arsiv");
+      for (const ad of ["tip", "yer"]) {
+        const deger = (p.get(ad) || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 160);
+        if (deger) bag[ad] = deger;
+      }
+    }
+    if (p.get("inceleme") === "1") bag.inceleme = true;
+    const bolum = p.get("bolum");
+    if (bolum && Object.prototype.hasOwnProperty.call(DERIN_BOLUMLER, bolum)) bag.bolum = bolum;
+    return Object.keys(bag).length ? bag : null;
+  }
+
+  // Sayfa açılırken okunur; giriş gerekiyorsa girişten sonraki ilk yüklemeye kadar bekler
+  let derinBag = derinBagCoz(location.search);
+
+  /* Bağlantının istediği yer bir kez açılır: ilk başarılı yüklemede (giriş
+     gerekiyorsa girişten sonra; /demo'da da). Adres çubuğundaki sorgu silinir
+     (yenileyince süzgeç yeniden kurulmaz), çapa bağlantının ekranı olur (olay
+     tetiklenmeden: sayfa başa kaymaz). İnceleme modunu açamayan (izleyici,
+     bekleyen yok, bağlantı yok) Olaylar'da bekleyenleri görür. */
+  async function derinBagiUygula() {
+    const bag = derinBag;
+    if (!bag || !oturum) return;
+    derinBag = null;
+    try {
+      history.replaceState(null, "", location.pathname + "#" + (bag.bolum ? "sistem" : "olaylar"));
+    } catch (hata) {
+      /* adres değiştirilemedi: sorgu adreste kalır, yeniden uygulanmaz */
+    }
+    gorunumuUygula();
+    if (bag.arsiv) {
+      Object.assign(arsivSuzgeci, { donem: bag.arsiv, tip: bag.tip || "", yer: bag.yer || "", durum: "", ara: "", sayfa: 1 });
+      for (const d of document.querySelectorAll("#arsiv-donemi button")) secimiIsaretle(d, d.dataset.donem === bag.arsiv);
+      $("arsiv-ara").value = "";
+      if (arsivAcik) arsiviYukle();
+      else arsivModu(true);
+    } else if (bag.inceleme) {
+      if (arsivAcik) arsivModu(false);
+      if (!$("inceleme-bandi").hidden) $("inceleme-ac").click();
+      else olaySuzgeciSec("hepsi", true);
+    } else if (bag.bolum) {
+      // Kurulum denetimi kartı yüklenince sayfa uzar: önce o, sonra kaydırma
+      if (kurulumAcik() && !kurulumVerisi) await kurulumuYukle();
+      const hedef = document.getElementById(DERIN_BOLUMLER[bag.bolum]);
+      if (!hedef || hedef.hidden) return;
+      hedef.scrollIntoView({ block: "start" });
+      const baslik = hedef.querySelector("h2, h3");
+      if (baslik) {
+        baslik.setAttribute("tabindex", "-1");
+        baslik.focus({ preventScroll: true });
+      }
+    }
   }
 
   window.addEventListener("hashchange", function () {
@@ -3647,6 +3859,8 @@ function panoyuBaslat() {
     if (!k.acik && !k.kurucu) rozetler.appendChild(rozet("Girişi kapalı", "tehlike"));
     if (k.sifre_degismeli) rozetler.appendChild(rozet("Şifre bekliyor", "uyari"));
     if (k.iki_adim) rozetler.appendChild(rozet("2 adım", "basari"));
+    // Bu hesap bir bildirim e-postası alıyor (adres gösterilmez)
+    if (k.bildirim) rozetler.appendChild(rozet("Bildirim açık", "bilgi"));
     ust.appendChild(rozetler);
     const acik = acikHesap === k.ad;
     if (yonetilebilir(k)) {
@@ -4071,6 +4285,19 @@ function panoyuBaslat() {
   const VERCEL_AYARI = "Vercel > Settings > Environment Variables";
   const EPOSTA_AYARI = "RESEND_API_KEY ve EPOSTA_KIMDEN (README, E-posta)";
 
+  /* "Vercel listesinden 2, hesaplardan 3": hesaplar Sistem > Bildirimler'de anahtarı açanlar */
+  function aliciSayisi(liste, hesap) {
+    return "Vercel listesinden " + sayiMetni(liste || 0) + ", hesaplardan " + sayiMetni(hesap || 0);
+  }
+
+  /* Listede yok sayılan girdiler (eski tg:, adres olmayan); yoksa boş */
+  function yokSayilan(ad, tg, gecersiz) {
+    const parcalar = [];
+    if (tg) parcalar.push("eski tg: girdileri");
+    if (gecersiz) parcalar.push(sayiMetni(gecersiz) + " geçersiz adres");
+    return parcalar.length ? ad + "'daki " + parcalar.join(" ve ") + " yok sayılıyor; düzeltip Redeploy edin." : "";
+  }
+
   /* [ad, tamam mı, ne yapılacağı] satırları */
   function kurulumSatirlari(k, baglanti) {
     const satirlar = [];
@@ -4109,14 +4336,20 @@ function panoyuBaslat() {
     // satır çıkmaz, yukarıdaki satır zaten ne yapılacağını söyler
     if (k.bekci || k.bekci_gecersiz) {
       let eposta;
+      const yok = yokSayilan("BEKCI_ALICILAR", k.alici_tg, k.alici_gecersiz);
       if (!k.eposta) {
         eposta = [false, "Uyarı e-postası için " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin, sonra Redeploy."];
-      } else if (!k.alici) {
-        eposta = [false, VERCEL_AYARI + ": BEKCI_ALICILAR'a virgülle ayrılmış e-posta adreslerini yazın, sonra Redeploy."];
-      } else if (k.alici_tg) {
-        eposta = [false, "BEKCI_ALICILAR'daki eski tg: girdileri yok sayılıyor; silip Redeploy edin."];
+      } else if (!k.alici && !k.alici_hesap) {
+        eposta = [
+          false,
+          VERCEL_AYARI +
+            ": BEKCI_ALICILAR'a virgülle ayrılmış e-posta adreslerini yazın, sonra Redeploy; ya da kişiler Sistem > Bildirimler'de Sistem uyarıları'nı açsın." +
+            (yok ? " " + yok : ""),
+        ];
+      } else if (yok) {
+        eposta = [false, aliciSayisi(k.alici, k.alici_hesap) + " alıcıya gider. " + yok];
       } else {
-        eposta = [true, sayiMetni(k.alici) + " alıcıya gider."];
+        eposta = [true, aliciSayisi(k.alici, k.alici_hesap) + " alıcıya gider."];
       }
       satirlar.push(["Bekçi e-postası", ...eposta]);
     }
@@ -4131,17 +4364,24 @@ function panoyuBaslat() {
       ];
     } else if (!k.eposta) {
       ozet = [false, "Açık ama e-posta ayarı yok. " + VERCEL_AYARI + ": " + EPOSTA_AYARI + " ekleyin, sonra Redeploy."];
-    } else if (!k.haftalik_alici) {
-      ozet = [false, "Açık ama alıcı yok. " + VERCEL_AYARI + ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın."];
+    } else if (!k.haftalik_alici && !k.haftalik_alici_hesap) {
+      ozet = [
+        false,
+        "Açık ama alıcı yok. " +
+          VERCEL_AYARI +
+          ": HAFTALIK_OZET_ALICILAR'a (ya da BEKCI_ALICILAR'a) e-posta adreslerini yazın; ya da kişiler Sistem > Bildirimler'de Haftalık özet'i açsın.",
+      ];
     } else if (!k.bekci_anahtari) {
       ozet = [false, "Özet bekçinin günlük çağrısıyla gider. " + VERCEL_AYARI + ": en az 16 karakterlik CRON_SECRET ekleyin, sonra Redeploy."];
     } else {
+      const yok = yokSayilan("HAFTALIK_OZET_ALICILAR", k.haftalik_alici_tg, k.haftalik_alici_gecersiz);
       ozet = [
-        true,
+        !yok,
         "Her pazartesi 08:00'den sonra " +
-          sayiMetni(k.haftalik_alici) +
+          aliciSayisi(k.haftalik_alici, k.haftalik_alici_hesap) +
           " alıcıya gider. " +
-          (k.haftalik_son ? "Son gönderim: " + tarihSaatMetni(k.haftalik_son) + "." : "Henüz gönderilmedi."),
+          (k.haftalik_son ? "Son gönderim: " + tarihSaatMetni(k.haftalik_son) + "." : "Henüz gönderilmedi.") +
+          (yok ? " " + yok : ""),
       ];
     }
     satirlar.push(["Haftalık özet e-postası", ...ozet]);
@@ -4314,7 +4554,7 @@ function panoyuBaslat() {
     olay.preventDefault();
     $("deneme-eposta-hatasi").textContent = "";
     const alici = $("deneme-eposta-adres").value.trim();
-    const gecerli = alici.length <= 200 && /^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/.test(alici);
+    const gecerli = alici.length <= 200 && EPOSTA_DESENI.test(alici);
     $("deneme-eposta-adres").toggleAttribute("aria-invalid", !gecerli);
     if (!gecerli) {
       $("deneme-eposta-hatasi").textContent = "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).";
@@ -4464,6 +4704,7 @@ function panoyuBaslat() {
       siteUyarisi("");
       panoyuCiz(veri);
       panoyuGoster();
+      derinBagiUygula(); // e-postadaki bağlantının yeri (bir kez)
       // Bu okuma kutucuklar çizilmeden gitti (liste boştu) ve kutucuklar şimdi
       // var: görünenleri hemen bildir, fabrika ilk rapor cevabında listeyi alsın
       if (kareSorgusu === "&kameralar=" && kareIzleniyor() && gorunenKameraSorgusu() !== "&kameralar=") {

@@ -138,14 +138,44 @@ def test_saglayici_secimi_ve_gonderen(monkeypatch):
     assert giden == ["pano@ornek.com"] and resend.istekler == []
 
 
-def test_pano_adresi_yalniz_alan_adindan():
-    def adres(deger):
-        return _pano.ayar_oku({"VERCEL_PROJECT_PRODUCTION_URL": deger}).pano_adresi
+def test_pano_adresi_her_zaman_bilinir_site_adresi_once():
+    """SITE_ADRESI (alan adı ya da https adresi) -> VERCEL_PROJECT_PRODUCTION_URL ->
+    resmi adres. Alan adı olamayan değer yok sayılır, sıradakine geçilir."""
+    varsayilan = "https://dalsansite.vercel.app/pano"
 
+    def adres(vercel="", site_adresi=None):
+        ortam = {"VERCEL_PROJECT_PRODUCTION_URL": vercel}
+        if site_adresi is not None:
+            ortam["SITE_ADRESI"] = site_adresi
+        return _pano.ayar_oku(ortam).pano_adresi
+
+    assert _pano.ayar_oku({}).pano_adresi == varsayilan
     assert adres("dalsan.vercel.app") == "https://dalsan.vercel.app/pano"
     assert adres(" Pano.Firma.COM.tr/ ") == "https://pano.firma.com.tr/pano"
     for bozuk in ("", "javascript:alert(1)", "a b.com", "localhost", 'x.com"><b>'):
-        assert adres(bozuk) == ""
+        assert adres(bozuk) == varsayilan
+    # SITE_ADRESI önce gelir; https adresi ve sondaki /pano da olur
+    assert adres("dalsan.vercel.app", "izleme.firma.com") == "https://izleme.firma.com/pano"
+    assert adres("x.vercel.app", "https://Izleme.Firma.com/pano/") == (
+        "https://izleme.firma.com/pano"
+    )
+    for bozuk in ("http://izleme.firma.com", "javascript:alert(1)", "a b.com", "   "):
+        assert adres("dalsan.vercel.app", bozuk) == "https://dalsan.vercel.app/pano"
+
+
+def test_derin_bag_kodlanir_yalniz_bilinen_adlar():
+    kok = "https://dalsan.vercel.app/pano"
+    assert _pano.pano_bagi(kok, "genel") == kok + "#genel"
+    assert _pano.pano_bagi(kok, "olaylar", arsiv="7", tip="Baret yok") == (
+        kok + "?arsiv=7&tip=Baret%20yok#olaylar"
+    )
+    # Türkçe harf UTF-8, ayraçlar (& = # / ? +) ve tırnak kodlanır: parametre bölünmez
+    bag = _pano.pano_bagi(kok, "olaylar", arsiv="7", yer='Kapı & "A"=#/?+')
+    assert bag == kok + "?arsiv=7&yer=Kap%C4%B1%20%26%20%22A%22%3D%23%2F%3F%2B#olaylar"
+    assert urllib.parse.parse_qs(urllib.parse.urlsplit(bag).query)["yer"] == ['Kapı & "A"=#/?+']
+    # Bilinmeyen ad ve boş değer yazılmaz; adres yoksa bağlantı yok
+    assert _pano.pano_bagi(kok, "olaylar", arsiv="7", tip="", foo="x") == kok + "?arsiv=7#olaylar"
+    assert _pano.pano_bagi("", "genel") == ""
 
 
 # ------------------------------------------------------------ hata eşlemesi
@@ -223,8 +253,8 @@ def test_bekci_resend_ile_her_aliciya_ayri_tasarimli_ileti(monkeypatch, capsys):
     son = govdeler[1]
     assert son["subject"].startswith("Alarm: ") and "sistemden haber yok" in son["subject"]
     assert "Sistemden haber yok" in son["html"]
-    assert 'href="https://dalsan.vercel.app/pano"' in son["html"]
-    assert "Panoyu açın: https://dalsan.vercel.app/pano" in son["text"]
+    assert 'href="https://dalsan.vercel.app/pano#genel"' in son["html"]
+    assert "Bağlantı durumunu gör: https://dalsan.vercel.app/pano#genel" in son["text"]
     gunluk = capsys.readouterr().err
     assert "Bekçi bildirimi gidemedi" in gunluk and "RESEND_API_KEY" in gunluk
     assert RESEND_ANAHTARI not in gunluk and "kopuk@ornek" not in gunluk
@@ -233,23 +263,34 @@ def test_bekci_resend_ile_her_aliciya_ayri_tasarimli_ileti(monkeypatch, capsys):
 # ------------------------------------------------------------------ tasarım
 
 
+# Her e-postanın şeridi ve düğmesinin açtığı yer (pano_bagi)
+SABLONLAR = {
+    "ayar-sorunu": ("#d97706", "?bolum=kurulum#sistem", "Kurulum denetimini aç"),
+    "bekci-haber-yok": ("#dc2626", "#genel", "Bağlantı durumunu gör"),
+    "bekci-program-kapali": ("#dc2626", "#genel", "Bağlantı durumunu gör"),
+    "bekci-yeniden-haber": ("#15803d", "#genel", "Bağlantı durumunu gör"),
+    "deneme": ("#15803d", "?bolum=bildirimler#sistem", "Bildirim ayarlarını aç"),
+    "deneme-kendine": ("#15803d", "?bolum=bildirimler#sistem", "Bildirim ayarlarını aç"),
+    "haftalik-ozet": ("#616367", "?arsiv=7#olaylar", "Olay arşivini aç"),
+}
+
+
 def test_her_sablon_ortak_tasarimda_onizleme_yazilir(tmp_path):
     yazilan = onizlemeleri_yaz(tmp_path)
-    assert sorted(y.name for y in yazilan) == [
-        "bekci-haber-yok.html",
-        "bekci-program-kapali.html",
-        "deneme.html",
-        "haftalik-ozet.html",
-    ]
-    renkler = {"bekci": "#dc2626", "deneme": "#15803d", "haftalik": "#616367"}
+    assert sorted(y.stem for y in yazilan) == sorted(SABLONLAR)
+    ayarlar = ORNEK_ADRES + "?bolum=bildirimler#sistem"
     for yol in yazilan:
+        serit, yer, dugme = SABLONLAR[yol.stem]
         icerik = yol.read_text(encoding="utf-8")
         assert icerik.startswith("<!doctype html>") and "max-width:560px" in icerik
-        assert _pano.EPOSTA_MARKA in icerik and f'href="{ORNEK_ADRES}"' in icerik
+        assert _pano.EPOSTA_MARKA in icerik and f'href="{ORNEK_ADRES}{yer}"' in icerik
+        assert f">{dugme}</a>" in icerik and serit in icerik
         assert "<script" not in icerik and "<img" not in icerik
-        assert renkler[yol.stem.split("-")[0]] in icerik
         metin = yol.with_suffix(".txt").read_text(encoding="utf-8")
-        assert metin.startswith("Konu: ") and f"Panoyu açın: {ORNEK_ADRES}" in metin
+        assert metin.startswith("Konu: ") and f"{dugme}: {ORNEK_ADRES}{yer}" in metin
+        # Altta neden geldiği ve bildirim ayarlarının bağlantısı (iki parçada da)
+        if not yol.stem.startswith("deneme"):
+            assert f'href="{ayarlar}"' in icerik and f"Bildirim ayarları: {ayarlar}" in metin
     # Programdan gelen adlar kaçışlı; düz metinde olduğu gibi
     ozet = (tmp_path / "haftalik-ozet.html").read_text(encoding="utf-8")
     assert "Kapı &lt;3&gt;" in ozet and "Kapı <3>" not in ozet
@@ -306,7 +347,7 @@ def test_deneme_epostasi_yalniz_yonetici_kayitli_ve_saatte_bes(site, monkeypatch
     ileti = resend.govdeler()[0]
     assert ileti["to"] == [ALICI] and ileti["subject"].startswith("Deneme")
     assert "E-posta gönderimi çalışıyor" in ileti["html"] and "kurucu" in ileti["text"]
-    assert 'href="https://dalsan.vercel.app/pano"' in ileti["html"]
+    assert 'href="https://dalsan.vercel.app/pano?bolum=bildirimler#sistem"' in ileti["html"]
     satirlar = [r for r in _kayit(site, kurucu) if r["is"] == "deneme_epostasi"]
     assert len(satirlar) == _pano.DENEME_EPOSTA_SINIRI
     assert {(r["kim"], r["ozet"], r["sonuc"]) for r in satirlar} == {

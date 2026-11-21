@@ -126,6 +126,7 @@
   --yer-tutucu: #9d9d9e;
   --kod-dolu-kenar: #b9bdc8;
   --kare-uyari: #fbd9b6; /* görüntü üstünde, iki temada aynı */
+  --anahtar-topuz: #ffffff; /* açık anahtarın yuvarlağı, iki temada aynı */
   --marka-zemin: #0c0e1b; /* giriş ekranının marka paneli, iki temada koyu */
   --demo-zemin: #0c0e1b;
   --demo-secici: #262a35;
@@ -226,6 +227,7 @@
   --yer-tutucu: #6a7080;
   --kod-dolu-kenar: #4b505d;
   --kare-uyari: #fbd9b6;
+  --anahtar-topuz: #ffffff;
   --marka-zemin: #0c0e1b;
   --demo-zemin: #252935;
   --demo-secici: #14161c;
@@ -3254,6 +3256,67 @@ a:hover {
 .iki-adim > .not {
   margin-bottom: 8px;
 }
+/* Bildirimler: gerçek onay kutusu (role="switch"), anahtar görünümünde. Bütün
+   satır kutunun etiketidir: dokunma alanı satırın tamamı (en az 56 px). Yuvarlak
+   arka plan resmidir (::before her tarayıcıda onay kutusunda çizilmez). */
+.bildirim-ayari .ic-form {
+  margin-bottom: 12px;
+}
+.bildirim-formu .sonuc-satiri {
+  margin: 0;
+}
+.bildirim-ayari .ayar-adi:focus {
+  outline: none;
+}
+.anahtar-satiri {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 6px 0;
+  border-top: 1px solid var(--cizgi);
+  cursor: pointer;
+}
+.anahtar-metni {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.anahtar-metni b {
+  color: var(--metin);
+  font-size: 14px;
+  font-weight: 500;
+}
+.anahtar-metni small {
+  color: var(--metin-3);
+  font-size: 13px;
+  line-height: 18px;
+}
+.secim-anahtari {
+  flex: none;
+  width: 44px;
+  height: 26px;
+  margin: 0;
+  border: 1px solid var(--alan-kenari);
+  border-radius: 999px;
+  background: radial-gradient(circle at 12px 50%, var(--alan-kenari) 0 8px, transparent 8.5px)
+    no-repeat var(--yuzey);
+  appearance: none;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.secim-anahtari:checked {
+  border-color: var(--birincil);
+  background: radial-gradient(circle at 30px 50%, var(--anahtar-topuz) 0 8px, transparent 8.5px)
+    no-repeat var(--birincil);
+}
+.secim-anahtari:focus-visible {
+  outline: 2px solid var(--odak);
+  outline-offset: 2px;
+}
 /* Kurulum denetimi: her satır simge + ad + rozet + ne yapılacağı */
 .denetim-listesi {
   display: grid;
@@ -3981,6 +4044,12 @@ a:hover {
   }
   .kare::before {
     display: none;
+  }
+  /* Anahtar görünümü sistem renklerinde kaybolur: tarayıcının kendi kutusu */
+  .secim-anahtari {
+    width: 24px;
+    height: 24px;
+    appearance: auto;
   }
 }
 

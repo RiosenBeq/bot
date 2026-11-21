@@ -365,7 +365,8 @@ def test_gece_kesintisi_bir_kez_uyarir_sabah_toparlanir(site, saat, postaci, bek
     """Gece fabrika bilgisayarı kapanır. Dış izleme her beş dakikada /api/bekci'yi
     çağırır: eşik (20 dk) dolunca vardiya amirine BİR KEZ e-posta gider,
     sonraki çağrılar sessizdir ama 503 döner (izleme servisi de görür).
-    Sabah program dönünce işaret kalkar; bir sonraki kesinti yeniden bildirilir."""
+    Sabah program dönünce işaret kalkar ve bir sonraki bekçi çağrısı bir kez "yeniden
+    haber veriyor" e-postası gönderir; bir sonraki kesinti yeniden bildirilir."""
     fabrika = Fabrika(site, saat)
     fabrika.rapor()
     assert bekci(site, None)[0] == 401
@@ -393,13 +394,18 @@ def test_gece_kesintisi_bir_kez_uyarir_sabah_toparlanir(site, saat, postaci, bek
 
     saat.ilerlet(8 * 3600)  # sabah: program açıldı
     fabrika.rapor()
+    assert len(postaci.giden) == 1  # raporun isteği e-posta göndermez
     kod, cevap = bekci(site)
     assert kod == 200 and cevap["durum"][0]["baglanti"] == "canli"
+    assert cevap["duzelme"] == 1 and len(postaci.giden) == 2
+    assert "yeniden haber veriyor" in postaci.giden[1][2]
+    kod, cevap = bekci(site)  # düzelme kesinti başına bir kez
+    assert kod == 200 and "duzelme" not in cevap and len(postaci.giden) == 2
 
     saat.ilerlet(30 * 60)  # öğlen yeni bir kesinti: yeniden bildirilir
     kod, cevap = bekci(site)
     assert kod == 503 and cevap["uyarildi"] is True
-    assert len(postaci.giden) == 2
+    assert len(postaci.giden) == 3
 
 
 def test_bekci_kapaliyken_hicbir_sey_gondermez(site, saat, postaci, monkeypatch):

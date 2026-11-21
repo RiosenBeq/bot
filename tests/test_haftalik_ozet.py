@@ -196,10 +196,11 @@ def test_hafta_basina_bir_kez_baska_gun_komut_harcamaz():
     kapali = _ozet_ayari(haftalik_ozet="kapali")
     assert _pano.haftalik_ozet_isle(depo, kapali, PAZARTESI, gonder) == {"atlandi": True}
     assert depo.istek == 0
-    # Gönderim: kilit (1) + okuma boru hattı (1) + işareti uzatma ve son an (1)
+    # Gönderim: kilit (1) + okuma boru hattı (1; hesap dizini dahil, dizin boşsa
+    # kayıt okunmaz) + işareti uzatma ve son an (1)
     assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI, gonder)["gonderildi"]
     assert depo.istek == 3
-    assert depo.komutlar == ["SET", "ZREVRANGEBYSCORE", "MGET", "EXPIRE", "SET"]
+    assert depo.komutlar == ["SET", "ZREVRANGEBYSCORE", "MGET", "LRANGE", "EXPIRE", "SET"]
     assert depo.komut("TTL", "dalsan:haftalik_ozet:2026-11-23") > 7 * GUN
     assert depo.komut("GET", _pano.HAFTALIK_OZET_SON_ANAHTARI) == str(int(PAZARTESI))
     # Aynı pazartesi yeniden çağrılınca tek SET NX: göndermez
@@ -226,12 +227,15 @@ def test_hic_gidemezse_isaret_silinir_sonraki_cagri_yeniden_dener():
     assert depo.komut("GET", _pano.HAFTALIK_OZET_SON_ANAHTARI) is None
     gonder = OzetGonderici()
     assert _pano.haftalik_ozet_isle(depo, ayar, PAZARTESI + 300, gonder)["gonderildi"]
-    # Alıcı yoksa kilit bile alınmaz
+    # Alıcı yoksa (liste boş, anahtarı açık hesap yok) işaret silinir: alıcı gelince
+    # sonraki çağrı yeniden dener
     bos = _ozet_ayari(haftalik_alicilar=())
-    assert _pano.haftalik_ozet_isle(SayanDepo(lambda: PAZARTESI), bos, PAZARTESI, gonder) == {
+    bos_depo = SayanDepo(lambda: PAZARTESI)
+    assert _pano.haftalik_ozet_isle(bos_depo, bos, PAZARTESI, gonder) == {
         "gonderildi": False,
         "sebep": "alici_yok",
     }
+    assert bos_depo.komut("GET", "dalsan:haftalik_ozet:2026-11-23") is None
 
 
 def test_pazartesi_gidemeyen_ozet_sali_sabahi_gider():

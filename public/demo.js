@@ -542,6 +542,8 @@
       acik: true,
       sifre_degismeli: false,
       iki_adim: true,
+      // Sistem > Bildirimler: Kullanıcılar ekranında "Bildirim açık" etiketi
+      bildirim: { eposta: "vardiya.amiri@fabrika.example", sistem: true, haftalik: false },
       olusturulduMs: ACILIS - 9 * 24 * SA,
       sonGirisMs: ACILIS - 48 * DK,
     },
@@ -558,6 +560,7 @@
       rol: "izleyici",
       acik: true,
       sifre_degismeli: false,
+      bildirim: { eposta: "fabrika.muduru@fabrika.example", sistem: false, haftalik: true },
       olusturulduMs: ACILIS - 8 * 24 * SA,
       sonGirisMs: ACILIS - 3 * SA,
     },
@@ -655,6 +658,8 @@
      sayısı ve iki adımı kapalı olanlar örnek hesaplardan sayılır (kurucu dahil). */
   function kurulumVerisi() {
     const yoneticiler = kullanicilar.filter((k) => k.acik && k.rol === "yonetici");
+    // Alıcılar: Vercel listesi (örnek 2) ve Sistem > Bildirimler'de anahtarı açık hesaplar
+    const bildirimler = kullanicilar.filter((k) => k.acik && k.bildirim).map((k) => k.bildirim);
     return {
       oturum_anahtari: true,
       oturum_anahtari_kisa: false,
@@ -665,7 +670,9 @@
       eposta_saglayici: "resend",
       eposta_kimden: true,
       alici: 2,
+      alici_hesap: bildirimler.filter((b) => b.sistem).length,
       alici_tg: false,
+      alici_gecersiz: 0,
       ana_tesis: false,
       ana_tesis_gecersiz: false,
       tesis: 1,
@@ -676,6 +683,9 @@
       haftalik_ozet: true,
       haftalik_ozet_gecersiz: false,
       haftalik_alici: 2,
+      haftalik_alici_hesap: bildirimler.filter((b) => b.haftalik).length,
+      haftalik_alici_tg: false,
+      haftalik_alici_gecersiz: 0,
       haftalik_son: sonOzetAni(),
     };
   }
@@ -710,6 +720,8 @@
       olusturuldu: k.olusturulduMs ? iso(k.olusturulduMs) : null,
       son_giris: k.sonGirisMs ? iso(k.sonGirisMs) : null,
       ...(k.iki_adim ? { iki_adim: true } : {}),
+      // Adres dönmez; yalnız bir bildirim aldığı (sunucunun _kullanici_satiri'si)
+      ...(k.acik && k.bildirim && (k.bildirim.sistem || k.bildirim.haftalik) ? { bildirim: true } : {}),
     }));
     const liste = kayit
       .slice()
@@ -1146,6 +1158,7 @@
         sifre_degismeli: false,
         ...(oturumHesabi() && oturumHesabi().iki_adim ? { iki_adim: true } : {}),
         ...(oturumHesabi() && oturumHesabi().sonGirisMs ? { son_giris: iso(oturumHesabi().sonGirisMs) } : {}),
+        ...(oturumHesabi() && oturumHesabi().bildirim ? { bildirim: { ...oturumHesabi().bildirim } } : {}),
         yetkiler: [...rolYetkileri[durum.rol]],
       },
       onizleme: false,
@@ -1426,6 +1439,49 @@
   }
 
   let denemeEpostalari = []; // demoda gönderilen deneme e-postalarının anları (ms)
+  const EPOSTA_DESENI = /^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/;
+
+  /* İki deneme düğmesinin ortak yolu: hesap başına saatte 5 (sunucudaki gibi) */
+  function denemeEpostasi(alici, simdi) {
+    denemeEpostalari = denemeEpostalari.filter((an) => simdi - an < SA);
+    if (denemeEpostalari.length >= 5) {
+      throw new DemoHatasi(429, "cok_sik", "Bir saatte en çok 5 deneme e-postası gönderilir; biraz sonra yeniden deneyin.");
+    }
+    denemeEpostalari.push(simdi);
+    kayitYaz(simdi, durum.ad, durum.rol, "deneme_epostasi", adresGizle(alici) + " · Resend", "tamam");
+    return { tamam: true, saglayici: "resend" };
+  }
+
+  function adresGizle(adres) {
+    const [ad, alan] = adres.split("@");
+    return ad.slice(0, 2) + "***@" + alan;
+  }
+
+  /* Sistem > Bildirimler (api/_pano.py _bildirim_ayarla): adres boşsa ve iki
+     anahtar kapalıysa ayar silinir; işlem kaydına adres kısmen gizli girer. */
+  function bildirimAyarla(govde, simdi) {
+    const hesap = oturumHesabi();
+    if (!hesap) throw new DemoHatasi(400, "kurucu", "Bu demoda bu hesabın kaydı yok.");
+    const eposta = String(govde.eposta || "").trim();
+    const sistem = govde.sistem === true;
+    const haftalik = govde.haftalik === true;
+    if (eposta && (eposta.length > 254 || !EPOSTA_DESENI.test(eposta))) {
+      throw new DemoHatasi(400, "eposta", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).");
+    }
+    if (!eposta && (sistem || haftalik)) {
+      throw new DemoHatasi(400, "eposta", "Bildirim almak için e-posta adresinizi yazın.");
+    }
+    hesap.bildirim = eposta ? { eposta: eposta, sistem: sistem, haftalik: haftalik } : null;
+    const ozet = eposta
+      ? adresGizle(eposta) +
+        " · Sistem uyarıları " +
+        (sistem ? "açık" : "kapalı") +
+        ", Haftalık özet " +
+        (haftalik ? "açık" : "kapalı")
+      : "Adres silindi";
+    kayitYaz(simdi, durum.ad, durum.rol, "bildirim_ayarla", ozet, "tamam");
+    return { tamam: true, bildirim: hesap.bildirim ? { ...hesap.bildirim } : null };
+  }
 
   function hesapIstegi(govde, simdi) {
     const eylem = govde.eylem;
@@ -1436,6 +1492,13 @@
       if (!govde.sifre) throw new DemoHatasi(400, "onay_sifresi", "Şifreniz yanlış; işlem yapılmadı.");
       kayitYaz(simdi, durum.ad, durum.rol, "diger_cihazlardan_cik", "", "tamam");
       return { tamam: true };
+    }
+    // Kendi bildirimleri (her rol): demoda e-posta gerçekten gitmez
+    if (eylem === "bildirim_ayarla") return bildirimAyarla(govde, simdi);
+    if (eylem === "bildirim_dene") {
+      const hesap = oturumHesabi();
+      if (!hesap || !hesap.bildirim) throw new DemoHatasi(400, "eposta", "Önce e-posta adresinizi yazıp kaydedin.");
+      return denemeEpostasi(hesap.bildirim.eposta, simdi);
     }
     if (eylem === "sifre_degistir") {
       if (!govde.eski_sifre)
@@ -1475,17 +1538,10 @@
     // Deneme e-postası: demoda gerçekten gitmez, başarı taklit edilir (sınır sunucudaki gibi)
     if (eylem === "deneme_epostasi") {
       const alici = String(govde.alici || "").trim();
-      if (alici.length > 200 || !/^[^@\s,;<>"']+@[^@\s,;<>"']+\.[^@\s,;<>"']+$/.test(alici)) {
+      if (alici.length > 200 || !EPOSTA_DESENI.test(alici)) {
         throw new DemoHatasi(400, "alici", "Geçerli bir e-posta adresi yazın (ör. ad@firma.com).");
       }
-      denemeEpostalari = denemeEpostalari.filter((an) => simdi - an < SA);
-      if (denemeEpostalari.length >= 5) {
-        throw new DemoHatasi(429, "cok_sik", "Bir saatte en çok 5 deneme e-postası gönderilir; biraz sonra yeniden deneyin.");
-      }
-      denemeEpostalari.push(simdi);
-      const [ad, alan] = alici.split("@");
-      kayitYaz(simdi, durum.ad, durum.rol, "deneme_epostasi", ad.slice(0, 2) + "***@" + alan + " · Resend", "tamam");
-      return { tamam: true, saglayici: "resend" };
+      return denemeEpostasi(alici, simdi);
     }
     if (!["ekle", "rol", "sifre_sifirla", "kapat", "ac", "sil", "iki_adim_sifirla"].includes(eylem)) {
       throw new DemoHatasi(400, "eylem", "Bilinmeyen işlem.");
