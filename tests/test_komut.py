@@ -3,12 +3,11 @@ sınırları, tek ağır iş kilidi ve kayan pencere, teslimde yetki denetimi,
 suruyor geçişleri, tür başına sonuç bekleme, ek süzme, nonce ve alinan."""
 
 import json
-import time
 
 import _pano
 import pytest
 from _pano import PanoHatasi
-from test_uctan_uca import ANAHTAR, _istek, site  # noqa: F401
+from test_uctan_uca import ANAHTAR, _istek, imza_damgasi, site  # noqa: F401
 
 KANALLAR = [{"id": 1, "ad": "Genel", "bolum": ""}, {"id": 2, "ad": "Sevkiyat", "bolum": "Sevkiyat"}]
 MESAJLAR = [{"id": 3, "metin": "Lütfen baret takınız"}]
@@ -337,7 +336,7 @@ def _yokla(site, nonce=None, sonuclar=()):  # noqa: F811
     if nonce is not None:
         govde_d["nonce"] = nonce
     govde = json.dumps(govde_d).encode()
-    zaman = str(int(time.time()))
+    zaman = imza_damgasi(govde)
     return _istek(
         f"{site}/api/komut",
         "POST",

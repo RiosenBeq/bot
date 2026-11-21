@@ -9,7 +9,16 @@ import time
 
 import _pano
 import pytest
-from test_uctan_uca import ANAHTAR, RAPOR, _cerez, _giris, _istek, _rapor_gonder, site  # noqa: F401
+from test_uctan_uca import (  # noqa: F401
+    ANAHTAR,
+    RAPOR,
+    _cerez,
+    _giris,
+    _istek,
+    _rapor_gonder,
+    imza_damgasi,
+    site,
+)
 
 MUDAHALE = {
     "acik": True,
@@ -234,7 +243,7 @@ def test_bozuk_sonuc_ve_yabanci_kimlik_yok_sayilir():
 
 def _fabrika_yoklar(adres, sonuclar=(), anahtar=ANAHTAR):
     govde = json.dumps({"surum": 1, "sonuclar": list(sonuclar)}).encode()
-    zaman = str(int(time.time()))
+    zaman = imza_damgasi(govde)
     return _istek(
         f"{adres}/api/komut",
         "POST",

@@ -22,7 +22,7 @@ from pathlib import Path
 
 import _pano
 import pytest
-from test_uctan_uca import ANAHTAR, SIFRE, _istek
+from test_uctan_uca import ANAHTAR, SIFRE, _istek, imza_damgasi
 
 import yerel_sunucu
 
@@ -103,7 +103,7 @@ class Fabrika:
 
     def _imzali(self, yol: str, govde_sozluk: dict) -> tuple[int, dict, bytes]:
         govde = json.dumps(govde_sozluk).encode()
-        damga = str(int(self.saat()))
+        damga = imza_damgasi(govde, self.saat())
         return _istek(
             f"{self.site}{yol}",
             "POST",
@@ -300,8 +300,8 @@ def test_eski_program_yeni_sitede_calisir_bakim_isi_istenemez(site, saat):
     kod, govde = yonetici.iste("/api/mudahale", {"tur": "anons", "mesaj_id": mesaj_id})
     assert kod == 200, govde
     # Eski program nonce göndermez; site komutu yine verir, nonce boş döner
-    damga = str(int(saat()))
     govde_b = json.dumps({"surum": 1, "sonuclar": []}).encode()
+    damga = imza_damgasi(govde_b, saat())
     kod, _, ham = _istek(
         f"{site}/api/komut",
         "POST",

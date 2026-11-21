@@ -1,5 +1,6 @@
 """Gerçek HTTP ile: yerel sunucu api/*.py dosyalarını Vercel'deki gibi çalıştırır."""
 
+import hashlib
 import json
 import time
 import urllib.error
@@ -36,9 +37,26 @@ def _istek(adres, yontem="GET", govde=None, basliklar=None):
         return hata.code, dict(hata.headers), hata.read()
 
 
+_KULLANILAN_DAMGALAR: set = set()
+
+
+def imza_damgasi(govde: bytes, simdi=None) -> str:
+    """İmzalı test isteğinin zaman damgası. Program her gönderimi (yeniden deneme
+    dahil) yeni damgayla imzalar; site aynı imzayı ikinci kez kabul etmez
+    (_imza_tekrari_engelle). Testler aynı gövdeyi aynı saniyede yeniden
+    gönderebildiği için o gövde o depoya bu damgayla gittiyse damga bir saniye
+    geriye kayar (tolerans 300 sn)."""
+    ozet = hashlib.sha256(govde).hexdigest()
+    an = int(time.time() if simdi is None else simdi)
+    while (id(_pano.DEPO), ozet, an) in _KULLANILAN_DAMGALAR:
+        an -= 1
+    _KULLANILAN_DAMGALAR.add((id(_pano.DEPO), ozet, an))
+    return str(an)
+
+
 def _rapor_gonder(site, rapor, anahtar=ANAHTAR, zaman=None):
     govde = json.dumps(rapor).encode()
-    zaman = str(int(time.time()) if zaman is None else zaman)
+    zaman = imza_damgasi(govde) if zaman is None else str(zaman)
     return _istek(
         f"{site}/api/rapor",
         "POST",

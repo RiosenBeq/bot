@@ -16,7 +16,16 @@ from pathlib import Path
 
 import _pano
 import pytest
-from test_uctan_uca import ANAHTAR, RAPOR, _cerez, _giris, _istek, _rapor_gonder, site  # noqa: F401
+from test_uctan_uca import (  # noqa: F401
+    ANAHTAR,
+    RAPOR,
+    _cerez,
+    _giris,
+    _istek,
+    _rapor_gonder,
+    imza_damgasi,
+    site,
+)
 
 PANO_JS = (Path(__file__).resolve().parents[1] / "public" / "pano.js").read_text(encoding="utf-8")
 JPEG = b"\xff\xd8\xff\xe0" + b"\x10JFIF" + bytes(range(256)) * 4 + b"\xff\xd9"
@@ -35,7 +44,7 @@ RAPOR_KAMERALI = {
 
 def _imzali(adres, yol, govde_sozluk, anahtar=ANAHTAR):
     govde = json.dumps(govde_sozluk).encode()
-    zaman = str(int(time.time()))
+    zaman = imza_damgasi(govde)
     return _istek(
         f"{adres}{yol}",
         "POST",

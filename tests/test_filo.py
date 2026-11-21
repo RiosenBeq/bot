@@ -22,6 +22,7 @@ from test_uctan_uca import (  # noqa: F401
     _giris,
     _istek,
     _rapor_gonder,
+    imza_damgasi,
     site,
 )
 
@@ -407,7 +408,7 @@ def _yokla(site, tesis, nonce="cd" * 16):  # noqa: F811
     if tesis is not None:
         govde_d["tesis"] = tesis
     govde = json.dumps(govde_d).encode()
-    zaman = str(int(time.time()))
+    zaman = imza_damgasi(govde)
     return _istek(
         f"{site}/api/komut",
         "POST",

@@ -571,8 +571,8 @@ GERI_VER = ["SET", "DECR", "SET", "DECR", "SET", "DECR"]
 def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     """Kurucu ve iki adımı kapalı hesap: kilit payı ve hesap kaydı tek istekte
     (AYIR; kurucunun iki adım kaydı da orada okunur), başarılı giriş payı geri
-    verir. Hesapta geri verme son giriş yazımıyla aynı istektedir: istek sayısı
-    eskisi gibi 3; kurucuda 1 istek fazla. Paralel denemeyle kilidi aşmayı
+    verir. Geri verme, son giriş yazımı ve işlem kaydı satırı aynı istektedir
+    (20.11.2026): başarılı giriş 2 istek. Paralel denemeyle kilidi aşmayı
     kapatmanın bedeli budur (inceleme 02.11.2026); yanlış giriş 5 yerine 2 istek."""
     ayar = _pano.Ayar(
         pano_sifresi="kurucu-sifresi-123",
@@ -583,7 +583,7 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     )
     depo = _SayanDepo()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "kurucu", "kurucu-sifresi-123", 1_800_000_000)
-    assert depo.istekler == [AYIR, GERI_VER, ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, [*GERI_VER, "LPUSH", "LTRIM"]]
     kayit = {
         "surum": 1,
         "ad": "ali",
@@ -596,7 +596,7 @@ def test_iki_adimsiz_giris_depoya_bugunku_kadar_istek_atar():
     depo.boru_hatti([["SET", _pano.KULLANICI_ONEKI + "ali", json.dumps(kayit)]])
     depo.istekler.clear()
     _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "dogru-sifre-1", 1_800_000_000, "123456")
-    assert depo.istekler == [AYIR, [*GERI_VER, "SET"], ["LPUSH", "LTRIM"]]
+    assert depo.istekler == [AYIR, [*GERI_VER, "SET", "LPUSH", "LTRIM"]]
     depo.istekler.clear()
     with pytest.raises(_pano.PanoHatasi):
         _pano.giris_dene(depo, ayar, "1.2.3.4", "ali", "yanlis-sifre", 1_800_000_000)

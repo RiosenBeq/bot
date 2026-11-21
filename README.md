@@ -458,7 +458,9 @@ Tesisler ekranı bunu uyarır), `TELEGRAM_BOT` ve `TELEGRAM_SOHBET` artık okunm
 gelir. Bir hedef eşikten uzun süredir sessizse durum kodu **503**, değilse **200**:
 e-posta kurmasanız da izleme servisi 503'te kendisi alarm verir.
 Anahtar yoksa 401, yanlışsa ya da sitede hiç tanımlanmamışsa 403 döner; anahtar
-doğru ama `BEKCI` tanınmayan bir değerse 503 `bekci_ayari`. Cevapta sır, alıcı
+doğru ama `BEKCI` tanınmayan bir değerse 503 `bekci_ayari`. Yanlış anahtar adres
+başına sayılır: 15 dakikada 10 yanlıştan sonra o adres, doğru anahtarla da, 429
+`bekci_kilitli` alır (öbür adresler etkilenmez). Cevapta sır, alıcı
 adresi ya da görüntü yoktur.
 
 Bildirim kısa bir metindir: tesisin adı, son rapordan bu yana geçen dakika, son
@@ -586,8 +588,8 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
 
 - **Vercel:** ücretsiz Hobby planı Vercel'in şartlarına göre yalnız kişisel ve
   ticari olmayan kullanım içindir. Bir fabrika için **Pro** planı gerekir.
-- **Upstash:** her rapor 1 istekte 3 komuttur: 30 sn aralıkla ayda yaklaşık
-  260 bin. Pano açıkken saatte yaklaşık 240 komut okur. Kanıt fotoğrafı başına
+- **Upstash:** her rapor 2 istekte 4 komuttur (biri tekrar koruması, aşağıda
+  Güvenlik): 30 sn aralıkla ayda yaklaşık 345 bin. Pano açıkken saatte yaklaşık 240 komut okur. Kanıt fotoğrafı başına
   3-4 komut. Kameralar ekranı açıkken yük ekrandaki kamera sayısıyla büyür;
   ekrana 10 dakika dokunulmazsa durur (aşağıda).
 - **Kameralar ekranının yükü (tahmin, 17.11.2026).** Ekranda görüntüsü gelen
@@ -617,13 +619,15 @@ gönderilen sonuçlar yine yazılır. `tesis` yoksa cevap bugünkü gibidir.
   yine hepsini gönderir (alan yoksa hepsi kuralı). 50-60 kameralık fabrikada
   Kameralar ekranı sık açılacaksa kullandıkça öde planı ve harcama sınırı gerekir.
 - **Hesaplara geçişin ek yükü:** panoya giren her istek, rolü ve oturumu
-  doğrulamak için hesap kaydını okuyan **bir `MGET` daha** yapar. İki adımı açık
-  hesabın her girişi 2 istek daha yapar (son kullanılan adım okunur, adım
-  harcanır). Giriş kilit payını ayırıp geri verdiği için başarılı giriş 3
-  istektir, yanlış giriş 2. Müdahale ya da
+  doğrulamak için hesap kaydını okur; panonun tazelemesi (`GET /api/durum`)
+  bunu verinin okumasıyla **aynı `MGET`'te** yapar (20.11.2026, eskiden 2 istek).
+  İki adımı açık hesabın her girişi 2 istek daha yapar (son kullanılan adım
+  okunur, adım harcanır). Giriş kilit payını ayırıp geri verdiği için başarılı
+  giriş 2 istektir (geri verme, son giriş ve işlem kaydı satırı birlikte),
+  yanlış giriş 2. Müdahale ya da
   Yönetim ekranı açıkken program komutları sormak için `/api/komut`'a birkaç
   saniyede bir uğrar (ekran kapanınca durur).
-- **Bekçi:** her çağrı 2-4 komuttur; 5 dakikada bir çağrılırsa ayda yaklaşık
+- **Bekçi:** her çağrı 3-5 komuttur (biri yanlış anahtar sayacının okuması); 5 dakikada bir çağrılırsa ayda yaklaşık
   35 bin. `BEKCI=acik` rapor başına komut eklemez: "haber yok" işareti raporun
   zaten yaptığı okumayla (aynı `MGET`) okunur; yalnız bir kesintiden sonraki ilk
   raporda bir `DEL` gider. Vercel Hobby en çok 12 işlev (`api/*.py`) kabul eder;
@@ -724,8 +728,10 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
   hiç almaz; `?mudahale=1`, `?yonetim=1` ve `?filo=1` sorgularını elle eklemek
   bir şey açmaz.
 - **Şifre saklama:** Hesap şifreleri açık değil, hesap başına rastgele tuzla
-  `scrypt` (yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma sabit sürede
-  yapılır. Kurucunun şifresi (`PANO_SIFRESI`) yalnız Vercel'dedir.
+  `scrypt` (n=2^15, ~32 MB; yoksa güçlü PBKDF2) özetiyle saklanır; karşılaştırma
+  sabit sürede yapılır. Eski n=2^14 özetler geçerlidir ve sahibinin ilk başarılı
+  girişinde yeni maliyetle yeniden yazılır (20.11.2026). Kurucunun şifresi
+  (`PANO_SIFRESI`) yalnız Vercel'dedir.
 - **Onay şifresi:** Yeniden başlatma, güncelleme, bilgisayarı yeniden başlatma ve
   her hesap işi (ekleme, rol,
   yeni şifre, kapatma, silme) işi yapanın kendi şifresini ister; yanlış ya da
@@ -739,7 +745,11 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
   HMAC-SHA256 imzalanır (başlıklar `X-Dalsan-Zaman`, `X-Dalsan-Imza`). İmza
   tutmayan ya da saati 5 dakikadan fazla kaymış istek reddedilir; gövde imzadan
   önce okunmaz. Komut cevabı programın o soruda gönderdiği `nonce`'u taşır: eski
-  bir cevap yeniden oynatılamaz.
+  bir cevap yeniden oynatılamaz. Aynı imzalı istek de ikinci kez işlenmez
+  (20.11.2026): imzanın özeti 10 dakika saklanır (`SET NX EX`), tekrarı 409
+  `tekrar` alır; imzalı bir `/api/foto` gövdesi `/api/rapor`'a da geçemez. Program
+  her gönderimi (yeniden deneme dahil) yeni zaman damgasıyla imzaladığı için onu
+  etkilemez.
 - **İki adımlı doğrulama (isteğe bağlı):** Açık hesapta girişte şifreye ek
   olarak telefondaki 6 haneli kod istenir (RFC 6238, HMAC-SHA1, 30 sn, bir adım
   pay). Yanlış kod kilitlere sayılır, bir kod bir kez geçer. Sır hesap kaydında,
@@ -758,8 +768,18 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
   adda da aynı maliyette sahte özet çalışır. Sayaçlarda adresin kendisi değil,
   geri çevrilemeyen özeti tutulur. İki adımlı hesapta yanlış kod da yanlış şifre
   gibi sayılır.
+- **Cihaz çerezi (OWASP, 20.11.2026):** Başarılı girişte tarayıcıya imzalı
+  `pano_cihaz` çerezi verilir (180 gün, yalnız `/api/giris`'e gider, oturum
+  açmaz). O adla geçerli çerezi olan cihazın denemesi ad ve genel kilide girmez,
+  kendi sayacına sayılır (15 dakikada 5 yanlışta o cihaz 15 dakika 429
+  `cihaz_kilitli`); adres kilidi sürer. Kötü niyetli denemeler adı ya da bütün
+  girişi kilitlese de daha önce girilmiş cihaz girebilir.
 - **İşlem kaydı:** Her hesap işi, her komut ve her giriş / çıkış, kim yaptığıyla
-  üç listede tutulur; yönetici Kullanıcılar ekranından görür. Hesap listesini ve
+  dört listede tutulur; yönetici Kullanıcılar ekranından görür. Hesap
+  değişikliği ile kayıt satırı aynı istekte yazılır: arada bir Upstash hatası
+  değişikliği kayıtsız bırakamaz. Reddedilen denemeler (yetki reddi, hatalı
+  giriş) kendi listelerindedir ve ekrandaki 300 satırlık kesmeye girmez: kişi
+  kendi başarılı girişleriyle onları kayıttan itemez. Hesap listesini ve
   işlem kaydını döken `GET /api/hesap` denemesi de yetki yetmezse kayda geçer:
   çalınan bir izleyici / operatör çerezi bu ucu iz bırakmadan yoklayamaz. Rolü yetmeyen her
   deneme (ör. izleyicinin müdahale isteği) de "reddedildi" diye yazılır (hesap
@@ -789,6 +809,10 @@ dosyaları hiç değişmediği için bir yıl önbellekte kalır (`vercel.json`)
   çerçeve içine alınamaz, arama motorlarına kapalı (`noindex`, `robots.txt`).
   Veri sayfaya yalnız `textContent` ile yazılır (CSRF için `SameSite=Strict`,
   köken denetimi ve JSON zorunluluğu).
+- **Günlük:** her API isteği Vercel Runtime Logs'a tek JSON satırı yazar
+  (`{"gunluk": "istek", "yontem", "yol", "kod", "ms", "rol", "hata", "sorgu"}`);
+  sorgunun yalnız alan adları yazılır (`?anahtar=` değeri değil), çerez, ad,
+  şifre ve gövde asla.
 - **Saklama:** son durum ve kanıt fotoğrafları 7 gün (en çok 60 fotoğraf),
   anlık görüntü 2 dakika tutulur; rapor kesilirse hiçbiri süresiz kalmaz.
 
